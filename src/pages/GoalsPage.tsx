@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Plus, Calendar, Trash2, Edit, X, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
-import type { SourceActivity } from '../types';
+import { useLocation } from 'react-router-dom';
+import { Timestamp } from 'firebase/firestore';
+import type { SourceActivity, RoutineWithoutSystemFields, BaseDocument } from '../types';
 
-interface SmartGoalData {
+interface SmartGoalForm {
   specific: string;
   measurable: string;
   achievable: string;
@@ -12,16 +14,33 @@ interface SmartGoalData {
   timebound: string;
   areaId: string;
   milestones: string[];
+  routines?: {
+    title: string;
+    description?: string;
+    frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+    targetCount: number;
+    endDate?: string;
+  }[];
 }
 
+const timestampToDateString = (timestamp: Timestamp | undefined): string => {
+  if (!timestamp) return '';
+  return new Date(timestamp.seconds * 1000).toISOString().split('T')[0];
+};
+
+const dateToTimestamp = (dateStr: string): Timestamp => {
+  return Timestamp.fromDate(new Date(dateStr));
+};
+
 const GoalsPage: React.FC = () => {
+  const location = useLocation();
   const { areas } = useAreasContext();
   const { goals, loading, createGoal, updateGoal, deleteGoal } = useGoalsContext();
   const [isAdding, setIsAdding] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [editingGoal, setEditingGoal] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<'wizard' | 'edit'>('wizard');
-  const [smartGoal, setSmartGoal] = useState<SmartGoalData>({
+  const [smartGoal, setSmartGoal] = useState<SmartGoalForm>({
     specific: '',
     measurable: '',
     achievable: '',
@@ -31,7 +50,26 @@ const GoalsPage: React.FC = () => {
     milestones: ['']
   });
 
+  // Handle navigation state
+  useEffect(() => {
+    const state = location.state as { editingGoal?: SourceActivity; preselectedAreaId?: string } | null;
+    
+    if (state?.editingGoal) {
+      handleEdit(state.editingGoal);
+      // Clear the navigation state
+      window.history.replaceState({}, document.title);
+    } else if (state?.preselectedAreaId && typeof state.preselectedAreaId === 'string') {
+      const areaId: string = state.preselectedAreaId;
+      setSmartGoal(prev => ({ ...prev, areaId }));
+      setIsAdding(true);
+      // Clear the navigation state
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
   const handleSubmit = async () => {
+    if (!smartGoal.areaId) return;
+
     const description = `
 Specific: ${smartGoal.specific}
 Measurable: ${smartGoal.measurable}
@@ -39,14 +77,27 @@ Achievable: ${smartGoal.achievable}
 Relevant: ${smartGoal.relevant}
     `.trim();
 
+    const routines = smartGoal.routines?.map(routine => ({
+      title: routine.title,
+      description: routine.description || '',
+      frequency: routine.frequency,
+      targetCount: routine.targetCount,
+      endDate: routine.endDate ? dateToTimestamp(routine.endDate) : undefined,
+      completionDates: [] as Timestamp[],
+      areaId: smartGoal.areaId,
+      assignedTo: undefined
+    } as RoutineWithoutSystemFields)) || [];
+
     const goalData = {
       name: smartGoal.specific,
       description,
-      deadline: smartGoal.timebound ? new Date(smartGoal.timebound) : undefined,
+      deadline: smartGoal.timebound ? dateToTimestamp(smartGoal.timebound) : undefined,
       areaId: smartGoal.areaId,
       milestones: smartGoal.milestones.filter(m => m.trim() !== ''),
-      sharedWith: []
-    };
+      sharedWith: [] as string[],
+      tasks: [] as [],
+      routines
+    } satisfies Omit<SourceActivity, keyof BaseDocument>;
 
     try {
       if (editingGoal) {
@@ -62,7 +113,8 @@ Relevant: ${smartGoal.relevant}
         relevant: '',
         timebound: '',
         areaId: '',
-        milestones: ['']
+        milestones: [''],
+        routines: []
       });
       setIsAdding(false);
       setCurrentStep(0);
@@ -81,9 +133,16 @@ Relevant: ${smartGoal.relevant}
       measurable: measurable?.replace('Measurable: ', '') || '',
       achievable: achievable?.replace('Achievable: ', '') || '',
       relevant: relevant?.replace('Relevant: ', '') || '',
-      timebound: goal.deadline ? goal.deadline.toISOString().split('T')[0] : '',
+      timebound: timestampToDateString(goal.deadline),
       areaId: goal.areaId,
-      milestones: goal.milestones || ['']
+      milestones: goal.milestones || [''],
+      routines: goal.routines?.map(routine => ({
+        title: routine.title,
+        description: routine.description || '',
+        frequency: routine.frequency,
+        targetCount: routine.targetCount,
+        endDate: timestampToDateString(routine.endDate)
+      })) || []
     });
     
     setEditingGoal(goal.id);
@@ -228,6 +287,129 @@ Relevant: ${smartGoal.relevant}
     </div>
   );
 
+  const renderRoutinesStep = () => (
+    <div className="space-y-3">
+      {smartGoal.routines?.map((routine, index) => (
+        <div key={index} className="border rounded-md p-4 space-y-4">
+          <div className="flex justify-between">
+            <h4 className="font-medium">Habit/Routine {index + 1}</h4>
+            <button
+              type="button"
+              onClick={() => {
+                const newRoutines = smartGoal.routines?.filter((_, i) => i !== index) || [];
+                setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+              }}
+              className="text-red-500 hover:text-red-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Title
+              </label>
+              <input
+                type="text"
+                value={routine.title}
+                onChange={e => {
+                  const newRoutines = [...(smartGoal.routines || [])];
+                  newRoutines[index] = { ...routine, title: e.target.value };
+                  setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                }}
+                className="w-full p-2 border rounded-md"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description
+              </label>
+              <input
+                type="text"
+                value={routine.description || ''}
+                onChange={e => {
+                  const newRoutines = [...(smartGoal.routines || [])];
+                  newRoutines[index] = { ...routine, description: e.target.value };
+                  setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                }}
+                className="w-full p-2 border rounded-md"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Frequency
+              </label>
+              <select
+                value={routine.frequency}
+                onChange={e => {
+                  const newRoutines = [...(smartGoal.routines || [])];
+                  newRoutines[index] = { ...routine, frequency: e.target.value as RoutineWithoutSystemFields['frequency'] };
+                  setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                }}
+                className="w-full p-2 border rounded-md"
+                required
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Target Count (times per {routine.frequency})
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={routine.targetCount}
+                onChange={e => {
+                  const newRoutines = [...(smartGoal.routines || [])];
+                  newRoutines[index] = { ...routine, targetCount: parseInt(e.target.value) };
+                  setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                }}
+                className="w-full p-2 border rounded-md"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                End Date (optional)
+              </label>
+              <input
+                type="date"
+                value={routine.endDate || ''}
+                onChange={e => {
+                  const newRoutines = [...(smartGoal.routines || [])];
+                  newRoutines[index] = { ...routine, endDate: e.target.value };
+                  setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                }}
+                className="w-full p-2 border rounded-md"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => setSmartGoal(prev => ({
+          ...prev,
+          routines: [...(prev.routines || []), {
+            title: '',
+            description: '',
+            frequency: 'daily',
+            targetCount: 1
+          }]
+        }))}
+        className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+      >
+        + Add Habit/Routine
+      </button>
+    </div>
+  );
+
   const renderReviewStep = () => (
     <div className="space-y-6 bg-gray-50 p-6 rounded-lg">
       <div>
@@ -296,6 +478,11 @@ Relevant: ${smartGoal.relevant}
       title: "Break it down",
       subtitle: "List the key milestones to reach your goal",
       component: renderMilestonesStep
+    },
+    {
+      title: "Add Habits & Routines",
+      subtitle: "Create recurring actions to support your goal",
+      component: renderRoutinesStep
     },
     {
       title: "Review Your SMART Goal",
@@ -378,7 +565,7 @@ Relevant: ${smartGoal.relevant}
             {goal.deadline && (
               <div className="flex items-center gap-2 text-sm text-gray-500 mt-3">
                 <Calendar className="w-4 h-4" />
-                {new Date(goal.deadline).toLocaleDateString()}
+                {goal.deadline.toDate().toLocaleDateString()}
               </div>
             )}
             {goal.milestones && goal.milestones.length > 0 && (

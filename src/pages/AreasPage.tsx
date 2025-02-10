@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAreasContext } from '../contexts/AreasContext';
 import { Plus, Loader2, Pencil, X, Trash2 } from 'lucide-react';
 import type { Area } from '../types';
+import { useNavigate } from 'react-router-dom';
 
 export default function AreasPage() {
   const { areas, loading, error, createArea, updateArea, deleteArea } = useAreasContext();
@@ -13,6 +14,7 @@ export default function AreasPage() {
     description: '',
     color: '#000000'
   });
+  const navigate = useNavigate();
 
   const handleCreateArea = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,8 +198,9 @@ export default function AreasPage() {
         {areas.map((area) => (
           <div
             key={area.id}
-            className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+            className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
             style={{ borderLeft: `4px solid ${area.color || '#000000'}` }}
+            onClick={() => navigate(`/areas/${area.id}`)}
           >
             <div className="flex justify-between items-start">
               <div>
@@ -208,14 +211,20 @@ export default function AreasPage() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleEdit(area)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEdit(area);
+                  }}
                   className="text-gray-400 hover:text-gray-600 transition-colors"
                   aria-label="Edit area"
                 >
                   <Pencil className="w-4 h-4" />
                 </button>
                 <button
-                  onClick={() => handleDelete(area.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(area.id);
+                  }}
                   className="text-red-400 hover:text-red-600 transition-colors"
                   aria-label="Delete area"
                 >

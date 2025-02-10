@@ -42,25 +42,25 @@ export interface Activity extends BaseDocument {
 export interface Routine extends BaseDocument {
   title: string;
   description?: string;
-  frequency: 'daily' | 'weekly' | 'monthly';
-  assignedTo?: string;
+  frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  targetCount: number;
+  endDate?: Timestamp;
   areaId?: string;
+  assignedTo?: string;
   completionDates: Timestamp[];
 }
 
-export interface SourceActivity {
-  id: string;
+export type RoutineWithoutSystemFields = Omit<Routine, keyof BaseDocument>;
+
+export interface SourceActivity extends BaseDocument {
   name: string;
   description?: string;
-  deadline?: Date;
+  deadline?: Timestamp;
   milestones?: string[];
   areaId: string;
-  ownerId: string;
   sharedWith: string[]; // Array of user IDs
-  createdAt: Timestamp;
-  updatedAt: Timestamp;
   tasks: Task[];
-  routines: Routine[];
+  routines: (Routine | RoutineWithoutSystemFields)[];
 }
 
 export interface Share {
