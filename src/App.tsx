@@ -4,6 +4,7 @@ import TodosPage from './pages/TodosPage';
 import AreasPage from './pages/AreasPage';
 import AreaDetailsPage from './pages/AreaDetailsPage';
 import GoalsPage from './pages/GoalsPage';
+import GoalDetailPage from './pages/GoalDetailPage';
 import SignUp from './components/auth/SignUp';
 import ForgotPassword from './components/auth/ForgotPassword';
 import { AreasProvider } from './contexts/AreasContext';
@@ -32,6 +33,7 @@ function App() {
                           <Route path="/areas" element={<AreasPage />} />
                           <Route path="/areas/:areaId" element={<AreaDetailsPage />} />
                           <Route path="/goals" element={<GoalsPage />} />
+                          <Route path="/goals/:goalId" element={<GoalDetailPage />} />
                         </Routes>
                       </Layout>
                     </SharedGoalsProvider>

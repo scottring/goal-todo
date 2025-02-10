@@ -3,7 +3,7 @@ import { Plus, Calendar, Trash2, Edit, X, ChevronLeft, ChevronRight, Loader2 } f
 import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Timestamp } from 'firebase/firestore';
 import type { 
   SourceActivity, 
@@ -80,6 +80,7 @@ const dateToTimestamp = (dateStr: string): Timestamp => {
 
 const GoalsPage: React.FC = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const { areas } = useAreasContext();
   const { goals, loading, createGoal, updateGoal, deleteGoal } = useGoalsContext();
   const { user } = useAuth();
@@ -1072,6 +1073,7 @@ const GoalsPage: React.FC = () => {
                 areas.find(a => a.id === goal.areaId)?.color || '#000000'
               }` 
             }}
+            onClick={() => navigate(`/goals/${goal.id}`)}
           >
             <div className="flex justify-between items-start">
               <div>

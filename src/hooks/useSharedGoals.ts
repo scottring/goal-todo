@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { where, Timestamp, or } from 'firebase/firestore';
+import { where, Timestamp } from 'firebase/firestore';
 import { useFirestore } from './useFirestore';
 import { useAuth } from '../contexts/AuthContext';
 import type { SharedGoal, UserGoal } from '../types';
@@ -27,12 +27,14 @@ export const useSharedGoals = () => {
       setLoading(true);
       // Fetch shared goals where user is either owner or participant
       const fetchedSharedGoals = await getCollection<SharedGoal>('shared_goals', [
-        or(
-          where('ownerId', '==', user.uid),
-          where('sharedWith', 'array-contains', user.uid)
-        )
+        where('ownerId', '==', user.uid)
       ]);
-      setSharedGoals(fetchedSharedGoals);
+      
+      const sharedWithGoals = await getCollection<SharedGoal>('shared_goals', [
+        where('sharedWith', 'array-contains', user.uid)
+      ]);
+      
+      setSharedGoals([...fetchedSharedGoals, ...sharedWithGoals]);
 
       // Fetch user's personal goal instances
       const fetchedUserGoals = await getCollection<UserGoal>('user_goals', [
@@ -89,7 +91,8 @@ export const useSharedGoals = () => {
         relevance: '',
         milestones: [],
         tasks: [],
-        routines: []
+        routines: [],
+        areaId: data.areaId
       };
 
       await addDocument<UserGoal>('user_goals', userGoalData);

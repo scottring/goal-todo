@@ -115,6 +115,7 @@ export interface UserGoal extends BaseDocument {
   milestones: Milestone[];
   tasks: Task[];
   routines: (Routine | RoutineWithoutSystemFields)[];
+  areaId: string;
 }
 
 export interface SharedWeeklyReview extends BaseDocument {
