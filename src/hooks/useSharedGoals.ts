@@ -11,6 +11,13 @@ interface CreateSharedGoalData {
   areaId: string;
   sharedWith: string[];
   deadline?: Date;
+  permissions?: {
+    [userId: string]: {
+      edit: boolean;
+      view: boolean;
+      invite: boolean;
+    }
+  };
 }
 
 export const useSharedGoals = () => {
@@ -94,8 +101,27 @@ export const useSharedGoals = () => {
         participants: {
           [user.uid]: {
             joinedAt: Timestamp.now(),
-            role: 'owner'
-          }
+            role: 'owner',
+            permissions: {
+              edit: true,
+              view: true,
+              invite: true
+            }
+          },
+          ...Object.fromEntries(
+            data.sharedWith.map(userId => [
+              userId,
+              {
+                joinedAt: Timestamp.now(),
+                role: 'collaborator',
+                permissions: data.permissions?.[userId] || {
+                  edit: false,
+                  view: true,
+                  invite: false
+                }
+              }
+            ])
+          )
         }
       };
 
@@ -129,6 +155,19 @@ export const useSharedGoals = () => {
       };
 
       await addDocument<UserGoal>('user_goals', userGoalData);
+
+      // Update user profiles
+      await Promise.all([
+        updateDocument('users', user.uid, {
+          sharedGoals: [...(user.sharedGoals || []), sharedGoalId]
+        }),
+        ...data.sharedWith.map(userId =>
+          updateDocument('users', userId, {
+            sharedGoals: [...(user.sharedGoals || []), sharedGoalId]
+          })
+        )
+      ]);
+
       await fetchSharedGoals();
     } catch (err) {
       setError(err as Error);
@@ -138,7 +177,10 @@ export const useSharedGoals = () => {
 
   const updateSharedGoal = async (goalId: string, data: Partial<SharedGoal>) => {
     try {
-      await updateDocument<SharedGoal>('shared_goals', goalId, data);
+      await updateDocument<SharedGoal>('shared_goals', goalId, {
+        ...data,
+        updatedAt: Timestamp.now()
+      });
       await fetchSharedGoals();
     } catch (err) {
       setError(err as Error);
@@ -148,7 +190,10 @@ export const useSharedGoals = () => {
 
   const updateUserGoal = async (goalId: string, data: Partial<UserGoal>) => {
     try {
-      await updateDocument<UserGoal>('user_goals', goalId, data);
+      await updateDocument<UserGoal>('user_goals', goalId, {
+        ...data,
+        updatedAt: Timestamp.now()
+      });
       await fetchSharedGoals();
     } catch (err) {
       setError(err as Error);
@@ -158,6 +203,9 @@ export const useSharedGoals = () => {
 
   const deleteSharedGoal = async (goalId: string) => {
     try {
+      const goal = sharedGoals.find(g => g.id === goalId);
+      if (!goal) throw new Error('Goal not found');
+
       // Delete the shared goal
       await deleteDocument('shared_goals', goalId);
       
@@ -166,7 +214,48 @@ export const useSharedGoals = () => {
       await Promise.all(
         userGoalsToDelete.map(ug => deleteDocument('user_goals', ug.id))
       );
+
+      // Update user profiles
+      await Promise.all([
+        updateDocument('users', user.uid, {
+          sharedGoals: (user.sharedGoals || []).filter(id => id !== goalId)
+        }),
+        ...goal.sharedWith.map(userId =>
+          updateDocument('users', userId, {
+            sharedGoals: (user.sharedGoals || []).filter(id => id !== goalId)
+          })
+        )
+      ]);
       
+      await fetchSharedGoals();
+    } catch (err) {
+      setError(err as Error);
+      throw err;
+    }
+  };
+
+  const updatePermissions = async (goalId: string, userId: string, permissions: {
+    edit: boolean;
+    view: boolean;
+    invite: boolean;
+  }) => {
+    try {
+      const goal = sharedGoals.find(g => g.id === goalId);
+      if (!goal) throw new Error('Goal not found');
+
+      const updatedParticipants = {
+        ...goal.participants,
+        [userId]: {
+          ...goal.participants[userId],
+          permissions
+        }
+      };
+
+      await updateDocument<SharedGoal>('shared_goals', goalId, {
+        participants: updatedParticipants,
+        updatedAt: Timestamp.now()
+      });
+
       await fetchSharedGoals();
     } catch (err) {
       setError(err as Error);
@@ -183,6 +272,7 @@ export const useSharedGoals = () => {
     updateSharedGoal,
     updateUserGoal,
     deleteSharedGoal,
+    updatePermissions,
     refreshGoals: fetchSharedGoals
   };
 }; 

@@ -14,6 +14,7 @@ import type {
   MeasurableMetric,
   ReviewCycle
 } from '../types';
+import { ShareModal } from '../components/ShareModal';
 
 type TaskPriority = 'low' | 'medium' | 'high';
 type TaskStatus = 'not_started' | 'in_progress' | 'completed';
@@ -90,6 +91,7 @@ const GoalDetailPage: React.FC = () => {
   const [showRoutineForm, setShowRoutineForm] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [routineForm, setRoutineForm] = useState<RoutineFormData>({
     title: '',
     description: '',
@@ -805,6 +807,13 @@ const GoalDetailPage: React.FC = () => {
           </div>
           <div className="flex gap-2">
             <button
+              onClick={() => setShowShareModal(true)}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+              aria-label="Share goal"
+            >
+              <Users className="w-5 h-5" />
+            </button>
+            <button
               onClick={() => navigate(`/goals/${goalId}/edit`)}
               className="text-gray-400 hover:text-gray-600 transition-colors"
               aria-label="Edit goal"
@@ -1074,6 +1083,11 @@ const GoalDetailPage: React.FC = () => {
       {showRoutineForm && renderRoutineForm()}
       {showTaskForm && renderTaskForm()}
       {showMilestoneForm && renderMilestoneForm()}
+      <ShareModal
+        goalId={goalId || ''}
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+      />
     </SharedReviewsProvider>
   );
 };

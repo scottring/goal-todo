@@ -11,14 +11,26 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
-    function isParticipant(participants) {
-      return request.auth.uid in participants;
+    function hasEditPermission(data) {
+      return isOwner(data.ownerId) || 
+             (data.permissions != null && 
+              request.auth.uid in data.permissions && 
+              data.permissions[request.auth.uid].edit == true);
     }
 
-    function hasAccess(data) {
+    function hasViewPermission(data) {
       return isOwner(data.ownerId) || 
-             request.auth.uid in data.sharedWith || 
-             (data.participants != null && request.auth.uid in data.participants);
+             request.auth.uid in data.sharedWith ||
+             (data.permissions != null && 
+              request.auth.uid in data.permissions && 
+              data.permissions[request.auth.uid].view == true);
+    }
+
+    function hasInvitePermission(data) {
+      return isOwner(data.ownerId) || 
+             (data.participants != null && 
+              request.auth.uid in data.participants && 
+              data.participants[request.auth.uid].permissions.invite == true);
     }
 
     // Users collection
@@ -29,32 +41,32 @@ service cloud.firestore {
       allow delete: if false; // Prevent user deletion through client
     }
 
+    // Areas collection
+    match /areas/{areaId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
     // Shared goals collection
     match /shared_goals/{goalId} {
       allow create: if isSignedIn();
-      allow list: if isSignedIn();
-      allow get: if isSignedIn() && hasAccess(resource.data);
-      allow update: if isSignedIn() && hasAccess(resource.data);
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && (
+        hasEditPermission(resource.data) || 
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) && 
+         hasInvitePermission(resource.data))
+      );
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
     // User goals collection (personal instances of shared goals)
     match /user_goals/{goalId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-    }
-
-    // Areas collection
-    match /areas/{areaId} {
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        request.auth.uid in resource.data.sharedWith
-      );
-      allow update: if isSignedIn() && hasAccess(resource.data);
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
     // Activities collection (regular goals)
@@ -70,16 +82,10 @@ service cloud.firestore {
 
     // Tasks collection
     match /tasks/{taskId} {
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.assignedTo == request.auth.uid
-      );
-      allow update: if isSignedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.assignedTo == request.auth.uid
-      );
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
     // Routines collection

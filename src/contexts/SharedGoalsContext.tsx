@@ -13,10 +13,22 @@ interface SharedGoalsContextType {
     areaId: string;
     sharedWith: string[];
     deadline?: Date;
+    permissions?: {
+      [userId: string]: {
+        edit: boolean;
+        view: boolean;
+        invite: boolean;
+      }
+    };
   }) => Promise<void>;
   updateSharedGoal: (goalId: string, data: Partial<SharedGoal>) => Promise<void>;
   updateUserGoal: (goalId: string, data: Partial<UserGoal>) => Promise<void>;
   deleteSharedGoal: (goalId: string) => Promise<void>;
+  updatePermissions: (goalId: string, userId: string, permissions: {
+    edit: boolean;
+    view: boolean;
+    invite: boolean;
+  }) => Promise<void>;
   refreshGoals: () => Promise<void>;
 }
 
@@ -32,6 +44,7 @@ export function SharedGoalsProvider({ children }: { children: ReactNode }) {
     updateSharedGoal,
     updateUserGoal,
     deleteSharedGoal,
+    updatePermissions,
     refreshGoals
   } = useSharedGoals();
 
@@ -46,6 +59,7 @@ export function SharedGoalsProvider({ children }: { children: ReactNode }) {
         updateSharedGoal,
         updateUserGoal,
         deleteSharedGoal,
+        updatePermissions,
         refreshGoals
       }}
     >

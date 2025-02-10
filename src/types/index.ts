@@ -6,6 +6,10 @@ export interface UserProfile {
   displayName?: string;
   photoURL?: string;
   createdAt: Timestamp;
+  sharedWith: string[]; // List of users this person shares goals with
+  sharedAreas: string[]; // Entire shared categories
+  sharedGoals: string[]; // Goals shared with them
+  sharedTasks: string[]; // Tasks shared separately
 }
 
 export interface BaseDocument {
@@ -20,6 +24,12 @@ export interface Area extends BaseDocument {
   description?: string;
   color?: string;
   sharedWith: string[]; // Array of user IDs
+  permissions: {
+    [userId: string]: {
+      edit: boolean;
+      view: boolean;
+    }
+  };
 }
 
 export type TaskPriority = 'high' | 'medium' | 'low';
@@ -46,6 +56,13 @@ export interface Task extends BaseDocument {
   assignedTo?: string;
   priority: TaskPriority;
   status: TaskStatus;
+  sharedWith: string[]; // Users this task is shared with
+  permissions: {
+    [userId: string]: {
+      edit: boolean;
+      view: boolean;
+    }
+  };
 }
 
 export interface Milestone {
@@ -142,6 +159,11 @@ export interface SharedGoal extends BaseDocument {
     [userId: string]: {
       joinedAt: Timestamp;
       role: 'owner' | 'collaborator';
+      permissions: {
+        edit: boolean;
+        view: boolean;
+        invite: boolean;
+      }
     }
   };
 }
