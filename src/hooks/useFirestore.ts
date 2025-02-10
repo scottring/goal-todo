@@ -83,8 +83,16 @@ export const useFirestore = () => {
   ) => {
     try {
       const docRef = doc(db, collectionName, documentId);
+      // Remove undefined values and create a clean update object
+      const cleanData = Object.entries(data).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value;
+        }
+        return acc;
+      }, {} as Record<string, any>);
+
       await updateDoc(docRef, {
-        ...data,
+        ...cleanData,
         updatedAt: new Date()
       });
     } catch (error) {
