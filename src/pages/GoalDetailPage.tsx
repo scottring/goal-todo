@@ -8,6 +8,9 @@ import { SharedReviewsProvider } from '../contexts/SharedReviewsContext';
 import { Timestamp } from 'firebase/firestore';
 import type { DayOfWeek, TimeOfDay, RoutineSchedule, RoutineWithoutSystemFields } from '../types';
 
+type TaskPriority = 'low' | 'medium' | 'high';
+type TaskStatus = 'not_started' | 'in_progress' | 'completed';
+
 interface RoutineFormData {
   title: string;
   description?: string;
@@ -31,6 +34,20 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
+// Cleaning function to remove undefined values recursively
+const cleanData = (data: any): any => {
+  if (data === undefined) return undefined;
+  if (Array.isArray(data)) return data.map(item => cleanData(item));
+  if (data && typeof data === 'object') {
+    return Object.fromEntries(
+      Object.entries(data)
+        .filter(([_, value]) => value !== undefined)
+        .map(([key, value]) => [key, cleanData(value)])
+    );
+  }
+  return data;
+};
+
 const GoalDetailPage: React.FC = () => {
   const { goalId } = useParams<{ goalId: string }>();
   const navigate = useNavigate();
@@ -47,6 +64,8 @@ const GoalDetailPage: React.FC = () => {
   const area = areas.find(a => a.id === displayGoal?.areaId);
 
   const [showRoutineForm, setShowRoutineForm] = useState(false);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [routineForm, setRoutineForm] = useState<RoutineFormData>({
     title: '',
     description: '',
@@ -61,6 +80,20 @@ const GoalDetailPage: React.FC = () => {
       }
     },
     targetCount: 1
+  });
+  const [taskForm, setTaskForm] = useState({
+    title: '',
+    description: '',
+    dueDate: '',
+    priority: 'medium' as TaskPriority,
+    status: 'not_started' as TaskStatus,
+    assignedTo: undefined as string | undefined
+  });
+  const [milestoneForm, setMilestoneForm] = useState({
+    name: '',
+    targetDate: '',
+    successCriteria: '',
+    status: 'not_started' as TaskStatus
   });
 
   const handleDelete = async () => {
@@ -102,20 +135,6 @@ const GoalDetailPage: React.FC = () => {
         assignedTo: undefined
       };
 
-      // Cleaning function to remove undefined values recursively
-      const cleanData = (data: any): any => {
-        if (data === undefined) return undefined;
-        if (Array.isArray(data)) return data.map(item => cleanData(item));
-        if (data && typeof data === 'object') {
-          return Object.fromEntries(
-            Object.entries(data)
-              .filter(([_, value]) => value !== undefined)
-              .map(([key, value]) => [key, cleanData(value)])
-          );
-        }
-        return data;
-      };
-
       const cleanedRoutine = cleanData(newRoutine) as RoutineWithoutSystemFields;
 
       const updatedRoutines = displayGoal.routines ? [...displayGoal.routines, cleanedRoutine] : [cleanedRoutine];
@@ -140,6 +159,76 @@ const GoalDetailPage: React.FC = () => {
       setShowRoutineForm(false);
     } catch (err) {
       console.error('Error adding routine:', err);
+    }
+  };
+
+  const handleAddTask = async () => {
+    if (!taskForm.title.trim() || !displayGoal) return;
+
+    try {
+      const newTask = {
+        title: taskForm.title.trim(),
+        description: taskForm.description?.trim() || '',
+        dueDate: taskForm.dueDate ? Timestamp.fromDate(new Date(taskForm.dueDate)) : undefined,
+        priority: taskForm.priority,
+        status: taskForm.status,
+        assignedTo: taskForm.assignedTo,
+        completed: false
+      };
+
+      const cleanedTask = cleanData(newTask);
+      const updatedTasks = displayGoal.tasks ? [...displayGoal.tasks, cleanedTask] : [cleanedTask];
+      
+      if ('parentGoalId' in displayGoal) {
+        await updateUserGoal(displayGoal.id, { tasks: updatedTasks });
+      } else {
+        await updateGoal(displayGoal.id, { tasks: updatedTasks });
+      }
+
+      setTaskForm({
+        title: '',
+        description: '',
+        dueDate: '',
+        priority: 'medium',
+        status: 'not_started',
+        assignedTo: undefined
+      });
+      setShowTaskForm(false);
+    } catch (err) {
+      console.error('Error adding task:', err);
+    }
+  };
+
+  const handleAddMilestone = async () => {
+    if (!milestoneForm.name.trim() || !displayGoal) return;
+
+    try {
+      const newMilestone = {
+        name: milestoneForm.name.trim(),
+        targetDate: milestoneForm.targetDate ? Timestamp.fromDate(new Date(milestoneForm.targetDate)) : undefined,
+        successCriteria: milestoneForm.successCriteria.trim(),
+        status: milestoneForm.status,
+        tasks: []
+      };
+
+      const cleanedMilestone = cleanData(newMilestone);
+      const updatedMilestones = displayGoal.milestones ? [...displayGoal.milestones, cleanedMilestone] : [cleanedMilestone];
+      
+      if ('parentGoalId' in displayGoal) {
+        await updateUserGoal(displayGoal.id, { milestones: updatedMilestones });
+      } else {
+        await updateGoal(displayGoal.id, { milestones: updatedMilestones });
+      }
+
+      setMilestoneForm({
+        name: '',
+        targetDate: '',
+        successCriteria: '',
+        status: 'not_started'
+      });
+      setShowMilestoneForm(false);
+    } catch (err) {
+      console.error('Error adding milestone:', err);
     }
   };
 
@@ -452,6 +541,198 @@ const GoalDetailPage: React.FC = () => {
     </div>
   );
 
+  const renderTaskForm = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">Add Task</h2>
+            <button
+              onClick={() => setShowTaskForm(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Title
+              </label>
+              <input
+                type="text"
+                value={taskForm.title}
+                onChange={e => setTaskForm(prev => ({ ...prev, title: e.target.value }))}
+                className="w-full p-2 border rounded-md"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description (optional)
+              </label>
+              <textarea
+                value={taskForm.description}
+                onChange={e => setTaskForm(prev => ({ ...prev, description: e.target.value }))}
+                className="w-full p-2 border rounded-md"
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Due Date
+              </label>
+              <input
+                type="date"
+                value={taskForm.dueDate}
+                onChange={e => setTaskForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                className="w-full p-2 border rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Priority
+              </label>
+              <select
+                value={taskForm.priority}
+                onChange={e => setTaskForm(prev => ({ ...prev, priority: e.target.value as TaskPriority }))}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                value={taskForm.status}
+                onChange={e => setTaskForm(prev => ({ ...prev, status: e.target.value as TaskStatus }))}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              onClick={() => setShowTaskForm(false)}
+              className="px-4 py-2 text-gray-600 hover:text-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddTask}
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              disabled={!taskForm.title.trim()}
+            >
+              Add Task
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderMilestoneForm = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold text-gray-900">Add Milestone</h2>
+            <button
+              onClick={() => setShowMilestoneForm(false)}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Name
+              </label>
+              <input
+                type="text"
+                value={milestoneForm.name}
+                onChange={e => setMilestoneForm(prev => ({ ...prev, name: e.target.value }))}
+                className="w-full p-2 border rounded-md"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Target Date
+              </label>
+              <input
+                type="date"
+                value={milestoneForm.targetDate}
+                onChange={e => setMilestoneForm(prev => ({ ...prev, targetDate: e.target.value }))}
+                className="w-full p-2 border rounded-md"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Success Criteria
+              </label>
+              <textarea
+                value={milestoneForm.successCriteria}
+                onChange={e => setMilestoneForm(prev => ({ ...prev, successCriteria: e.target.value }))}
+                className="w-full p-2 border rounded-md"
+                rows={3}
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                value={milestoneForm.status}
+                onChange={e => setMilestoneForm(prev => ({ ...prev, status: e.target.value as TaskStatus }))}
+                className="w-full p-2 border rounded-md"
+              >
+                <option value="not_started">Not Started</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-6 flex justify-end gap-3">
+            <button
+              onClick={() => setShowMilestoneForm(false)}
+              className="px-4 py-2 text-gray-600 hover:text-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddMilestone}
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              disabled={!milestoneForm.name.trim()}
+            >
+              Add Milestone
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (goalsLoading || sharedLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -566,7 +847,7 @@ const GoalDetailPage: React.FC = () => {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-semibold text-gray-800">Milestones</h2>
                 <button
-                  onClick={() => {/* Add milestone handler */}}
+                  onClick={() => setShowMilestoneForm(true)}
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                 >
                   <Plus className="w-4 h-4 inline mr-1" />
@@ -613,60 +894,10 @@ const GoalDetailPage: React.FC = () => {
 
           {/* Right column - Tasks and Routines */}
           <div className="space-y-6">
-            {/* Tasks */}
-            <div className="bg-white p-6 rounded-lg shadow-sm">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">Tasks</h2>
-                <button
-                  onClick={() => {/* Add task handler */}}
-                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-                >
-                  <Plus className="w-4 h-4 inline mr-1" />
-                  Add Task
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {displayGoal.tasks.map((task, index) => (
-                  <div 
-                    key={index}
-                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
-                  >
-                    <div className="flex items-center gap-3">
-                      <CheckCircle 
-                        className={`w-5 h-5 ${
-                          task.completed ? 'text-green-500' : 'text-gray-300'
-                        }`} 
-                      />
-                      <div>
-                        <p className="text-gray-800">{task.title}</p>
-                        {task.dueDate && (
-                          <p className="text-sm text-gray-500">
-                            Due: {task.dueDate instanceof Timestamp 
-                              ? task.dueDate.toDate().toLocaleDateString()
-                              : new Date(task.dueDate).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      task.priority === 'high' 
-                        ? 'bg-red-100 text-red-800'
-                        : task.priority === 'medium'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {task.priority}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* Routines */}
             <div className="bg-white p-6 rounded-lg shadow-sm">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">Routines</h2>
+                <h2 className="text-xl font-semibold text-gray-800">Routines & Habits</h2>
                 <button
                   onClick={() => setShowRoutineForm(true)}
                   className="text-blue-600 hover:text-blue-700 text-sm font-medium"
@@ -726,6 +957,56 @@ const GoalDetailPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Tasks */}
+            <div className="bg-white p-6 rounded-lg shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-gray-800">Tasks</h2>
+                <button
+                  onClick={() => setShowTaskForm(true)}
+                  className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                >
+                  <Plus className="w-4 h-4 inline mr-1" />
+                  Add Task
+                </button>
+              </div>
+
+              <div className="space-y-3">
+                {displayGoal.tasks.map((task, index) => (
+                  <div 
+                    key={index}
+                    className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <CheckCircle 
+                        className={`w-5 h-5 ${
+                          task.completed ? 'text-green-500' : 'text-gray-300'
+                        }`} 
+                      />
+                      <div>
+                        <p className="text-gray-800">{task.title}</p>
+                        {task.dueDate && (
+                          <p className="text-sm text-gray-500">
+                            Due: {task.dueDate instanceof Timestamp 
+                              ? task.dueDate.toDate().toLocaleDateString()
+                              : new Date(task.dueDate).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <span className={`text-xs px-2 py-1 rounded ${
+                      task.priority === 'high' 
+                        ? 'bg-red-100 text-red-800'
+                        : task.priority === 'medium'
+                        ? 'bg-yellow-100 text-yellow-800'
+                        : 'bg-green-100 text-green-800'
+                    }`}>
+                      {task.priority}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* Shared With (if applicable) */}
             {isSharedGoal && (
               <div className="bg-white p-6 rounded-lg shadow-sm">
@@ -747,6 +1028,8 @@ const GoalDetailPage: React.FC = () => {
         </div>
       </div>
       {showRoutineForm && renderRoutineForm()}
+      {showTaskForm && renderTaskForm()}
+      {showMilestoneForm && renderMilestoneForm()}
     </SharedReviewsProvider>
   );
 };
