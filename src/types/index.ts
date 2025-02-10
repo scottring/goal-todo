@@ -105,7 +105,7 @@ export type RoutineWithoutSystemFields = Omit<Routine, keyof BaseDocument | 'rev
 };
 
 export type TimeTrackingType = 'fixed_deadline' | 'recurring_review';
-export type ReviewCycle = 'monthly' | 'quarterly' | 'biannual' | 'yearly';
+export type ReviewCycle = 'weekly' | 'monthly' | 'quarterly' | 'biannual' | 'yearly';
 
 export interface TimeTracking {
   type: TimeTrackingType;

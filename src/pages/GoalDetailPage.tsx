@@ -51,6 +51,7 @@ const MEASURABLE_METRIC_LABELS: Record<MeasurableMetric, string> = {
 };
 
 const REVIEW_CYCLE_LABELS: Record<ReviewCycle, string> = {
+  weekly: 'Weekly',
   monthly: 'Monthly',
   quarterly: 'Quarterly',
   biannual: 'Every 6 months',

@@ -14,12 +14,22 @@ import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 
 export const useFirestore = () => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+
+  const checkAuth = () => {
+    if (authLoading) {
+      throw new Error('Authentication is still initializing');
+    }
+    if (!user) {
+      throw new Error('User must be authenticated to access Firestore');
+    }
+  };
 
   const getCollection = async <T = DocumentData>(
     collectionName: string,
     constraints: QueryConstraint[] = []
   ) => {
+    checkAuth();
     try {
       const collectionRef = collection(db, collectionName);
       const q = query(collectionRef, ...constraints);
@@ -39,6 +49,7 @@ export const useFirestore = () => {
     collectionName: string,
     documentId: string
   ) => {
+    checkAuth();
     try {
       const docRef = doc(db, collectionName, documentId);
       const docSnap = await getDoc(docRef);
@@ -60,11 +71,12 @@ export const useFirestore = () => {
     collectionName: string,
     data: Omit<T, 'id'>
   ) => {
+    checkAuth();
     try {
       const collectionRef = collection(db, collectionName);
       const docRef = await addDoc(collectionRef, {
         ...data,
-        ownerId: user?.uid,
+        ownerId: user.uid,
         createdAt: new Date(),
         updatedAt: new Date()
       });
@@ -81,6 +93,7 @@ export const useFirestore = () => {
     documentId: string,
     data: Partial<T>
   ) => {
+    checkAuth();
     try {
       const docRef = doc(db, collectionName, documentId);
       // Remove undefined values and create a clean update object
@@ -105,6 +118,7 @@ export const useFirestore = () => {
     collectionName: string,
     documentId: string
   ) => {
+    checkAuth();
     try {
       const docRef = doc(db, collectionName, documentId);
       await deleteDoc(docRef);

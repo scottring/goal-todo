@@ -77,6 +77,7 @@ const STATUS_OPTIONS: { label: string; value: TaskStatus }[] = [
 ];
 
 const REVIEW_CYCLE_OPTIONS: { label: string; value: ReviewCycle }[] = [
+  { label: 'Weekly', value: 'weekly' },
   { label: 'Monthly', value: 'monthly' },
   { label: 'Quarterly', value: 'quarterly' },
   { label: 'Every 6 months', value: 'biannual' },
