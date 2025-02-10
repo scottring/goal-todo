@@ -88,9 +88,73 @@ export interface SourceActivity extends BaseDocument {
   weeklyReviews?: WeeklyReview[];
 }
 
+export interface SharedGoal extends BaseDocument {
+  name: string;
+  description: string;
+  areaId: string;
+  sharedWith: string[];
+  deadline?: Timestamp;
+  status: 'active' | 'completed' | 'abandoned';
+  participants: {
+    [userId: string]: {
+      joinedAt: Timestamp;
+      role: 'owner' | 'collaborator';
+    }
+  };
+}
+
+export interface UserGoal extends BaseDocument {
+  parentGoalId: string;
+  name: string;
+  specificAction: string;
+  measurableMetric: MeasurableMetric;
+  customMetric?: string;
+  achievabilityCheck: AchievabilityCheck;
+  relevance: string;
+  deadline?: Timestamp;
+  milestones: Milestone[];
+  tasks: Task[];
+  routines: (Routine | RoutineWithoutSystemFields)[];
+}
+
+export interface SharedWeeklyReview extends BaseDocument {
+  goalId: string;
+  date: Timestamp;
+  status: 'scheduled' | 'in_progress' | 'completed';
+  participants: string[];
+  
+  userReflections: {
+    [userId: string]: {
+      tasksCompleted: number;
+      routinesCompleted: number;
+      workedWell: string;
+      challenges: string;
+      nextWeekFocus: string;
+      privateNotes?: string;
+    }
+  };
+  
+  sharedDiscussion: {
+    synergies: string;
+    obstacles: string;
+    adjustments: string;
+    supportNeeded: string;
+    celebrations: string;
+  };
+  
+  actionItems: {
+    id: string;
+    description: string;
+    assignedTo: string;
+    dueDate: Timestamp;
+    status: 'pending' | 'completed';
+  }[];
+}
+
 export interface WeeklyReview {
   id: string;
   date: Timestamp;
+  sharedReviewId?: string;  // Reference to SharedWeeklyReview if this is part of a shared review
   tasksCompleted: boolean;
   missedReason?: MissedReason;
   workedWell: string;

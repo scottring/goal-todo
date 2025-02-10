@@ -8,6 +8,7 @@ import SignUp from './components/auth/SignUp';
 import ForgotPassword from './components/auth/ForgotPassword';
 import { AreasProvider } from './contexts/AreasContext';
 import { GoalsProvider } from './contexts/GoalsContext';
+import { SharedGoalsProvider } from './contexts/SharedGoalsContext';
 import { AuthProvider } from './contexts/AuthContext';
 import AuthGuard from './components/auth/AuthGuard';
 
@@ -24,14 +25,16 @@ function App() {
               <AuthGuard>
                 <AreasProvider>
                   <GoalsProvider>
-                    <Layout>
-                      <Routes>
-                        <Route path="/" element={<TodosPage />} />
-                        <Route path="/areas" element={<AreasPage />} />
-                        <Route path="/areas/:areaId" element={<AreaDetailsPage />} />
-                        <Route path="/goals" element={<GoalsPage />} />
-                      </Routes>
-                    </Layout>
+                    <SharedGoalsProvider>
+                      <Layout>
+                        <Routes>
+                          <Route path="/" element={<TodosPage />} />
+                          <Route path="/areas" element={<AreasPage />} />
+                          <Route path="/areas/:areaId" element={<AreaDetailsPage />} />
+                          <Route path="/goals" element={<GoalsPage />} />
+                        </Routes>
+                      </Layout>
+                    </SharedGoalsProvider>
                   </GoalsProvider>
                 </AreasProvider>
               </AuthGuard>

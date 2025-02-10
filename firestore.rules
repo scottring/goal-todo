@@ -11,6 +11,10 @@ service cloud.firestore {
       return request.auth.uid == userId;
     }
 
+    function isParticipant(participants) {
+      return request.auth.uid in participants;
+    }
+
     // Users collection
     match /users/{userId} {
       // Allow creation and updates if the user is creating/updating their own document
@@ -28,6 +32,35 @@ service cloud.firestore {
       );
       allow create: if isSignedIn();
       allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Shared goals collection
+    match /shared_goals/{goalId} {
+      allow read: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        request.auth.uid in resource.data.sharedWith
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        resource.data.ownerId == request.auth.uid ||
+        request.auth.uid in resource.data.participants
+      );
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // User goals collection (personal instances of shared goals)
+    match /user_goals/{goalId} {
+      allow read: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // Shared reviews collection
+    match /shared_reviews/{reviewId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
     }
 
     // Activities collection
