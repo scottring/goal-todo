@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { where, Timestamp } from 'firebase/firestore';
+import { where, Timestamp, query, collection, getDocs } from 'firebase/firestore';
 import { useFirestore } from './useFirestore';
 import { useAuth } from '../contexts/AuthContext';
+import { db } from '../lib/firebase';
 import type { SharedGoal, UserGoal } from '../types';
 
 interface CreateSharedGoalData {
@@ -25,16 +26,38 @@ export const useSharedGoals = () => {
     
     try {
       setLoading(true);
-      // Fetch shared goals where user is either owner or participant
-      const fetchedSharedGoals = await getCollection<SharedGoal>('shared_goals', [
+      
+      // Fetch goals where user is owner
+      const ownerQuery = query(
+        collection(db, 'shared_goals'),
         where('ownerId', '==', user.uid)
-      ]);
-      
-      const sharedWithGoals = await getCollection<SharedGoal>('shared_goals', [
+      );
+      const ownerSnapshot = await getDocs(ownerQuery);
+      const ownedGoals = ownerSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as SharedGoal[];
+
+      // Fetch goals shared with user
+      const sharedQuery = query(
+        collection(db, 'shared_goals'),
         where('sharedWith', 'array-contains', user.uid)
-      ]);
+      );
+      const sharedSnapshot = await getDocs(sharedQuery);
+      const sharedGoals = sharedSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as SharedGoal[];
+
+      // Combine and deduplicate goals
+      const allGoals = [...ownedGoals];
+      sharedGoals.forEach(goal => {
+        if (!allGoals.some(g => g.id === goal.id)) {
+          allGoals.push(goal);
+        }
+      });
       
-      setSharedGoals([...fetchedSharedGoals, ...sharedWithGoals]);
+      setSharedGoals(allGoals);
 
       // Fetch user's personal goal instances
       const fetchedUserGoals = await getCollection<UserGoal>('user_goals', [

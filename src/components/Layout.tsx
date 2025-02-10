@@ -32,7 +32,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 }`}
               >
                 <ListTodo className="w-4 h-4" />
-                Todos
+                Tasks
               </Link>
               <Link
                 to="/areas"

@@ -57,10 +57,31 @@ export interface Activity extends BaseDocument {
   sharedWith: string[];
 }
 
+export type DayOfWeek = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+export type TimeOfDay = {
+  hour: number;
+  minute: number;
+};
+
+export interface DaySchedule {
+  day: DayOfWeek;
+  time: TimeOfDay;
+}
+
+export interface RoutineSchedule {
+  type: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  daysOfWeek?: DaySchedule[];  // For weekly routines with different times
+  dayOfMonth?: number;       // For monthly routines (1-31)
+  monthsOfYear?: number[];   // For quarterly/yearly routines (1-12)
+  timeOfDay?: TimeOfDay;     // Default time for non-weekly routines
+  targetCount: number;       // How many times to complete in the period
+}
+
 export interface Routine extends BaseDocument {
   title: string;
   description?: string;
   frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  schedule: RoutineSchedule;
   targetCount: number;
   endDate?: Timestamp;
   areaId?: string;

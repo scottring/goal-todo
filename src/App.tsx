@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout';
-import TodosPage from './pages/TodosPage';
+import TasksPage from './pages/TasksPage';
 import AreasPage from './pages/AreasPage';
 import AreaDetailsPage from './pages/AreaDetailsPage';
 import GoalsPage from './pages/GoalsPage';
@@ -29,7 +29,7 @@ function App() {
                     <SharedGoalsProvider>
                       <Layout>
                         <Routes>
-                          <Route path="/" element={<TodosPage />} />
+                          <Route path="/" element={<TasksPage />} />
                           <Route path="/areas" element={<AreasPage />} />
                           <Route path="/areas/:areaId" element={<AreaDetailsPage />} />
                           <Route path="/goals" element={<GoalsPage />} />
