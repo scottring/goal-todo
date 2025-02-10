@@ -14,7 +14,10 @@ import type {
   TaskStatus,
   Milestone,
   TaskPriority,
-  Task
+  Task,
+  TimeTrackingType,
+  ReviewCycle,
+  TimeTracking
 } from '../types';
 
 interface SmartGoalForm {
@@ -24,7 +27,9 @@ interface SmartGoalForm {
   customMetric?: string;
   achievabilityCheck: AchievabilityCheck;
   relevance: string;
-  timebound: string;
+  timeTrackingType: TimeTrackingType;
+  deadline?: string;
+  reviewCycle?: ReviewCycle;
   areaId: string;
   milestones: {
     name: string;
@@ -51,9 +56,11 @@ interface SmartGoalForm {
 }
 
 const MEASURABLE_METRIC_OPTIONS: { label: string; value: MeasurableMetric }[] = [
-  { label: 'Log workouts in app', value: 'log_workouts' },
-  { label: 'Track weight', value: 'track_weight' },
-  { label: 'Count hours spent', value: 'count_hours' },
+  { label: 'Count occurrences', value: 'count_occurrences' },
+  { label: 'Track numeric value', value: 'track_numeric' },
+  { label: 'Track time spent', value: 'time_spent' },
+  { label: 'Track completion rate (%)', value: 'completion_rate' },
+  { label: 'Yes/No completion', value: 'binary_check' },
   { label: 'Custom metric', value: 'custom' }
 ];
 
@@ -69,6 +76,13 @@ const STATUS_OPTIONS: { label: string; value: TaskStatus }[] = [
   { label: 'Completed', value: 'completed' }
 ];
 
+const REVIEW_CYCLE_OPTIONS: { label: string; value: ReviewCycle }[] = [
+  { label: 'Monthly', value: 'monthly' },
+  { label: 'Quarterly', value: 'quarterly' },
+  { label: 'Every 6 months', value: 'biannual' },
+  { label: 'Yearly', value: 'yearly' }
+];
+
 const timestampToDateString = (timestamp: Timestamp | undefined): string => {
   if (!timestamp) return '';
   return new Date(timestamp.seconds * 1000).toISOString().split('T')[0];
@@ -81,6 +95,24 @@ const dateToTimestamp = (dateStr: string): Timestamp | undefined => {
   return Timestamp.fromDate(date);
 };
 
+const initialSmartGoal: SmartGoalForm = {
+  name: '',
+  specificAction: '',
+  measurableMetric: 'count_occurrences',
+  achievabilityCheck: 'yes',
+  relevance: '',
+  timeTrackingType: 'fixed_deadline',
+  areaId: '',
+  milestones: [{
+    name: '',
+    targetDate: '',
+    successCriteria: '',
+    status: 'not_started'
+  }],
+  tasks: [],
+  routines: []
+};
+
 const GoalsPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -91,23 +123,7 @@ const GoalsPage: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
   const [editingGoal, setEditingGoal] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<'wizard' | 'edit'>('wizard');
-  const [smartGoal, setSmartGoal] = useState<SmartGoalForm>({
-    name: '',
-    specificAction: '',
-    measurableMetric: 'log_workouts',
-    achievabilityCheck: 'yes',
-    relevance: '',
-    timebound: '',
-    areaId: '',
-    milestones: [{
-      name: '',
-      targetDate: '',
-      successCriteria: '',
-      status: 'not_started'
-    }],
-    tasks: [],
-    routines: []
-  });
+  const [smartGoal, setSmartGoal] = useState<SmartGoalForm>(initialSmartGoal);
 
   // Handle navigation state
   useEffect(() => {
@@ -128,6 +144,17 @@ const GoalsPage: React.FC = () => {
 
   const handleSubmit = async () => {
     if (!smartGoal.areaId) return;
+
+    const timeTracking: TimeTracking = {
+      type: smartGoal.timeTrackingType,
+      ...(smartGoal.timeTrackingType === 'fixed_deadline' 
+        ? { deadline: smartGoal.deadline ? dateToTimestamp(smartGoal.deadline) : undefined }
+        : {
+            reviewCycle: smartGoal.reviewCycle,
+            nextReviewDate: calculateNextReviewDate(smartGoal.reviewCycle)
+          }
+      )
+    };
 
     const milestones: Milestone[] = smartGoal.milestones
       .filter(m => m.targetDate && m.targetDate.trim() !== '')
@@ -188,7 +215,7 @@ const GoalsPage: React.FC = () => {
       customMetric: smartGoal.customMetric || '',
       achievabilityCheck: smartGoal.achievabilityCheck,
       relevance: smartGoal.relevance || '',
-      deadline: smartGoal.timebound ? dateToTimestamp(smartGoal.timebound) : undefined,
+      timeTracking,
       areaId: smartGoal.areaId,
       milestones,
       tasks,
@@ -203,23 +230,7 @@ const GoalsPage: React.FC = () => {
         await createGoal(goalData);
       }
 
-      setSmartGoal({
-        name: '',
-        specificAction: '',
-        measurableMetric: 'log_workouts',
-        achievabilityCheck: 'yes',
-        relevance: '',
-        timebound: '',
-        areaId: '',
-        milestones: [{
-          name: '',
-          targetDate: '',
-          successCriteria: '',
-          status: 'not_started'
-        }],
-        tasks: [],
-        routines: []
-      });
+      setSmartGoal(initialSmartGoal);
       setIsAdding(false);
       setCurrentStep(0);
       setEditingGoal(null);
@@ -237,7 +248,9 @@ const GoalsPage: React.FC = () => {
       customMetric: goal.customMetric,
       achievabilityCheck: goal.achievabilityCheck,
       relevance: goal.relevance,
-      timebound: timestampToDateString(goal.deadline),
+      timeTrackingType: goal.timeTracking.type,
+      deadline: goal.timeTracking.deadline ? timestampToDateString(goal.timeTracking.deadline) : undefined,
+      reviewCycle: goal.timeTracking.reviewCycle,
       areaId: goal.areaId,
       milestones: goal.milestones.map(m => ({
         name: m.name,
@@ -409,15 +422,63 @@ const GoalsPage: React.FC = () => {
   );
 
   const renderTimeboundStep = () => (
-    <div className="space-y-3">
-      <input
-        type="date"
-        value={smartGoal.timebound}
-        onChange={e => setSmartGoal(prev => ({ ...prev, timebound: e.target.value }))}
-        className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-        required
-      />
-      <p className="text-sm text-gray-500 italic">Example: 10 weeks from today</p>
+    <div className="space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          How will you track time for this goal?
+        </label>
+        <select
+          value={smartGoal.timeTrackingType}
+          onChange={e => setSmartGoal(prev => ({ 
+            ...prev, 
+            timeTrackingType: e.target.value as TimeTrackingType,
+            deadline: e.target.value === 'fixed_deadline' ? prev.deadline : undefined,
+            reviewCycle: e.target.value === 'recurring_review' ? 'monthly' : undefined
+          }))}
+          className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+          required
+        >
+          <option value="fixed_deadline">Fixed deadline</option>
+          <option value="recurring_review">Continuous goal with regular reviews</option>
+        </select>
+      </div>
+
+      {smartGoal.timeTrackingType === 'fixed_deadline' ? (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            When will you complete this goal?
+          </label>
+          <input
+            type="date"
+            value={smartGoal.deadline || ''}
+            onChange={e => setSmartGoal(prev => ({ ...prev, deadline: e.target.value }))}
+            className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <p className="text-sm text-gray-500 italic mt-2">Set a specific completion date for your goal</p>
+        </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            How often will you review progress?
+          </label>
+          <select
+            value={smartGoal.reviewCycle}
+            onChange={e => setSmartGoal(prev => ({ ...prev, reviewCycle: e.target.value as ReviewCycle }))}
+            className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+            required
+          >
+            {REVIEW_CYCLE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-gray-500 italic mt-2">
+            Regular reviews help you stay on track with continuous goals
+          </p>
+        </div>
+      )}
     </div>
   );
 
@@ -815,7 +876,7 @@ const GoalsPage: React.FC = () => {
       </div>
       <div>
         <h3 className="font-medium text-gray-700 mb-2">Time-bound</h3>
-        <p className="text-gray-900">{smartGoal.timebound}</p>
+        <p className="text-gray-900">{smartGoal.timeTrackingType === 'fixed_deadline' ? smartGoal.deadline : REVIEW_CYCLE_OPTIONS.find(opt => opt.value === smartGoal.reviewCycle)?.label}</p>
       </div>
       <div>
         <h3 className="font-medium text-gray-700 mb-2">Milestones</h3>
@@ -980,24 +1041,85 @@ const GoalsPage: React.FC = () => {
 
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
-          Deadline
+          How will you track time for this goal?
         </label>
-        <input
-          type="date"
-          value={smartGoal.timebound}
-          onChange={e => setSmartGoal(prev => ({ ...prev, timebound: e.target.value }))}
+        <select
+          value={smartGoal.timeTrackingType}
+          onChange={e => setSmartGoal(prev => ({ 
+            ...prev, 
+            timeTrackingType: e.target.value as TimeTrackingType,
+            deadline: e.target.value === 'fixed_deadline' ? prev.deadline : undefined,
+            reviewCycle: e.target.value === 'recurring_review' ? 'monthly' : undefined
+          }))}
           className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
           required
-        />
+        >
+          <option value="fixed_deadline">Fixed deadline</option>
+          <option value="recurring_review">Continuous goal with regular reviews</option>
+        </select>
       </div>
 
-      {renderMilestonesStep()}
-      {renderTasksStep()}
-      {renderRoutinesStep()}
+      {smartGoal.timeTrackingType === 'fixed_deadline' ? (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            When will you complete this goal?
+          </label>
+          <input
+            type="date"
+            value={smartGoal.deadline || ''}
+            onChange={e => setSmartGoal(prev => ({ ...prev, deadline: e.target.value }))}
+            className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+            required
+          />
+          <p className="text-sm text-gray-500 italic mt-2">Set a specific completion date for your goal</p>
+        </div>
+      ) : (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            How often will you review progress?
+          </label>
+          <select
+            value={smartGoal.reviewCycle}
+            onChange={e => setSmartGoal(prev => ({ ...prev, reviewCycle: e.target.value as ReviewCycle }))}
+            className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+            required
+          >
+            {REVIEW_CYCLE_OPTIONS.map(option => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-sm text-gray-500 italic mt-2">
+            Regular reviews help you stay on track with continuous goals
+          </p>
+        </div>
+      )}
     </div>
   );
 
-  const steps = [
+  const calculateNextReviewDate = (reviewCycle?: ReviewCycle): Timestamp | undefined => {
+    if (!reviewCycle) return undefined;
+    
+    const now = new Date();
+    switch (reviewCycle) {
+      case 'monthly':
+        now.setMonth(now.getMonth() + 1);
+        break;
+      case 'quarterly':
+        now.setMonth(now.getMonth() + 3);
+        break;
+      case 'biannual':
+        now.setMonth(now.getMonth() + 6);
+        break;
+      case 'yearly':
+        now.setFullYear(now.getFullYear() + 1);
+        break;
+    }
+    return Timestamp.fromDate(now);
+  };
+
+  const wizardSteps = [
     {
       title: "What area is this goal for?",
       subtitle: "Choose the life area this goal belongs to",
@@ -1025,7 +1147,7 @@ const GoalsPage: React.FC = () => {
     },
     {
       title: "When will you achieve this?",
-      subtitle: "Set a realistic deadline",
+      subtitle: "Set a realistic deadline or review cycle",
       component: renderTimeboundStep
     },
     {
@@ -1050,104 +1172,21 @@ const GoalsPage: React.FC = () => {
     }
   ];
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Goals</h1>
-          <p className="mt-1 text-sm text-gray-600">
-            Set and track your SMART goals
-          </p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-800">Goals</h1>
         <button
           onClick={() => {
             setIsAdding(true);
-            setEditMode('wizard');
             setCurrentStep(0);
+            setEditingGoal(null);
+            setEditMode('wizard');
           }}
-          className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+          className="text-blue-600 hover:text-blue-700"
         >
-          <Plus className="w-4 h-4 mr-2" />
-          Add Goal
+          + Add Goal
         </button>
-      </div>
-
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {goals.map((goal) => (
-          <div
-            key={goal.id}
-            className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-            style={{ 
-              borderLeft: `4px solid ${
-                areas.find(a => a.id === goal.areaId)?.color || '#000000'
-              }` 
-            }}
-            onClick={() => navigate(`/goals/${goal.id}`)}
-          >
-            <div className="flex justify-between items-start">
-              <div>
-                <h3 className="text-xl font-semibold text-gray-800">{goal.name}</h3>
-                <p className="mt-2 text-gray-600">{goal.specificAction}</p>
-                {goal.customMetric && (
-                  <p className="mt-1 text-sm text-gray-500">
-                    Measuring: {goal.customMetric}
-                  </p>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleEdit(goal)}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
-                  aria-label="Edit goal"
-                >
-                  <Edit className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDelete(goal.id)}
-                  className="text-red-400 hover:text-red-600 transition-colors"
-                  aria-label="Delete goal"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-            {goal.deadline && (
-              <div className="flex items-center gap-2 text-sm text-gray-500 mt-3">
-                <Calendar className="w-4 h-4" />
-                {goal.deadline.toDate().toLocaleDateString()}
-              </div>
-            )}
-            {goal.milestones && goal.milestones.length > 0 && (
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-gray-700 mb-2">Milestones:</h4>
-                <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                  {goal.milestones.map((milestone, index) => (
-                    <li key={index} className="flex items-center gap-2">
-                      <span>{milestone.name}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded ${
-                        milestone.status === 'completed' 
-                          ? 'bg-green-100 text-green-800'
-                          : milestone.status === 'in_progress'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {STATUS_OPTIONS.find(opt => opt.value === milestone.status)?.label}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        ))}
       </div>
 
       {isAdding && (
@@ -1156,10 +1195,10 @@ const GoalsPage: React.FC = () => {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h2 className="text-2xl font-bold text-gray-800">
-                  {editMode === 'wizard' ? steps[currentStep].title : 'Edit Goal'}
+                  {editMode === 'wizard' ? wizardSteps[currentStep].title : 'Edit Goal'}
                 </h2>
-                {editMode === 'wizard' && steps[currentStep].subtitle && (
-                  <p className="text-gray-600 mt-1">{steps[currentStep].subtitle}</p>
+                {editMode === 'wizard' && wizardSteps[currentStep].subtitle && (
+                  <p className="text-gray-600 mt-1">{wizardSteps[currentStep].subtitle}</p>
                 )}
               </div>
               <button
@@ -1176,7 +1215,7 @@ const GoalsPage: React.FC = () => {
             </div>
 
             <div className="mb-8">
-              {editMode === 'wizard' ? steps[currentStep].component() : renderEditForm()}
+              {editMode === 'wizard' ? wizardSteps[currentStep].component() : renderEditForm()}
             </div>
 
             <div className="flex justify-between items-center">
@@ -1193,7 +1232,7 @@ const GoalsPage: React.FC = () => {
                     Back
                   </button>
                   <div className="flex gap-1">
-                    {steps.map((_, index) => (
+                    {wizardSteps.map((_, index) => (
                       <div
                         key={index}
                         className={`w-2 h-2 rounded-full ${
@@ -1205,7 +1244,7 @@ const GoalsPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => {
-                      if (currentStep === steps.length - 1) {
+                      if (currentStep === wizardSteps.length - 1) {
                         handleSubmit();
                       } else {
                         setCurrentStep(prev => prev + 1);
@@ -1213,7 +1252,7 @@ const GoalsPage: React.FC = () => {
                     }}
                     className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
-                    {currentStep === steps.length - 1 ? (
+                    {currentStep === wizardSteps.length - 1 ? (
                       'Create Goal'
                     ) : (
                       <>

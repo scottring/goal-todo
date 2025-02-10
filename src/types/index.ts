@@ -24,7 +24,14 @@ export interface Area extends BaseDocument {
 
 export type TaskPriority = 'high' | 'medium' | 'low';
 export type TaskStatus = 'not_started' | 'in_progress' | 'completed';
-export type MeasurableMetric = 'log_workouts' | 'track_weight' | 'count_hours' | 'custom';
+export type MeasurableMetric = 
+  | 'count_occurrences'  // Count number of times something happens
+  | 'track_numeric'      // Track a number (weight, distance, etc)
+  | 'time_spent'         // Track time spent
+  | 'completion_rate'    // Track percentage of completion
+  | 'binary_check'       // Yes/No completion
+  | 'custom';            // Custom metric
+
 export type AchievabilityCheck = 'yes' | 'no' | 'need_resources';
 export type MissedReason = 'too_busy' | 'lost_motivation' | 'health_issue' | 'other';
 
@@ -48,6 +55,7 @@ export interface Milestone {
   successCriteria: string;
   status: TaskStatus;
   tasks: string[]; // Array of task IDs
+  review?: MilestoneReview; // Optional review cycle
 }
 
 export interface Activity extends BaseDocument {
@@ -89,9 +97,23 @@ export interface Routine extends BaseDocument {
   completionDates: Timestamp[];
   weeklyCompletionTracker?: boolean[];
   missedReason?: MissedReason;
+  review: HabitReview;
 }
 
-export type RoutineWithoutSystemFields = Omit<Routine, keyof BaseDocument>;
+export type RoutineWithoutSystemFields = Omit<Routine, keyof BaseDocument | 'review'> & {
+  review?: HabitReview;
+};
+
+export type TimeTrackingType = 'fixed_deadline' | 'recurring_review';
+export type ReviewCycle = 'monthly' | 'quarterly' | 'biannual' | 'yearly';
+
+export interface TimeTracking {
+  type: TimeTrackingType;
+  deadline?: Timestamp;        // For fixed_deadline goals
+  reviewCycle?: ReviewCycle;   // For recurring_review goals
+  nextReviewDate?: Timestamp;  // For recurring_review goals
+  reviewStatus?: ReviewStatus; // Add review status
+}
 
 export interface SourceActivity extends BaseDocument {
   name: string;
@@ -100,7 +122,7 @@ export interface SourceActivity extends BaseDocument {
   customMetric?: string;
   achievabilityCheck: AchievabilityCheck;
   relevance: string;
-  deadline?: Timestamp;
+  timeTracking: TimeTracking;
   milestones: Milestone[];
   areaId: string;
   sharedWith: string[];
@@ -132,7 +154,7 @@ export interface UserGoal extends BaseDocument {
   customMetric?: string;
   achievabilityCheck: AchievabilityCheck;
   relevance: string;
-  deadline?: Timestamp;
+  timeTracking: TimeTracking;
   milestones: Milestone[];
   tasks: Task[];
   routines: (Routine | RoutineWithoutSystemFields)[];
@@ -192,4 +214,35 @@ export interface Share {
   sharedWith: string;
   permissions: 'read' | 'write' | 'admin';
   createdAt: Timestamp;
+}
+
+export type ReviewFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+
+export interface ReviewStatus {
+  lastReviewDate: Timestamp;
+  nextReviewDate: Timestamp;
+  completedReviews: {
+    date: Timestamp;
+    reflection: string;
+    progress: number; // 0-100
+    challenges: string;
+    nextSteps: string;
+  }[];
+}
+
+export interface MilestoneReview {
+  needsReview: boolean;
+  reviewFrequency?: ReviewFrequency;
+  reviewStatus?: ReviewStatus;
+}
+
+export interface HabitReview {
+  reflectionFrequency: ReviewFrequency;
+  reviewStatus: ReviewStatus;
+  adherenceRate: number; // 0-100
+  streakData: {
+    currentStreak: number;
+    longestStreak: number;
+    lastCompletedDate: Timestamp;
+  };
 }

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ListTodo, Target, Layers, LogOut } from 'lucide-react';
+import { ListTodo, Target, Layers, LogOut, Calendar } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -51,6 +51,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               >
                 <Target className="w-4 h-4" />
                 Goals
+              </Link>
+              <Link
+                to="/planning"
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium ${
+                  location.pathname === '/planning' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                Weekly Planning
               </Link>
             </div>
             {user && (

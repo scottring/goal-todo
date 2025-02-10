@@ -5,6 +5,7 @@ import AreasPage from './pages/AreasPage';
 import AreaDetailsPage from './pages/AreaDetailsPage';
 import GoalsPage from './pages/GoalsPage';
 import GoalDetailPage from './pages/GoalDetailPage';
+import WeeklyPlanning from './components/planning/WeeklyPlanning';
 import SignUp from './components/auth/SignUp';
 import ForgotPassword from './components/auth/ForgotPassword';
 import { AreasProvider } from './contexts/AreasContext';
@@ -34,6 +35,7 @@ function App() {
                           <Route path="/areas/:areaId" element={<AreaDetailsPage />} />
                           <Route path="/goals" element={<GoalsPage />} />
                           <Route path="/goals/:goalId" element={<GoalDetailPage />} />
+                          <Route path="/planning" element={<WeeklyPlanning />} />
                         </Routes>
                       </Layout>
                     </SharedGoalsProvider>

@@ -6,7 +6,14 @@ import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
 import { useAreasContext } from '../contexts/AreasContext';
 import { SharedReviewsProvider } from '../contexts/SharedReviewsContext';
 import { Timestamp } from 'firebase/firestore';
-import type { DayOfWeek, TimeOfDay, RoutineSchedule, RoutineWithoutSystemFields } from '../types';
+import type { 
+  DayOfWeek, 
+  TimeOfDay, 
+  RoutineSchedule, 
+  RoutineWithoutSystemFields,
+  MeasurableMetric,
+  ReviewCycle
+} from '../types';
 
 type TaskPriority = 'low' | 'medium' | 'high';
 type TaskStatus = 'not_started' | 'in_progress' | 'completed';
@@ -33,6 +40,22 @@ const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
+
+const MEASURABLE_METRIC_LABELS: Record<MeasurableMetric, string> = {
+  count_occurrences: 'Count occurrences',
+  track_numeric: 'Track numeric value',
+  time_spent: 'Track time spent',
+  completion_rate: 'Track completion rate (%)',
+  binary_check: 'Yes/No completion',
+  custom: 'Custom metric'
+};
+
+const REVIEW_CYCLE_LABELS: Record<ReviewCycle, string> = {
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  biannual: 'Every 6 months',
+  yearly: 'Yearly'
+};
 
 // Cleaning function to remove undefined values recursively
 const cleanData = (data: any): any => {
@@ -813,9 +836,12 @@ const GoalDetailPage: React.FC = () => {
                 <div>
                   <h3 className="text-sm font-medium text-gray-700">Measurable Metric</h3>
                   <p className="mt-1 text-gray-600">
-                    {displayGoal.measurableMetric === 'custom' 
-                      ? displayGoal.customMetric 
-                      : displayGoal.measurableMetric.replace('_', ' ')}
+                    {MEASURABLE_METRIC_LABELS[displayGoal.measurableMetric]}
+                    {displayGoal.customMetric && (
+                      <span className="block text-sm text-gray-500">
+                        Custom metric: {displayGoal.customMetric}
+                      </span>
+                    )}
                   </p>
                 </div>
 
@@ -829,16 +855,33 @@ const GoalDetailPage: React.FC = () => {
                   <p className="mt-1 text-gray-600">{displayGoal.relevance}</p>
                 </div>
 
-                {displayGoal.deadline && (
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <Calendar className="w-4 h-4" />
-                    <span>
-                      Deadline: {displayGoal.deadline instanceof Timestamp 
-                        ? displayGoal.deadline.toDate().toLocaleDateString()
-                        : new Date(displayGoal.deadline).toLocaleDateString()}
-                    </span>
-                  </div>
-                )}
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700">Time Tracking</h3>
+                  {displayGoal.timeTracking.type === 'fixed_deadline' ? (
+                    displayGoal.timeTracking.deadline && (
+                      <div className="flex items-center gap-2 text-gray-600">
+                        <Calendar className="w-4 h-4" />
+                        <span>
+                          Deadline: {displayGoal.timeTracking.deadline.toDate().toLocaleDateString()}
+                        </span>
+                      </div>
+                    )
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-gray-600">
+                        Continuous goal with {REVIEW_CYCLE_LABELS[displayGoal.timeTracking.reviewCycle || 'monthly']} reviews
+                      </p>
+                      {displayGoal.timeTracking.nextReviewDate && (
+                        <div className="flex items-center gap-2 text-gray-600">
+                          <Calendar className="w-4 h-4" />
+                          <span>
+                            Next review: {displayGoal.timeTracking.nextReviewDate.toDate().toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 

@@ -112,6 +112,16 @@ export const useSharedGoals = () => {
         measurableMetric: 'custom',
         achievabilityCheck: 'yes',
         relevance: '',
+        timeTracking: {
+          type: 'recurring_review',
+          reviewCycle: 'monthly',
+          nextReviewDate: Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)), // 30 days from now
+          reviewStatus: {
+            lastReviewDate: Timestamp.now(),
+            nextReviewDate: Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+            completedReviews: []
+          }
+        },
         milestones: [],
         tasks: [],
         routines: [],
