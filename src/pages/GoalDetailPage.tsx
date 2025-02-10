@@ -6,7 +6,7 @@ import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
 import { useAreasContext } from '../contexts/AreasContext';
 import { SharedReviewsProvider } from '../contexts/SharedReviewsContext';
 import { Timestamp } from 'firebase/firestore';
-import type { DayOfWeek, TimeOfDay } from '../types';
+import type { DayOfWeek, TimeOfDay, RoutineSchedule, RoutineWithoutSystemFields } from '../types';
 
 interface RoutineFormData {
   title: string;
@@ -79,25 +79,46 @@ const GoalDetailPage: React.FC = () => {
     if (!routineForm.title.trim() || !displayGoal) return;
 
     try {
-      const newRoutine = {
+      // Create the schedule object with the correct type
+      const schedule: RoutineSchedule = {
+        type: routineForm.frequency,
+        targetCount: routineForm.targetCount,
+        timeOfDay: routineForm.frequency !== 'weekly' ? routineForm.schedule.timeOfDay : undefined,
+        daysOfWeek: routineForm.frequency === 'weekly' ? routineForm.schedule.daysOfWeek : undefined,
+        dayOfMonth: routineForm.frequency === 'monthly' ? routineForm.schedule.dayOfMonth : undefined,
+        monthsOfYear: ['quarterly', 'yearly'].includes(routineForm.frequency) ? routineForm.schedule.monthsOfYear : undefined
+      };
+
+      const newRoutine: RoutineWithoutSystemFields = {
         title: routineForm.title.trim(),
-        description: routineForm.description?.trim(),
+        description: routineForm.description?.trim() || '',
         frequency: routineForm.frequency,
-        schedule: {
-          type: routineForm.frequency,
-          daysOfWeek: routineForm.frequency === 'weekly' ? routineForm.schedule.daysOfWeek : undefined,
-          dayOfMonth: routineForm.frequency === 'monthly' ? routineForm.schedule.dayOfMonth : undefined,
-          monthsOfYear: ['quarterly', 'yearly'].includes(routineForm.frequency) ? routineForm.schedule.monthsOfYear : undefined,
-          timeOfDay: routineForm.frequency !== 'weekly' ? routineForm.schedule.timeOfDay : undefined,
-          targetCount: routineForm.targetCount
-        },
+        schedule,
         targetCount: routineForm.targetCount,
         endDate: routineForm.endDate ? Timestamp.fromDate(new Date(routineForm.endDate)) : undefined,
         completionDates: [],
-        weeklyCompletionTracker: []
+        weeklyCompletionTracker: new Array(7).fill(false),
+        areaId: displayGoal.areaId,
+        assignedTo: undefined
       };
 
-      const updatedRoutines = [...displayGoal.routines, newRoutine];
+      // Cleaning function to remove undefined values recursively
+      const cleanData = (data: any): any => {
+        if (data === undefined) return undefined;
+        if (Array.isArray(data)) return data.map(item => cleanData(item));
+        if (data && typeof data === 'object') {
+          return Object.fromEntries(
+            Object.entries(data)
+              .filter(([_, value]) => value !== undefined)
+              .map(([key, value]) => [key, cleanData(value)])
+          );
+        }
+        return data;
+      };
+
+      const cleanedRoutine = cleanData(newRoutine) as RoutineWithoutSystemFields;
+
+      const updatedRoutines = displayGoal.routines ? [...displayGoal.routines, cleanedRoutine] : [cleanedRoutine];
       
       if ('parentGoalId' in displayGoal) {
         await updateUserGoal(displayGoal.id, { routines: updatedRoutines });
@@ -112,10 +133,7 @@ const GoalDetailPage: React.FC = () => {
         schedule: {
           daysOfWeek: [],
           monthsOfYear: [],
-          timeOfDay: {
-            hour: 9,
-            minute: 0
-          }
+          timeOfDay: { hour: 9, minute: 0 }
         },
         targetCount: 1
       });
@@ -451,6 +469,15 @@ const GoalDetailPage: React.FC = () => {
       </div>
     );
   }
+
+  console.log('Goal Data:', {
+    id: displayGoal.id,
+    name: displayGoal.name,
+    routines: displayGoal.routines,
+    isSharedGoal,
+    userGoal: userGoal ? { id: userGoal.id, routines: userGoal.routines } : null,
+    goal: goal ? { id: goal.id, routines: goal.routines } : null
+  });
 
   return (
     <SharedReviewsProvider goalId={goalId}>
