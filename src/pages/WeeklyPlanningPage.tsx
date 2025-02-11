@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
 import { TaskReviewItem, TaskPriority, RoutineSchedule } from '../types';
 import {
@@ -12,7 +12,21 @@ import {
   StepLabel,
   Tabs,
   Tab,
-  Stack
+  Stack,
+  Card,
+  CardContent,
+  IconButton,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+  Chip,
+  Grid,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField
 } from '@mui/material';
 import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
@@ -22,6 +36,14 @@ import { NextWeekTaskPlanner } from '../components/NextWeekTaskPlanner';
 import { RecurringTaskScheduler } from '../components/RecurringTaskScheduler';
 import { v4 as uuidv4 } from 'uuid';
 import { WeeklyPlanSummary } from '../components/WeeklyPlanSummary';
+import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { format, addDays, isSameDay, startOfWeek } from 'date-fns';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
+import { useGoalsContext } from '../contexts/GoalsContext';
 
 interface PlannedTask {
   id: string;
@@ -35,6 +57,17 @@ interface RecurringTask {
   title: string;
   frequency: 'daily' | 'weekly' | 'monthly';
   schedule: RoutineSchedule;
+}
+
+interface UnscheduledItem {
+  id: string;
+  type: 'task' | 'routine';
+  title: string;
+  description?: string;
+  goalId?: string;
+  goalName?: string;
+  priority?: string;
+  suggestedDate?: Date;
 }
 
 const steps = ['Start Session', 'Weekly Review', 'Weekly Planning', 'Finalize'];
@@ -171,6 +204,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     updateSharedGoalReview,
     sendTeamReminders
   } = useWeeklyPlanning();
+  const { goals } = useGoalsContext();
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
@@ -214,24 +248,29 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
       {activeTab === 0 && (
         <TaskReviewList
-          tasks={[
-            // TODO: Get tasks from currentSession
-          ]}
+          tasks={currentSession?.reviewPhase.taskReviews || []}
           onTaskAction={handleTaskAction}
         />
       )}
 
       {activeTab === 1 && (
         <Stack spacing={3}>
-          {/* TODO: Get long-term goals from currentSession */}
-          <LongTermGoalReview
-            goalId="example"
-            goalName="Example Long-term Goal"
-            description="This is an example long-term goal"
-            lastReviewDate={Timestamp.now()} // TODO: Get actual last review date
-            nextReviewDate={Timestamp.now()} // TODO: Get actual next review date
-            onUpdateReview={handleGoalReview}
-          />
+          {goals.map(goal => (
+            <LongTermGoalReview
+              key={goal.id}
+              goalId={goal.id}
+              goalName={goal.name}
+              description={goal.specificAction}
+              lastReviewDate={goal.timeTracking.reviewStatus?.lastReviewDate || Timestamp.now()}
+              nextReviewDate={goal.timeTracking.nextReviewDate || Timestamp.now()}
+              onUpdateReview={handleGoalReview}
+            />
+          ))}
+          {goals.length === 0 && (
+            <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
+              No long-term goals found. Create some goals to start tracking your progress.
+            </Typography>
+          )}
         </Stack>
       )}
 
@@ -262,68 +301,268 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const {
     currentSession,
+    unscheduledItems,
     addNextWeekTask,
-    scheduleRecurringTask
+    scheduleRecurringTask,
+    fetchUnscheduledItems,
+    getScheduleSuggestions
   } = useWeeklyPlanning();
 
-  const handleAddNextWeekTask = async (task: Omit<PlannedTask, 'id'>) => {
-    const taskId = uuidv4();
-    await addNextWeekTask(taskId, task.priority, task.dueDate);
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<{
+    item: UnscheduledItem;
+    date: Date;
+    start?: Date;
+    end?: Date;
+  } | null>(null);
+
+  useEffect(() => {
+    fetchUnscheduledItems();
+  }, []);
+
+  const handleDragEnd = async (result: any) => {
+    if (!result.destination) return;
+
+    const itemId = result.draggableId;
+    const dayIndex = parseInt(result.destination.droppableId.replace('day-', ''));
+    const item = unscheduledItems.find(i => i.id === itemId);
+    
+    if (!item) return;
+
+    const date = addDays(startOfWeek(new Date()), dayIndex);
+    setSelectedTimeSlot({ item, date });
   };
 
-  const handleReorderTasks = async (startIndex: number, endIndex: number) => {
-    // TODO: Implement task reordering
+  const handleTimeSlotConfirm = async () => {
+    if (!selectedTimeSlot) return;
+
+    const { item, date, start, end } = selectedTimeSlot;
+    
+    if (item.type === 'task') {
+      await addNextWeekTask(
+        item.id,
+        item.priority || 'medium',
+        date,
+        start && end ? { start, end } : undefined
+      );
+    } else {
+      // Handle routine scheduling
+      await scheduleRecurringTask(item.id, 'weekly', {
+        daysOfWeek: [format(date, 'EEEE').toLowerCase()],
+        timeOfDay: start ? {
+          hour: start.getHours(),
+          minute: start.getMinutes()
+        } : undefined
+      });
+    }
+
+    setSelectedTimeSlot(null);
   };
 
-  const handleAddRecurringTask = async (task: Omit<RecurringTask, 'id'>) => {
-    const taskId = uuidv4();
-    await scheduleRecurringTask(taskId, task.frequency, task.schedule);
+  const renderTimeSlotDialog = () => {
+    if (!selectedTimeSlot) return null;
+
+    return (
+      <Dialog open={true} onClose={() => setSelectedTimeSlot(null)}>
+        <DialogTitle>
+          Schedule {selectedTimeSlot.item.type === 'task' ? 'Task' : 'Routine'}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2 }}>
+            <Typography variant="subtitle1" gutterBottom>
+              {selectedTimeSlot.item.title}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" gutterBottom>
+              {format(selectedTimeSlot.date, 'EEEE, MMMM d')}
+            </Typography>
+
+            <Box sx={{ mt: 3 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Time Slot (Optional)
+              </Typography>
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <Box sx={{ display: 'flex', gap: 2 }}>
+                  <TimePicker
+                    label="Start Time"
+                    value={selectedTimeSlot.start || null}
+                    onChange={(newValue) => {
+                      if (selectedTimeSlot) {
+                        setSelectedTimeSlot({
+                          ...selectedTimeSlot,
+                          start: newValue || undefined
+                        });
+                      }
+                    }}
+                  />
+                  <TimePicker
+                    label="End Time"
+                    value={selectedTimeSlot.end || null}
+                    onChange={(newValue) => {
+                      if (selectedTimeSlot) {
+                        setSelectedTimeSlot({
+                          ...selectedTimeSlot,
+                          end: newValue || undefined
+                        });
+                      }
+                    }}
+                  />
+                </Box>
+              </LocalizationProvider>
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedTimeSlot(null)}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handleTimeSlotConfirm}>
+            Schedule
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
   };
-
-  const nextWeekTasks = currentSession?.planningPhase.nextWeekTasks.map(task => ({
-    id: task.taskId,
-    title: task.taskId, // Using taskId as title temporarily
-    priority: task.priority,
-    dueDate: task.dueDate.toDate()
-  })) || [];
-
-  const recurringTasks = currentSession?.planningPhase.recurringTasks.map(task => ({
-    id: task.routineId,
-    title: task.routineId, // Using routineId as title temporarily
-    frequency: task.frequency,
-    schedule: task.schedule
-  })) || [];
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Typography variant="h5" gutterBottom>
-        Weekly Planning
-      </Typography>
+    <DragDropContext onDragEnd={handleDragEnd}>
+      <Paper sx={{ p: 3 }}>
+        <Typography variant="h5" gutterBottom>
+          Weekly Planning
+        </Typography>
 
-      <Stack spacing={3}>
-        <NextWeekTaskPlanner
-          tasks={nextWeekTasks}
-          onAddTask={handleAddNextWeekTask}
-          onUpdateTask={async () => {}} // TODO: Implement
-          onDeleteTask={async () => {}} // TODO: Implement
-          onReorderTasks={handleReorderTasks}
-        />
+        <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)' }}>
+          <Box sx={{ width: 300 }}>
+            <Typography variant="h6" gutterBottom>
+              Unscheduled Items
+            </Typography>
+            
+            <Droppable droppableId="unscheduled">
+              {(provided) => (
+                <List
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  sx={{ 
+                    bgcolor: 'background.paper',
+                    borderRadius: 1,
+                    boxShadow: 1
+                  }}
+                >
+                  {unscheduledItems.map((item, index) => (
+                    <Draggable key={item.id} draggableId={item.id} index={index}>
+                      {(provided) => (
+                        <ListItem
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                          sx={{ 
+                            '&:hover': { 
+                              bgcolor: 'action.hover' 
+                            }
+                          }}
+                        >
+                          <ListItemText
+                            primary={item.title}
+                            secondary={
+                              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                <Chip
+                                  label={item.type}
+                                  size="small"
+                                  color={item.type === 'task' ? 'primary' : 'secondary'}
+                                />
+                                {item.goalName && (
+                                  <Typography variant="caption" color="text.secondary">
+                                    {item.goalName}
+                                  </Typography>
+                                )}
+                              </Box>
+                            }
+                          />
+                          <ListItemSecondaryAction>
+                            <DragIndicatorIcon color="action" />
+                          </ListItemSecondaryAction>
+                        </ListItem>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
+                </List>
+              )}
+            </Droppable>
+          </Box>
 
-        <RecurringTaskScheduler
-          tasks={recurringTasks}
-          onAddTask={handleAddRecurringTask}
-          onUpdateTask={async () => {}} // TODO: Implement
-          onDeleteTask={async () => {}} // TODO: Implement
-        />
-      </Stack>
+          <Box sx={{ flex: 1 }}>
+            <Grid container spacing={2}>
+              {Array.from({ length: 7 }, (_, index) => {
+                const day = addDays(startOfWeek(new Date()), index);
+                return (
+                  <Grid item xs key={index}>
+                    <Paper 
+                      sx={{ 
+                        p: 2, 
+                        height: '100%',
+                        bgcolor: isSameDay(day, new Date()) ? 'primary.light' : 'background.paper'
+                      }}
+                    >
+                      <Typography variant="subtitle1" gutterBottom>
+                        {format(day, 'EEEE')}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {format(day, 'MMM d')}
+                      </Typography>
 
-      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-        <Button onClick={onBack}>Back</Button>
-        <Button variant="contained" onClick={onNext}>
-          Continue to Finalize
-        </Button>
-      </Box>
-    </Paper>
+                      <Droppable droppableId={`day-${index}`}>
+                        {(provided) => (
+                          <Box
+                            ref={provided.innerRef}
+                            {...provided.droppableProps}
+                            sx={{ 
+                              minHeight: 100,
+                              mt: 2,
+                              border: '2px dashed',
+                              borderColor: 'divider',
+                              borderRadius: 1,
+                              p: 1
+                            }}
+                          >
+                            {currentSession?.planningPhase.nextWeekTasks
+                              .filter(task => isSameDay(task.dueDate.toDate(), day))
+                              .map((task, taskIndex) => (
+                                <Box
+                                  key={task.taskId}
+                                  sx={{
+                                    p: 1,
+                                    mb: 1,
+                                    bgcolor: 'background.default',
+                                    borderRadius: 1,
+                                    boxShadow: 1
+                                  }}
+                                >
+                                  <Typography variant="body2" noWrap>
+                                    {task.taskId}
+                                  </Typography>
+                                </Box>
+                              ))}
+                            {provided.placeholder}
+                          </Box>
+                        )}
+                      </Droppable>
+                    </Paper>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          </Box>
+        </Box>
+
+        {renderTimeSlotDialog()}
+
+        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
+          <Button onClick={onBack}>Back</Button>
+          <Button variant="contained" onClick={onNext}>
+            Continue to Finalize
+          </Button>
+        </Box>
+      </Paper>
+    </DragDropContext>
   );
 };
 

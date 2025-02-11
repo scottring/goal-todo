@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Card,
@@ -8,17 +8,43 @@ import {
   ButtonGroup,
   Chip,
   Stack,
-  Divider
+  Divider,
+  CircularProgress
 } from '@mui/material';
 import { TaskReviewItem } from '../types';
 import { format } from 'date-fns';
+import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
 
 interface TaskReviewListProps {
   tasks: TaskReviewItem[];
-  onTaskAction: (taskId: string, action: string) => void;
 }
 
-export const TaskReviewList: React.FC<TaskReviewListProps> = ({ tasks, onTaskAction }) => {
+export const TaskReviewList = ({ tasks }: TaskReviewListProps) => {
+  const { updateTaskReview } = useWeeklyPlanning();
+  const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
+
+  const handleTaskAction = async (
+    task: TaskReviewItem, 
+    action: 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close'
+  ) => {
+    try {
+      setLoadingTaskId(task.taskId);
+      const updatedTask: TaskReviewItem = {
+        ...task,
+        action,
+        status: action === 'mark_completed' ? 'completed' : 
+                action === 'mark_missed' ? 'missed' : 
+                action === 'push_forward' ? 'partial' : 'needs_review'
+      };
+      await updateTaskReview(updatedTask);
+    } catch (error) {
+      console.error('Error updating task:', error);
+      // You could add a toast notification here
+    } finally {
+      setLoadingTaskId(null);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'completed':
@@ -33,25 +59,56 @@ export const TaskReviewList: React.FC<TaskReviewListProps> = ({ tasks, onTaskAct
   };
 
   const renderTaskActions = (task: TaskReviewItem) => {
-    const actions = [
-      { label: 'Mark Complete', value: 'mark_completed' },
-      { label: 'Push Forward', value: 'push_forward' },
-      { label: 'Mark Missed', value: 'mark_missed' },
-      { label: 'Archive', value: 'archive' }
-    ];
+    const isLoading = loadingTaskId === task.taskId;
+    const buttonStyle = { margin: '0 4px' };
+
+    if (task.action) {
+      return (
+        <Typography color="textSecondary">
+          {task.action === 'mark_completed' && 'Marked as completed'}
+          {task.action === 'mark_missed' && 'Marked as missed'}
+          {task.action === 'push_forward' && 'Pushed forward'}
+          {task.action === 'archive' && 'Archived'}
+        </Typography>
+      );
+    }
 
     return (
-      <ButtonGroup size="small" variant="outlined">
-        {actions.map((action) => (
-          <Button
-            key={action.value}
-            onClick={() => onTaskAction(task.taskId, action.value)}
-            disabled={task.action === action.value}
-          >
-            {action.label}
-          </Button>
-        ))}
-      </ButtonGroup>
+      <Box>
+        {isLoading ? (
+          <CircularProgress size={24} />
+        ) : (
+          <>
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              style={buttonStyle}
+              onClick={() => handleTaskAction(task, 'mark_completed')}
+            >
+              Complete
+            </Button>
+            <Button
+              variant="contained"
+              color="warning"
+              size="small"
+              style={buttonStyle}
+              onClick={() => handleTaskAction(task, 'push_forward')}
+            >
+              Push Forward
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              size="small"
+              style={buttonStyle}
+              onClick={() => handleTaskAction(task, 'mark_missed')}
+            >
+              Mark Missed
+            </Button>
+          </>
+        )}
+      </Box>
     );
   };
 
@@ -90,18 +147,9 @@ export const TaskReviewList: React.FC<TaskReviewListProps> = ({ tasks, onTaskAct
                   </Typography>
                 )}
               </Box>
-              {task.action && (
-                <Chip
-                  label={`Action: ${task.action.replace('_', ' ')}`}
-                  variant="outlined"
-                  size="small"
-                />
-              )}
-            </Box>
-            <Divider sx={{ my: 2 }} />
-            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
               {renderTaskActions(task)}
             </Box>
+            <Divider sx={{ my: 2 }} />
           </CardContent>
         </Card>
       ))}

@@ -21,6 +21,7 @@ import { ThemeProvider, createTheme } from '@mui/material/styles';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import CssBaseline from '@mui/material/CssBaseline';
+import { TestWeeklyPlanning } from './test/TestWeeklyPlanning';
 
 const theme = createTheme({
   palette: {
@@ -46,6 +47,7 @@ function App() {
                 <Route path="/signin" element={<SignIn />} />
                 <Route path="/signup" element={<SignUp />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/test/weekly-planning" element={<TestWeeklyPlanning />} />
                 <Route
                   path="/*"
                   element={

@@ -19,7 +19,15 @@ export const useGoals = () => {
       const fetchedGoals = await getCollection<SourceActivity>('activities', [
         where('ownerId', '==', user?.uid)
       ]);
-      setGoals(fetchedGoals);
+      
+      // Ensure tasks and routines are arrays
+      const processedGoals = fetchedGoals.map(goal => ({
+        ...goal,
+        tasks: Array.isArray(goal.tasks) ? goal.tasks : [],
+        routines: Array.isArray(goal.routines) ? goal.routines : []
+      }));
+      
+      setGoals(processedGoals);
       setError(null);
     } catch (err) {
       setError(err as Error);

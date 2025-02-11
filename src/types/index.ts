@@ -278,6 +278,7 @@ export interface WeeklyPlanningSession extends BaseDocument {
     completedTasks: string[];  // Task IDs
     missedTasks: string[];     // Task IDs
     partiallyCompletedTasks: string[];  // Task IDs
+    taskReviews: TaskReviewItem[];  // Add this field
     longTermGoalReviews: {
       goalId: string;
       madeProgress: boolean;
