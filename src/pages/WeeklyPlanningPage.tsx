@@ -26,7 +26,9 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField
+  TextField,
+  Badge,
+  Alert
 } from '@mui/material';
 import {
   DndContext,
@@ -274,6 +276,18 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     await sendTeamReminders(goalId, [userId]);
   };
 
+  const getTaskReviewCount = () => {
+    return currentSession?.reviewPhase?.taskReviews?.length || 0;
+  };
+
+  const getSharedGoalReviewCount = () => {
+    return currentSession?.reviewPhase?.sharedGoalReviews?.length || 0;
+  };
+
+  const getLongTermGoalCount = () => {
+    return goals?.length || 0;
+  };
+
   return (
     <Paper sx={{ p: 3 }}>
       <Typography variant="h5" gutterBottom>
@@ -282,9 +296,36 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
         <Tabs value={activeTab} onChange={handleTabChange} aria-label="review tabs">
-          <Tab label="Tasks & Routines" />
-          <Tab label="Long-term Goals" />
-          <Tab label="Shared Goals" />
+          <Tab
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <span>TASKS & ROUTINES</span>
+                {getTaskReviewCount() > 0 && (
+                  <Badge badgeContent={getTaskReviewCount()} color="error" sx={{ ml: 1 }} />
+                )}
+              </Box>
+            }
+          />
+          <Tab
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <span>LONG-TERM GOALS</span>
+                {getLongTermGoalCount() > 0 && (
+                  <Badge badgeContent={getLongTermGoalCount()} color="error" sx={{ ml: 1 }} />
+                )}
+              </Box>
+            }
+          />
+          <Tab
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <span>SHARED GOALS</span>
+                {getSharedGoalReviewCount() > 0 && (
+                  <Badge badgeContent={getSharedGoalReviewCount()} color="error" sx={{ ml: 1 }} />
+                )}
+              </Box>
+            }
+          />
         </Tabs>
       </Box>
 
@@ -465,6 +506,9 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
   const [localUnscheduledItems, setLocalUnscheduledItems] = useState<UnscheduledItem[]>(unscheduledItems);
 
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [scheduledTasks, setScheduledTasks] = useState<{[key: string]: string}>({});  // Map taskId to title
+
   useEffect(() => {
     fetchUnscheduledItems();
   }, []);
@@ -472,6 +516,20 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   useEffect(() => {
     setLocalUnscheduledItems(unscheduledItems);
   }, [unscheduledItems]);
+
+  useEffect(() => {
+    // Initialize scheduledTasks with existing tasks from currentSession
+    if (currentSession?.planningPhase?.nextWeekTasks) {
+      const taskMap = {};
+      currentSession.planningPhase.nextWeekTasks.forEach(task => {
+        const item = unscheduledItems.find(i => i.id === task.taskId);
+        if (item) {
+          taskMap[task.taskId] = item.title;
+        }
+      });
+      setScheduledTasks(taskMap);
+    }
+  }, [currentSession]);
 
   const handleDragStart = (event: any) => {
     setActiveId(event.active.id);
@@ -504,34 +562,99 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     
     try {
       if (item.type === 'task') {
+        // Validate and create task data with default values if needed
         const taskData = {
           taskId: item.id,
-          priority: item.priority as TaskPriority || 'medium',
+          priority: (item.priority as TaskPriority) || 'medium',
           dueDate: Timestamp.fromDate(date)
         };
 
-        // Only add calendar sync event if both start and end times are provided
-        const calendarEvent = start && end ? {
-          eventId: `task_${item.id}`,
-          taskId: item.id,
-          startTime: Timestamp.fromDate(start),
-          endTime: Timestamp.fromDate(end)
-        } : null;
+        // Validate taskData
+        if (!taskData.taskId || !taskData.priority || !taskData.dueDate) {
+          console.error('Invalid task data:', taskData);
+          throw new Error('Invalid task data: Missing required fields');
+        }
 
-        // Update session with new task and optional calendar event
+        // Create calendar event only if both start and end times exist
+        let calendarEvent = null;
+        if (start && end) {
+          calendarEvent = {
+            eventId: `task_${item.id}`,
+            taskId: item.id,
+            startTime: Timestamp.fromDate(start),
+            endTime: Timestamp.fromDate(end)
+          };
+        }
+
         if (currentSession) {
           const updatedSession = { ...currentSession };
+          
+          // Initialize planningPhase if it doesn't exist
+          if (!updatedSession.planningPhase) {
+            updatedSession.planningPhase = {
+              nextWeekTasks: [],
+              sharedGoalAssignments: [],
+              recurringTasks: [],
+              calendarSyncStatus: {
+                synced: false,
+                syncedEvents: []
+              }
+            };
+          }
+
+          // Ensure all arrays exist
+          if (!Array.isArray(updatedSession.planningPhase.nextWeekTasks)) {
+            updatedSession.planningPhase.nextWeekTasks = [];
+          }
+          if (!Array.isArray(updatedSession.planningPhase.sharedGoalAssignments)) {
+            updatedSession.planningPhase.sharedGoalAssignments = [];
+          }
+          if (!Array.isArray(updatedSession.planningPhase.recurringTasks)) {
+            updatedSession.planningPhase.recurringTasks = [];
+          }
+
+          // Ensure calendarSyncStatus exists
+          if (!updatedSession.planningPhase.calendarSyncStatus) {
+            updatedSession.planningPhase.calendarSyncStatus = {
+              synced: false,
+              syncedEvents: []
+            };
+          }
+          if (!Array.isArray(updatedSession.planningPhase.calendarSyncStatus.syncedEvents)) {
+            updatedSession.planningPhase.calendarSyncStatus.syncedEvents = [];
+          }
+
+          // Add the task
           updatedSession.planningPhase.nextWeekTasks.push(taskData);
 
+          // Add calendar event if it exists
           if (calendarEvent) {
             updatedSession.planningPhase.calendarSyncStatus.syncedEvents.push(calendarEvent);
           }
 
-          // Clean undefined values before updating Firestore
+          // Clean any potential undefined values before updating
           const cleanedSession = JSON.parse(JSON.stringify(updatedSession));
-          await updateDocument('weeklyPlanningSessions', currentSession.id, cleanedSession);
           await updateSession(cleanedSession);
+
+          // Update task scheduling only after session is updated
+          await addNextWeekTask(
+            item.id,
+            taskData.priority,
+            date,
+            start && end ? { start, end } : undefined
+          );
         }
+
+        // After successful scheduling
+        setScheduledTasks(prev => ({
+          ...prev,
+          [item.id]: item.title
+        }));
+        setSuccessMessage(`Successfully scheduled "${item.title}" for ${format(date, 'EEEE, MMMM d')}`);
+        setTimeout(() => setSuccessMessage(null), 3000);
+
+        // Update local unscheduled items list
+        setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
       } else {
         // Handle routine scheduling
         const timeOfDay: TimeOfDay = start ? {
@@ -556,33 +679,57 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
         if (currentSession) {
           const updatedSession = { ...currentSession };
+          
+          // Initialize planningPhase if it doesn't exist
+          if (!updatedSession.planningPhase) {
+            updatedSession.planningPhase = {
+              nextWeekTasks: [],
+              sharedGoalAssignments: [],
+              recurringTasks: [],
+              calendarSyncStatus: {
+                synced: false,
+                syncedEvents: []
+              }
+            };
+          }
+
+          // Ensure all arrays exist
+          if (!Array.isArray(updatedSession.planningPhase.nextWeekTasks)) {
+            updatedSession.planningPhase.nextWeekTasks = [];
+          }
+          if (!Array.isArray(updatedSession.planningPhase.sharedGoalAssignments)) {
+            updatedSession.planningPhase.sharedGoalAssignments = [];
+          }
+          if (!Array.isArray(updatedSession.planningPhase.recurringTasks)) {
+            updatedSession.planningPhase.recurringTasks = [];
+          }
+
+          // Add the routine
           updatedSession.planningPhase.recurringTasks.push(scheduleData);
 
-          // Clean undefined values before updating Firestore
+          // Clean any potential undefined values before updating
           const cleanedSession = JSON.parse(JSON.stringify(updatedSession));
-          await updateDocument('weeklyPlanningSessions', currentSession.id, cleanedSession);
           await updateSession(cleanedSession);
-        }
-      }
 
-      // Update local unscheduled items list
-      setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
-      
-      // Call the original handlers
-      if (item.type === 'task') {
-        await addNextWeekTask(item.id, item.priority as TaskPriority || 'medium', date, start && end ? { start, end } : undefined);
-      } else {
-        await scheduleRecurringTask(item.id, 'weekly', {
-          daysOfWeek: [format(date, 'EEEE').toLowerCase()],
-          timeOfDay: start ? {
-            hour: start.getHours(),
-            minute: start.getMinutes()
-          } : undefined
-        });
+          // Update routine scheduling only after session is updated
+          await scheduleRecurringTask(item.id, 'weekly', {
+            type: 'weekly',
+            daysOfWeek: [daySchedule],
+            timeOfDay,
+            targetCount: 1
+          });
+        }
+
+        setSuccessMessage(`Successfully scheduled routine "${item.title}" for ${format(date, 'EEEE, MMMM d')}`);
+        setTimeout(() => setSuccessMessage(null), 3000);
+
+        // Update local unscheduled items list
+        setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
       }
     } catch (error) {
       console.error('Error scheduling item:', error);
-      // You might want to show an error message to the user here
+      setSuccessMessage(`Error scheduling item: ${error.message}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
     }
 
     setSelectedTimeSlot(null);
@@ -593,6 +740,16 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
       <Typography variant="h5" gutterBottom>
         Weekly Planning
       </Typography>
+
+      {successMessage && (
+        <Alert 
+          severity="success" 
+          sx={{ mb: 2 }}
+          onClose={() => setSuccessMessage(null)}
+        >
+          {successMessage}
+        </Alert>
+      )}
 
       <DndContext
         sensors={sensors}
@@ -627,9 +784,9 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
                 return (
                   <Grid item xs key={index}>
                     <DroppableDay day={day} index={index}>
-                      {currentSession?.planningPhase.nextWeekTasks
-                        .filter(task => isSameDay(task.dueDate.toDate(), day))
-                        .map((task) => (
+                      {currentSession?.planningPhase?.nextWeekTasks
+                        ?.filter(task => isSameDay(task.dueDate.toDate(), day))
+                        ?.map((task) => (
                           <Box
                             key={task.taskId}
                             sx={{
@@ -637,11 +794,24 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
                               mb: 1,
                               bgcolor: 'background.default',
                               borderRadius: 1,
-                              boxShadow: 1
+                              boxShadow: 1,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 1
                             }}
                           >
+                            <Box
+                              sx={{
+                                width: 4,
+                                height: 24,
+                                borderRadius: 1,
+                                bgcolor: task.priority === 'high' ? 'error.main' : 
+                                        task.priority === 'medium' ? 'warning.main' : 
+                                        'success.main'
+                              }}
+                            />
                             <Typography variant="body2" noWrap>
-                              {task.taskId}
+                              {scheduledTasks[task.taskId] || task.taskId}
                             </Typography>
                           </Box>
                         ))}

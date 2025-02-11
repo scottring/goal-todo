@@ -99,10 +99,19 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
       try {
         // Always normalize the review date to the appropriate Sunday
         const normalizedReviewDate = getNextReviewDate(reviewDate);
-        await onUpdateReview(goalId, madeProgress, adjustments, normalizedReviewDate);
+        
+        // Create review data with only defined values
+        const reviewData = {
+          goalId,
+          madeProgress,
+          ...(adjustments && { adjustments }), // Only include if adjustments exists
+          nextReviewDate: normalizedReviewDate
+        };
+        
+        await onUpdateReview(goalId, madeProgress, adjustments || '', normalizedReviewDate);
         setSavedReview({
           madeProgress,
-          adjustments,
+          ...(adjustments && { adjustments }),
           nextReviewDate: normalizedReviewDate
         });
         setHasBeenReviewed(true);

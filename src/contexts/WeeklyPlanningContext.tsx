@@ -362,7 +362,8 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
         dueDate: Timestamp.fromDate(dueDate)
       });
 
-      if (timeSlot) {
+      // Only add calendar sync event if both start and end times are provided
+      if (timeSlot && timeSlot.start && timeSlot.end) {
         updatedSession.planningPhase.calendarSyncStatus.syncedEvents.push({
           eventId: `task_${taskId}`,
           taskId,
@@ -419,7 +420,9 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   const updateSession = async (session: WeeklyPlanningSession) => {
     try {
       setIsLoading(true);
-      await updateDocument('weeklyPlanningSessions', session.id, session);
+      // Clean the session data before updating Firestore
+      const cleanedSession = removeUndefinedFields(session);
+      await updateDocument('weeklyPlanningSessions', session.id, cleanedSession);
       setCurrentSession(session);
     } catch (error) {
       console.error('Error updating session:', error);
