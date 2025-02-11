@@ -8,7 +8,8 @@ import {
   Routine,
   RoutineWithoutSystemFields,
   SourceActivity,
-  TaskPriority 
+  TaskPriority,
+  RoutineSchedule
 } from '../types';
 import { useAuth } from './AuthContext';
 import { useGoalsContext } from './GoalsContext';
@@ -25,7 +26,7 @@ interface UnscheduledItem {
   suggestedDate?: Date;
 }
 
-interface WeeklyPlanningContextType {
+export interface WeeklyPlanningContextType {
   currentSession: WeeklyPlanningSession | null;
   isLoading: boolean;
   error: string | null;
@@ -34,14 +35,14 @@ interface WeeklyPlanningContextType {
   moveToReviewPhase: () => Promise<void>;
   moveToPlanningPhase: () => Promise<void>;
   completeSession: () => Promise<void>;
-  updateTaskReview: (taskReview: TaskReviewItem) => Promise<void>;
+  updateTaskReview: (task: TaskReviewItem) => Promise<void>;
   updateLongTermGoalReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => Promise<void>;
   updateSharedGoalReview: (goalId: string, completedTasks: string[], pendingTasks: string[]) => Promise<void>;
   sendTeamReminders: (goalId: string, userIds: string[]) => Promise<void>;
-  addNextWeekTask: (taskId: string, priority: string, dueDate: Date, timeSlot?: { start: Date; end: Date }) => Promise<void>;
-  assignSharedGoalTask: (goalId: string, taskId: string, assignedTo: string, dueDate: Date) => Promise<void>;
-  scheduleRecurringTask: (routineId: string, frequency: string, schedule: any) => Promise<void>;
   syncWithCalendar: () => Promise<void>;
+  updateSession: (session: WeeklyPlanningSession) => Promise<void>;
+  addNextWeekTask: (taskId: string, priority: TaskPriority, dueDate: Date, timeSlot?: { start: Date; end: Date }) => Promise<void>;
+  scheduleRecurringTask: (routineId: string, frequency: string, schedule: RoutineSchedule) => Promise<void>;
   fetchUnscheduledItems: () => Promise<void>;
   getScheduleSuggestions: (item: UnscheduledItem) => Date[];
 }
@@ -330,9 +331,19 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   };
 
   const getScheduleSuggestions = (item: UnscheduledItem): Date[] => {
-    // Implementation for getting multiple date suggestions
-    // based on item type, priority, and available slots
-    return [new Date()]; // Placeholder
+    // TODO: Implement actual scheduling suggestions
+    const suggestions: Date[] = [];
+    const today = new Date();
+    
+    // Add some default suggestions
+    for (let i = 0; i < 3; i++) {
+      const suggestion = new Date(today);
+      suggestion.setDate(today.getDate() + i);
+      suggestion.setHours(9 + i * 2, 0, 0, 0); // Suggest 9am, 11am, 1pm
+      suggestions.push(suggestion);
+    }
+    
+    return suggestions;
   };
 
   const addNextWeekTask = async (
@@ -405,7 +416,45 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     }
   };
 
-  const value = {
+  const updateSession = async (session: WeeklyPlanningSession) => {
+    try {
+      setIsLoading(true);
+      await updateDocument('weeklyPlanningSessions', session.id, session);
+      setCurrentSession(session);
+    } catch (error) {
+      console.error('Error updating session:', error);
+      setError('Failed to update session');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const updateSharedGoalReview = async (goalId: string, completedTasks: string[], pendingTasks: string[]) => {
+    try {
+      setIsLoading(true);
+      if (!currentSession) throw new Error('No active session');
+
+      const updatedSession = { ...currentSession };
+      const sharedGoalReview = updatedSession.reviewPhase.sharedGoalReviews.find(
+        review => review.goalId === goalId
+      );
+
+      if (sharedGoalReview) {
+        sharedGoalReview.completedTasks = completedTasks;
+        sharedGoalReview.pendingTasks = pendingTasks;
+        await updateSession(updatedSession);
+      }
+    } catch (error) {
+      console.error('Error updating shared goal review:', error);
+      setError('Failed to update shared goal review');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const value: WeeklyPlanningContextType = {
     currentSession,
     isLoading,
     error,
@@ -416,12 +465,12 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     completeSession,
     updateTaskReview,
     updateLongTermGoalReview,
-    updateSharedGoalReview: async () => {}, // TODO: Implement
+    updateSharedGoalReview,
     sendTeamReminders: async () => {}, // TODO: Implement
-    addNextWeekTask,
-    assignSharedGoalTask: async () => {}, // TODO: Implement
-    scheduleRecurringTask: async () => {}, // TODO: Implement
     syncWithCalendar: async () => {}, // TODO: Implement
+    updateSession,
+    addNextWeekTask,
+    scheduleRecurringTask: async () => {}, // TODO: Implement
     fetchUnscheduledItems,
     getScheduleSuggestions
   };

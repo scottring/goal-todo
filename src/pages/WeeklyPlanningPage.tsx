@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Dispatch, SetStateAction } from 'react';
 import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
-import { TaskReviewItem, TaskPriority, RoutineSchedule } from '../types';
+import { TaskReviewItem, TaskPriority, RoutineSchedule, DaySchedule, TimeOfDay } from '../types';
 import {
   Box,
   Button,
@@ -28,6 +28,23 @@ import {
   DialogActions,
   TextField
 } from '@mui/material';
+import {
+  DndContext,
+  DragOverlay,
+  useSensors,
+  useSensor,
+  PointerSensor,
+  KeyboardSensor,
+  closestCorners,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
@@ -36,7 +53,6 @@ import { NextWeekTaskPlanner } from '../components/NextWeekTaskPlanner';
 import { RecurringTaskScheduler } from '../components/RecurringTaskScheduler';
 import { v4 as uuidv4 } from 'uuid';
 import { WeeklyPlanSummary } from '../components/WeeklyPlanSummary';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
 import { format, addDays, isSameDay, startOfWeek } from 'date-fns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -44,6 +60,7 @@ import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { useGoalsContext } from '../contexts/GoalsContext';
+import { updateDocument } from '../utils/firestore';
 
 interface PlannedTask {
   id: string;
@@ -70,6 +87,24 @@ interface UnscheduledItem {
   suggestedDate?: Date;
 }
 
+interface WeeklyPlanningContextType {
+  currentSession: any;
+  isLoading: boolean;
+  error: string | null;
+  startNewSession: () => Promise<void>;
+  moveToReviewPhase: () => Promise<void>;
+  moveToPlanningPhase: () => Promise<void>;
+  completeSession: () => Promise<void>;
+  updateTaskReview: (task: TaskReviewItem) => Promise<void>;
+  updateLongTermGoalReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => Promise<void>;
+  updateSharedGoalReview: (goalId: string, completedTasks: string[], pendingTasks: string[]) => Promise<void>;
+  sendTeamReminders: (goalId: string, userIds: string[]) => Promise<void>;
+  syncWithCalendar: () => Promise<void>;
+  setCurrentSession: Dispatch<SetStateAction<any>>;
+  setUnscheduledItems: Dispatch<SetStateAction<UnscheduledItem[]>>;
+  updateSession: (session: any) => Promise<void>;
+}
+
 const steps = ['Start Session', 'Weekly Review', 'Weekly Planning', 'Finalize'];
 
 export const WeeklyPlanningPage: React.FC = () => {
@@ -85,7 +120,10 @@ export const WeeklyPlanningPage: React.FC = () => {
     updateLongTermGoalReview,
     updateSharedGoalReview,
     sendTeamReminders,
-    syncWithCalendar
+    syncWithCalendar,
+    setCurrentSession,
+    setUnscheduledItems,
+    updateSession
   } = useWeeklyPlanning();
 
   const [activeStep, setActiveStep] = useState(0);
@@ -302,6 +340,102 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   );
 };
 
+const SortableItem = ({ id, item }: { id: string; item: UnscheduledItem }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    position: 'relative' as const,
+    zIndex: isDragging ? 1 : 0
+  };
+
+  return (
+    <ListItem
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      sx={{ 
+        '&:hover': { bgcolor: 'action.hover' },
+        cursor: 'grab'
+      }}
+    >
+      <ListItemText
+        primary={item.title}
+        primaryTypographyProps={{ component: 'span' }}
+        secondaryTypographyProps={{ component: 'span' }}
+        secondary={
+          <Box component="span" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+            <Chip
+              label={item.type}
+              size="small"
+              color={item.type === 'task' ? 'primary' : 'secondary'}
+            />
+            {item.goalName && (
+              <Typography component="span" variant="caption" color="text.secondary">
+                {item.goalName}
+              </Typography>
+            )}
+          </Box>
+        }
+      />
+      <ListItemSecondaryAction>
+        <DragIndicatorIcon color="action" />
+      </ListItemSecondaryAction>
+    </ListItem>
+  );
+};
+
+const DroppableDay = ({ day, index, children }: { day: Date; index: number; children: React.ReactNode }) => {
+  const {
+    setNodeRef,
+    isOver
+  } = useSortable({
+    id: `day-${index}`,
+    data: {
+      type: 'day',
+      date: day
+    }
+  });
+
+  return (
+    <Paper 
+      ref={setNodeRef}
+      sx={{ 
+        p: 2, 
+        height: '100%',
+        bgcolor: isSameDay(day, new Date()) ? 'primary.light' : 'background.paper',
+        border: isOver ? '2px dashed' : '2px solid transparent',
+        borderColor: isOver ? 'primary.main' : 'transparent'
+      }}
+    >
+      <Typography variant="subtitle1" gutterBottom>
+        {format(day, 'EEEE')}
+      </Typography>
+      <Typography variant="caption" color="text.secondary">
+        {format(day, 'MMM d')}
+      </Typography>
+      <Box sx={{ 
+        minHeight: 100,
+        mt: 2,
+        borderRadius: 1,
+        p: 1
+      }}>
+        {children}
+      </Box>
+    </Paper>
+  );
+};
+
 const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const {
     currentSession,
@@ -309,7 +443,8 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     addNextWeekTask,
     scheduleRecurringTask,
     fetchUnscheduledItems,
-    getScheduleSuggestions
+    getScheduleSuggestions,
+    updateSession
   } = useWeeklyPlanning();
 
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<{
@@ -319,21 +454,47 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     end?: Date;
   } | null>(null);
 
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const [localUnscheduledItems, setLocalUnscheduledItems] = useState<UnscheduledItem[]>(unscheduledItems);
+
   useEffect(() => {
     fetchUnscheduledItems();
   }, []);
 
-  const handleDragEnd = async (result: any) => {
-    if (!result.destination) return;
+  useEffect(() => {
+    setLocalUnscheduledItems(unscheduledItems);
+  }, [unscheduledItems]);
 
-    const itemId = result.draggableId;
-    const dayIndex = parseInt(result.destination.droppableId.replace('day-', ''));
-    const item = unscheduledItems.find(i => i.id === itemId);
+  const handleDragStart = (event: any) => {
+    setActiveId(event.active.id);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    setActiveId(null);
+    const { active, over } = event;
     
-    if (!item) return;
+    if (!over) return;
 
-    const date = addDays(startOfWeek(new Date()), dayIndex);
-    setSelectedTimeSlot({ item, date });
+    const itemId = active.id as string;
+    const targetId = over.id as string;
+    
+    if (targetId.startsWith('day-')) {
+      const dayIndex = parseInt(targetId.replace('day-', ''));
+      const item = unscheduledItems.find(i => i.id === itemId);
+      
+      if (!item) return;
+
+      const date = addDays(startOfWeek(new Date()), dayIndex);
+      setSelectedTimeSlot({ item, date });
+    }
   };
 
   const handleTimeSlotConfirm = async () => {
@@ -341,156 +502,122 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
     const { item, date, start, end } = selectedTimeSlot;
     
-    if (item.type === 'task') {
-      await addNextWeekTask(
-        item.id,
-        item.priority || 'medium',
-        date,
-        start && end ? { start, end } : undefined
-      );
-    } else {
-      // Handle routine scheduling
-      await scheduleRecurringTask(item.id, 'weekly', {
-        daysOfWeek: [format(date, 'EEEE').toLowerCase()],
-        timeOfDay: start ? {
+    try {
+      if (item.type === 'task') {
+        const taskData = {
+          taskId: item.id,
+          priority: item.priority as TaskPriority || 'medium',
+          dueDate: Timestamp.fromDate(date)
+        };
+
+        // Only add calendar sync event if both start and end times are provided
+        const calendarEvent = start && end ? {
+          eventId: `task_${item.id}`,
+          taskId: item.id,
+          startTime: Timestamp.fromDate(start),
+          endTime: Timestamp.fromDate(end)
+        } : null;
+
+        // Update session with new task and optional calendar event
+        if (currentSession) {
+          const updatedSession = { ...currentSession };
+          updatedSession.planningPhase.nextWeekTasks.push(taskData);
+
+          if (calendarEvent) {
+            updatedSession.planningPhase.calendarSyncStatus.syncedEvents.push(calendarEvent);
+          }
+
+          // Clean undefined values before updating Firestore
+          const cleanedSession = JSON.parse(JSON.stringify(updatedSession));
+          await updateDocument('weeklyPlanningSessions', currentSession.id, cleanedSession);
+          await updateSession(cleanedSession);
+        }
+      } else {
+        // Handle routine scheduling
+        const timeOfDay: TimeOfDay = start ? {
           hour: start.getHours(),
           minute: start.getMinutes()
-        } : undefined
-      });
+        } : { hour: 9, minute: 0 }; // Default to 9 AM if no time selected
+
+        const daySchedule: DaySchedule = {
+          day: format(date, 'EEEE').toLowerCase() as DaySchedule['day'],
+          time: timeOfDay
+        };
+
+        const scheduleData = {
+          routineId: item.id,
+          frequency: 'weekly' as const,
+          schedule: {
+            type: 'weekly' as const,
+            daysOfWeek: [daySchedule],
+            targetCount: 1
+          }
+        };
+
+        if (currentSession) {
+          const updatedSession = { ...currentSession };
+          updatedSession.planningPhase.recurringTasks.push(scheduleData);
+
+          // Clean undefined values before updating Firestore
+          const cleanedSession = JSON.parse(JSON.stringify(updatedSession));
+          await updateDocument('weeklyPlanningSessions', currentSession.id, cleanedSession);
+          await updateSession(cleanedSession);
+        }
+      }
+
+      // Update local unscheduled items list
+      setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
+      
+      // Call the original handlers
+      if (item.type === 'task') {
+        await addNextWeekTask(item.id, item.priority as TaskPriority || 'medium', date, start && end ? { start, end } : undefined);
+      } else {
+        await scheduleRecurringTask(item.id, 'weekly', {
+          daysOfWeek: [format(date, 'EEEE').toLowerCase()],
+          timeOfDay: start ? {
+            hour: start.getHours(),
+            minute: start.getMinutes()
+          } : undefined
+        });
+      }
+    } catch (error) {
+      console.error('Error scheduling item:', error);
+      // You might want to show an error message to the user here
     }
 
     setSelectedTimeSlot(null);
   };
 
-  const renderTimeSlotDialog = () => {
-    if (!selectedTimeSlot) return null;
-
-    return (
-      <Dialog open={true} onClose={() => setSelectedTimeSlot(null)}>
-        <DialogTitle>
-          Schedule {selectedTimeSlot.item.type === 'task' ? 'Task' : 'Routine'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              {selectedTimeSlot.item.title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              {format(selectedTimeSlot.date, 'EEEE, MMMM d')}
-            </Typography>
-
-            <Box sx={{ mt: 3 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Time Slot (Optional)
-              </Typography>
-              <LocalizationProvider dateAdapter={AdapterDateFns}>
-                <Box sx={{ display: 'flex', gap: 2 }}>
-                  <TimePicker
-                    label="Start Time"
-                    value={selectedTimeSlot.start || null}
-                    onChange={(newValue) => {
-                      if (selectedTimeSlot) {
-                        setSelectedTimeSlot({
-                          ...selectedTimeSlot,
-                          start: newValue || undefined
-                        });
-                      }
-                    }}
-                  />
-                  <TimePicker
-                    label="End Time"
-                    value={selectedTimeSlot.end || null}
-                    onChange={(newValue) => {
-                      if (selectedTimeSlot) {
-                        setSelectedTimeSlot({
-                          ...selectedTimeSlot,
-                          end: newValue || undefined
-                        });
-                      }
-                    }}
-                  />
-                </Box>
-              </LocalizationProvider>
-            </Box>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSelectedTimeSlot(null)}>
-            Cancel
-          </Button>
-          <Button variant="contained" onClick={handleTimeSlotConfirm}>
-            Schedule
-          </Button>
-        </DialogActions>
-      </Dialog>
-    );
-  };
-
   return (
-    <DragDropContext onDragEnd={handleDragEnd}>
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h5" gutterBottom>
-          Weekly Planning
-        </Typography>
+    <Paper sx={{ p: 3 }}>
+      <Typography variant="h5" gutterBottom>
+        Weekly Planning
+      </Typography>
 
-        <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)', overflow: 'hidden' }}>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCorners}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)', overflow: 'auto' }}>
           <Box sx={{ width: 300, overflow: 'auto' }}>
             <Typography variant="h6" gutterBottom>
               Unscheduled Items
             </Typography>
             
-            <Droppable droppableId="unscheduled">
-              {(provided) => (
-                <List
-                  ref={provided.innerRef}
-                  {...provided.droppableProps}
-                  sx={{ 
-                    bgcolor: 'background.paper',
-                    borderRadius: 1,
-                    boxShadow: 1,
-                    minHeight: 100
-                  }}
-                >
-                  {unscheduledItems.map((item, index) => (
-                    <Draggable key={item.id} draggableId={item.id} index={index}>
-                      {(provided, snapshot) => (
-                        <ListItem
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                          sx={{ 
-                            '&:hover': { bgcolor: 'action.hover' },
-                            bgcolor: snapshot.isDragging ? 'action.selected' : 'inherit'
-                          }}
-                        >
-                          <ListItemText
-                            primary={item.title}
-                            secondary={
-                              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                                <Chip
-                                  label={item.type}
-                                  size="small"
-                                  color={item.type === 'task' ? 'primary' : 'secondary'}
-                                />
-                                {item.goalName && (
-                                  <Typography variant="caption" color="text.secondary">
-                                    {item.goalName}
-                                  </Typography>
-                                )}
-                              </Box>
-                            }
-                          />
-                          <ListItemSecondaryAction>
-                            <DragIndicatorIcon color="action" />
-                          </ListItemSecondaryAction>
-                        </ListItem>
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                </List>
-              )}
-            </Droppable>
+            <List sx={{ 
+              bgcolor: 'background.paper',
+              borderRadius: 1,
+              boxShadow: 1,
+              minHeight: 100
+            }}>
+              <SortableContext items={unscheduledItems.map(item => item.id)} strategy={verticalListSortingStrategy}>
+                {unscheduledItems.map((item) => (
+                  <SortableItem key={item.id} id={item.id} item={item} />
+                ))}
+              </SortableContext>
+            </List>
           </Box>
 
           <Box sx={{ flex: 1, overflow: 'auto' }}>
@@ -499,58 +626,26 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
                 const day = addDays(startOfWeek(new Date()), index);
                 return (
                   <Grid item xs key={index}>
-                    <Paper 
-                      sx={{ 
-                        p: 2, 
-                        height: '100%',
-                        bgcolor: isSameDay(day, new Date()) ? 'primary.light' : 'background.paper'
-                      }}
-                    >
-                      <Typography variant="subtitle1" gutterBottom>
-                        {format(day, 'EEEE')}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {format(day, 'MMM d')}
-                      </Typography>
-
-                      <Droppable droppableId={`day-${index}`}>
-                        {(provided, snapshot) => (
+                    <DroppableDay day={day} index={index}>
+                      {currentSession?.planningPhase.nextWeekTasks
+                        .filter(task => isSameDay(task.dueDate.toDate(), day))
+                        .map((task) => (
                           <Box
-                            ref={provided.innerRef}
-                            {...provided.droppableProps}
-                            sx={{ 
-                              minHeight: 100,
-                              mt: 2,
-                              border: '2px dashed',
-                              borderColor: snapshot.isDraggingOver ? 'primary.main' : 'divider',
-                              borderRadius: 1,
+                            key={task.taskId}
+                            sx={{
                               p: 1,
-                              transition: 'border-color 0.2s ease'
+                              mb: 1,
+                              bgcolor: 'background.default',
+                              borderRadius: 1,
+                              boxShadow: 1
                             }}
                           >
-                            {currentSession?.planningPhase.nextWeekTasks
-                              .filter(task => isSameDay(task.dueDate.toDate(), day))
-                              .map((task, taskIndex) => (
-                                <Box
-                                  key={task.taskId}
-                                  sx={{
-                                    p: 1,
-                                    mb: 1,
-                                    bgcolor: 'background.default',
-                                    borderRadius: 1,
-                                    boxShadow: 1
-                                  }}
-                                >
-                                  <Typography variant="body2" noWrap>
-                                    {task.taskId}
-                                  </Typography>
-                                </Box>
-                              ))}
-                            {provided.placeholder}
+                            <Typography variant="body2" noWrap>
+                              {task.taskId}
+                            </Typography>
                           </Box>
-                        )}
-                      </Droppable>
-                    </Paper>
+                        ))}
+                    </DroppableDay>
                   </Grid>
                 );
               })}
@@ -558,16 +653,84 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
           </Box>
         </Box>
 
-        {renderTimeSlotDialog()}
+        <DragOverlay>
+          {activeId ? (
+            <Paper sx={{ p: 2, bgcolor: 'background.paper', width: 280 }}>
+              <Typography variant="body1">
+                {unscheduledItems.find(item => item.id === activeId)?.title}
+              </Typography>
+            </Paper>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
-        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-          <Button onClick={onBack}>Back</Button>
-          <Button variant="contained" onClick={onNext}>
-            Continue to Finalize
-          </Button>
-        </Box>
-      </Paper>
-    </DragDropContext>
+      {selectedTimeSlot && (
+        <Dialog open={true} onClose={() => setSelectedTimeSlot(null)}>
+          <DialogTitle>
+            Schedule {selectedTimeSlot.item.type === 'task' ? 'Task' : 'Routine'}
+          </DialogTitle>
+          <DialogContent>
+            <Box sx={{ pt: 2 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {selectedTimeSlot.item.title}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {format(selectedTimeSlot.date, 'EEEE, MMMM d')}
+              </Typography>
+
+              <Box sx={{ mt: 3 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  Time Slot (Optional)
+                </Typography>
+                <LocalizationProvider dateAdapter={AdapterDateFns}>
+                  <Box sx={{ display: 'flex', gap: 2 }}>
+                    <TimePicker
+                      label="Start Time"
+                      value={selectedTimeSlot.start || null}
+                      onChange={(newValue) => {
+                        if (selectedTimeSlot) {
+                          setSelectedTimeSlot({
+                            ...selectedTimeSlot,
+                            start: newValue || undefined
+                          });
+                        }
+                      }}
+                    />
+                    <TimePicker
+                      label="End Time"
+                      value={selectedTimeSlot.end || null}
+                      onChange={(newValue) => {
+                        if (selectedTimeSlot) {
+                          setSelectedTimeSlot({
+                            ...selectedTimeSlot,
+                            end: newValue || undefined
+                          });
+                        }
+                      }}
+                    />
+                  </Box>
+                </LocalizationProvider>
+              </Box>
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSelectedTimeSlot(null)}>
+              Cancel
+            </Button>
+            <Button variant="contained" onClick={handleTimeSlotConfirm}>
+              Schedule
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
+        <Button onClick={onBack}>Back</Button>
+        <Button variant="contained" onClick={onNext}>
+          Continue to Finalize
+        </Button>
+      </Box>
+    </Paper>
   );
 };
 

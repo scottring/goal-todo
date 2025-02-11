@@ -13,33 +13,23 @@ import {
 } from '@mui/material';
 import { TaskReviewItem } from '../types';
 import { format } from 'date-fns';
-import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
 
+// Updated interface to include onTaskAction prop
 interface TaskReviewListProps {
   tasks: TaskReviewItem[];
+  onTaskAction: (taskId: string, action: string) => Promise<void>;
 }
 
-export const TaskReviewList = ({ tasks }: TaskReviewListProps) => {
-  const { updateTaskReview } = useWeeklyPlanning();
+export const TaskReviewList = ({ tasks, onTaskAction }: TaskReviewListProps) => {
   const [loadingTaskId, setLoadingTaskId] = useState<string | null>(null);
 
-  const handleTaskAction = async (
-    task: TaskReviewItem, 
-    action: 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close'
-  ) => {
+  const handleAction = async (task: TaskReviewItem, action: 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close') => {
     try {
       setLoadingTaskId(task.taskId);
-      const updatedTask: TaskReviewItem = {
-        ...task,
-        action,
-        status: action === 'mark_completed' ? 'completed' : 
-                action === 'mark_missed' ? 'missed' : 
-                action === 'push_forward' ? 'partial' : 'needs_review'
-      };
-      await updateTaskReview(updatedTask);
+      await onTaskAction(task.taskId, action);
     } catch (error) {
       console.error('Error updating task:', error);
-      // You could add a toast notification here
+      // Optionally add notifications here
     } finally {
       setLoadingTaskId(null);
     }
@@ -84,7 +74,7 @@ export const TaskReviewList = ({ tasks }: TaskReviewListProps) => {
               color="primary"
               size="small"
               style={buttonStyle}
-              onClick={() => handleTaskAction(task, 'mark_completed')}
+              onClick={() => handleAction(task, 'mark_completed')}
             >
               Complete
             </Button>
@@ -93,7 +83,7 @@ export const TaskReviewList = ({ tasks }: TaskReviewListProps) => {
               color="warning"
               size="small"
               style={buttonStyle}
-              onClick={() => handleTaskAction(task, 'push_forward')}
+              onClick={() => handleAction(task, 'push_forward')}
             >
               Push Forward
             </Button>
@@ -102,7 +92,7 @@ export const TaskReviewList = ({ tasks }: TaskReviewListProps) => {
               color="error"
               size="small"
               style={buttonStyle}
-              onClick={() => handleTaskAction(task, 'mark_missed')}
+              onClick={() => handleAction(task, 'mark_missed')}
             >
               Mark Missed
             </Button>

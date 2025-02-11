@@ -22,6 +22,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import CssBaseline from '@mui/material/CssBaseline';
 import { TestWeeklyPlanning } from './test/TestWeeklyPlanning';
+import { StrictMode } from 'react';
 
 const theme = createTheme({
   palette: {
@@ -37,49 +38,51 @@ const theme = createTheme({
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <LocalizationProvider dateAdapter={AdapterDateFns}>
-        <AuthProvider>
-          <FirestoreProvider>
-            <BrowserRouter>
-              <Routes>
-                <Route path="/signin" element={<SignIn />} />
-                <Route path="/signup" element={<SignUp />} />
-                <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/test/weekly-planning" element={<TestWeeklyPlanning />} />
-                <Route
-                  path="/*"
-                  element={
-                    <AuthGuard>
-                      <AreasProvider>
-                        <GoalsProvider>
-                          <SharedGoalsProvider>
-                            <WeeklyPlanningProvider>
-                              <Layout>
-                                <Routes>
-                                  <Route path="/" element={<TasksPage />} />
-                                  <Route path="/areas" element={<AreasPage />} />
-                                  <Route path="/areas/:areaId" element={<AreaDetailsPage />} />
-                                  <Route path="/goals" element={<GoalsPage />} />
-                                  <Route path="/goals/:goalId" element={<GoalDetailPage />} />
-                                  <Route path="/planning" element={<WeeklyPlanningPage />} />
-                                  <Route path="/admin" element={<AdminPage />} />
-                                </Routes>
-                              </Layout>
-                            </WeeklyPlanningProvider>
-                          </SharedGoalsProvider>
-                        </GoalsProvider>
-                      </AreasProvider>
-                    </AuthGuard>
-                  }
-                />
-              </Routes>
-            </BrowserRouter>
-          </FirestoreProvider>
-        </AuthProvider>
-      </LocalizationProvider>
-    </ThemeProvider>
+    <StrictMode>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+          <AuthProvider>
+            <FirestoreProvider>
+              <BrowserRouter>
+                <Routes>
+                  <Route path="/signin" element={<SignIn />} />
+                  <Route path="/signup" element={<SignUp />} />
+                  <Route path="/forgot-password" element={<ForgotPassword />} />
+                  <Route path="/test/weekly-planning" element={<TestWeeklyPlanning />} />
+                  <Route
+                    path="/*"
+                    element={
+                      <AuthGuard>
+                        <AreasProvider>
+                          <GoalsProvider>
+                            <SharedGoalsProvider>
+                              <WeeklyPlanningProvider>
+                                <Layout>
+                                  <Routes>
+                                    <Route path="/" element={<TasksPage />} />
+                                    <Route path="/areas" element={<AreasPage />} />
+                                    <Route path="/areas/:areaId" element={<AreaDetailsPage />} />
+                                    <Route path="/goals" element={<GoalsPage />} />
+                                    <Route path="/goals/:goalId" element={<GoalDetailPage />} />
+                                    <Route path="/planning" element={<WeeklyPlanningPage />} />
+                                    <Route path="/admin" element={<AdminPage />} />
+                                  </Routes>
+                                </Layout>
+                              </WeeklyPlanningProvider>
+                            </SharedGoalsProvider>
+                          </GoalsProvider>
+                        </AreasProvider>
+                      </AuthGuard>
+                    }
+                  />
+                </Routes>
+              </BrowserRouter>
+            </FirestoreProvider>
+          </AuthProvider>
+        </LocalizationProvider>
+      </ThemeProvider>
+    </StrictMode>
   );
 }
 
