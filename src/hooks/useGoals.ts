@@ -4,7 +4,7 @@ import { useFirestore } from './useFirestore';
 import { useAuth } from '../contexts/AuthContext';
 import type { SourceActivity } from '../types';
 
-type CreateGoalData = Pick<SourceActivity, 'name' | 'description' | 'deadline' | 'areaId' | 'milestones' | 'sharedWith'>;
+type CreateGoalData = Omit<SourceActivity, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>;
 
 export const useGoals = () => {
   const [goals, setGoals] = useState<SourceActivity[]>([]);
@@ -40,12 +40,11 @@ export const useGoals = () => {
         ...data,
         ownerId: user?.uid || '',
         createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        tasks: [],
-        routines: []
+        updatedAt: Timestamp.now()
       });
       await fetchGoals();
     } catch (err) {
+      console.error('Error creating goal:', err);
       setError(err as Error);
       throw err;
     }
@@ -53,9 +52,13 @@ export const useGoals = () => {
 
   const updateGoal = async (goalId: string, data: Partial<SourceActivity>) => {
     try {
-      await updateDocument<SourceActivity>('activities', goalId, data);
+      await updateDocument<SourceActivity>('activities', goalId, {
+        ...data,
+        updatedAt: Timestamp.now()
+      });
       await fetchGoals();
     } catch (err) {
+      console.error('Error updating goal:', err);
       setError(err as Error);
       throw err;
     }
@@ -66,6 +69,7 @@ export const useGoals = () => {
       await deleteDocument('activities', goalId);
       await fetchGoals();
     } catch (err) {
+      console.error('Error deleting goal:', err);
       setError(err as Error);
       throw err;
     }

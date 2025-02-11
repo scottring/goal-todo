@@ -17,8 +17,39 @@ import type {
   Task,
   TimeTrackingType,
   ReviewCycle,
-  TimeTracking
+  TimeTracking,
+  RoutineSchedule
 } from '../types';
+import { toast } from 'react-hot-toast';
+import { useGoals } from '../hooks/useGoals';
+import { useAreas } from '../hooks/useAreas';
+
+const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
+  const now = new Date();
+  switch (cycle) {
+    case 'weekly':
+      now.setDate(now.getDate() + 7);
+      break;
+    case 'monthly':
+      now.setMonth(now.getMonth() + 1);
+      break;
+    case 'quarterly':
+      now.setMonth(now.getMonth() + 3);
+      break;
+    case 'yearly':
+      now.setFullYear(now.getFullYear() + 1);
+      break;
+  }
+  return Timestamp.fromDate(now);
+};
+
+const dateToTimestamp = (dateString: string): Timestamp => {
+  return Timestamp.fromDate(new Date(dateString));
+};
+
+const timestampToDateString = (timestamp: Timestamp): string => {
+  return timestamp.toDate().toISOString().split('T')[0];
+};
 
 interface SmartGoalForm {
   name: string;
@@ -27,31 +58,37 @@ interface SmartGoalForm {
   customMetric?: string;
   achievabilityCheck: AchievabilityCheck;
   relevance: string;
-  timeTrackingType: TimeTrackingType;
-  deadline?: string;
-  reviewCycle?: ReviewCycle;
+  timeTracking: {
+    type: TimeTrackingType;
+    deadline?: Timestamp;
+    reviewCycle?: ReviewCycle;
+  };
   areaId: string;
   milestones: {
+    id: string;
     name: string;
-    targetDate: string;
+    targetDate: Timestamp;
     successCriteria: string;
     status: TaskStatus;
+    tasks: string[];
   }[];
   tasks: {
     title: string;
     description?: string;
-    dueDate?: string;
+    dueDate?: Timestamp;
     priority: TaskPriority;
     status: TaskStatus;
+    completed: boolean;
     assignedTo?: string;
   }[];
-  routines?: {
+  routines: {
     title: string;
     description?: string;
     frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+    schedule: RoutineSchedule;
     targetCount: number;
-    endDate?: string;
-    weeklyCompletionTracker?: boolean[];
+    endDate?: Timestamp;
+    completionDates: Timestamp[];
   }[];
 }
 
@@ -84,35 +121,79 @@ const REVIEW_CYCLE_OPTIONS: { label: string; value: ReviewCycle }[] = [
   { label: 'Yearly', value: 'yearly' }
 ];
 
-const timestampToDateString = (timestamp: Timestamp | undefined): string => {
-  if (!timestamp) return '';
-  return new Date(timestamp.seconds * 1000).toISOString().split('T')[0];
-};
-
-const dateToTimestamp = (dateStr: string): Timestamp | undefined => {
-  if (!dateStr || dateStr.trim() === '') return undefined;
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return undefined;
-  return Timestamp.fromDate(date);
-};
-
 const initialSmartGoal: SmartGoalForm = {
   name: '',
   specificAction: '',
   measurableMetric: 'count_occurrences',
+  customMetric: '',
   achievabilityCheck: 'yes',
   relevance: '',
-  timeTrackingType: 'fixed_deadline',
+  timeTracking: {
+    type: 'fixed_deadline'
+  },
   areaId: '',
   milestones: [{
+    id: '',
     name: '',
-    targetDate: '',
+    targetDate: Timestamp.now(),
     successCriteria: '',
-    status: 'not_started'
+    status: 'not_started',
+    tasks: []
   }],
   tasks: [],
   routines: []
 };
+
+const addTask = (smartGoal: SmartGoalForm) => ({
+  ...smartGoal,
+  tasks: [
+    ...smartGoal.tasks,
+    {
+      title: '',
+      description: '',
+      priority: 'medium' as TaskPriority,
+      status: 'not_started' as TaskStatus,
+      completed: false,
+      dueDate: undefined,
+      assignedTo: undefined
+    }
+  ]
+});
+
+const addRoutine = (smartGoal: SmartGoalForm) => ({
+  ...smartGoal,
+  routines: [
+    ...smartGoal.routines,
+    {
+      title: '',
+      description: '',
+      frequency: 'daily' as const,
+      schedule: {
+        type: 'daily' as const,
+        targetCount: 1,
+        timeOfDay: { hour: 9, minute: 0 }
+      },
+      targetCount: 1,
+      completionDates: [],
+      endDate: undefined
+    }
+  ]
+});
+
+const addMilestone = (smartGoal: SmartGoalForm) => ({
+  ...smartGoal,
+  milestones: [
+    ...smartGoal.milestones,
+    {
+      id: '',
+      name: '',
+      targetDate: Timestamp.now(),
+      successCriteria: '',
+      status: 'not_started' as TaskStatus,
+      tasks: []
+    }
+  ]
+});
 
 const GoalsPage: React.FC = () => {
   const location = useLocation();
@@ -125,6 +206,7 @@ const GoalsPage: React.FC = () => {
   const [editingGoal, setEditingGoal] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<'wizard' | 'edit'>('wizard');
   const [smartGoal, setSmartGoal] = useState<SmartGoalForm>(initialSmartGoal);
+  const [submitting, setSubmitting] = useState(false);
 
   // Handle navigation state
   useEffect(() => {
@@ -143,105 +225,84 @@ const GoalsPage: React.FC = () => {
     }
   }, [location.state]);
 
-  const handleSubmit = async () => {
-    if (!smartGoal.areaId) return;
-
-    const timeTracking: TimeTracking = {
-      type: smartGoal.timeTrackingType,
-      ...(smartGoal.timeTrackingType === 'fixed_deadline' 
-        ? { deadline: smartGoal.deadline ? dateToTimestamp(smartGoal.deadline) : undefined }
-        : {
-            reviewCycle: smartGoal.reviewCycle,
-            nextReviewDate: calculateNextReviewDate(smartGoal.reviewCycle)
-          }
-      )
-    };
-
-    const milestones: Milestone[] = smartGoal.milestones
-      .filter(m => m.targetDate && m.targetDate.trim() !== '')
-      .map(m => {
-        const targetDate = dateToTimestamp(m.targetDate);
-        if (!targetDate) {
-          throw new Error(`Invalid target date for milestone: ${m.name}`);
-        }
-        return {
-          id: '', // Will be generated by Firestore
-          name: m.name,
-          targetDate,
-          successCriteria: m.successCriteria,
-          status: m.status,
-          tasks: []
-        };
-      });
-
-    const tasks: Task[] = smartGoal.tasks.map(task => {
-      const dueDate = task.dueDate ? dateToTimestamp(task.dueDate) : undefined;
-      return {
-        id: '', // Will be generated by Firestore
-        ownerId: user?.uid || '',
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        title: task.title,
-        description: task.description || '',
-        dueDate,
-        priority: task.priority,
-        status: task.status,
-        completed: task.status === 'completed',
-        assignedTo: task.assignedTo,
-        goalId: editingGoal || undefined,
-        milestoneId: undefined,
-        areaId: smartGoal.areaId
-      };
-    });
-
-    const routines = smartGoal.routines?.map(routine => {
-      const endDate = routine.endDate ? dateToTimestamp(routine.endDate) : undefined;
-      return {
-        title: routine.title,
-        description: routine.description || '',
-        frequency: routine.frequency,
-        targetCount: routine.targetCount,
-        endDate,
-        completionDates: [] as Timestamp[],
-        weeklyCompletionTracker: routine.weeklyCompletionTracker || new Array(7).fill(false),
-        areaId: smartGoal.areaId,
-        assignedTo: undefined
-      } as RoutineWithoutSystemFields;
-    }) || [];
-
-    const goalData = {
-      name: smartGoal.name,
-      specificAction: smartGoal.specificAction || '',
-      measurableMetric: smartGoal.measurableMetric,
-      customMetric: smartGoal.customMetric || '',
-      achievabilityCheck: smartGoal.achievabilityCheck,
-      relevance: smartGoal.relevance || '',
-      timeTracking,
-      areaId: smartGoal.areaId,
-      milestones,
-      tasks,
-      sharedWith: [] as string[],
-      routines
-    } satisfies Omit<SourceActivity, keyof BaseDocument>;
-
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    
     try {
-      if (editingGoal) {
-        await updateGoal(editingGoal, goalData);
-      } else {
-        await createGoal(goalData);
+      if (!smartGoal.areaId) {
+        throw new Error('Please select an area for this goal');
       }
 
+      const goalData: Omit<SourceActivity, keyof BaseDocument> = {
+        name: smartGoal.name,
+        specificAction: smartGoal.specificAction,
+        measurableMetric: smartGoal.measurableMetric,
+        customMetric: smartGoal.customMetric,
+        achievabilityCheck: smartGoal.achievabilityCheck,
+        relevance: smartGoal.relevance,
+        timeTracking: {
+          type: smartGoal.timeTracking.type,
+          ...(smartGoal.timeTracking.type === 'fixed_deadline' 
+            ? { deadline: smartGoal.timeTracking.deadline }
+            : {
+                reviewCycle: smartGoal.timeTracking.reviewCycle,
+                nextReviewDate: smartGoal.timeTracking.reviewCycle 
+                  ? calculateNextReviewDate(smartGoal.timeTracking.reviewCycle)
+                  : undefined
+              }
+          )
+        },
+        milestones: smartGoal.milestones.map(m => ({
+          ...m,
+          tasks: [] // Initialize with empty tasks array
+        })),
+        areaId: smartGoal.areaId,
+        sharedWith: [],
+        tasks: smartGoal.tasks.map(task => ({
+          id: '', // Will be generated by Firestore
+          ownerId: user?.uid || '',
+          createdAt: Timestamp.now(),
+          updatedAt: Timestamp.now(),
+          ...task,
+          sharedWith: [],
+          permissions: {}
+        })),
+        routines: smartGoal.routines.map(routine => ({
+          ...routine,
+          schedule: {
+            type: routine.frequency,
+            targetCount: routine.targetCount,
+            timeOfDay: { hour: 9, minute: 0 } // Default to 9 AM
+          },
+          completionDates: []
+        }))
+      };
+
+      if (editingGoal) {
+        await updateGoal(editingGoal, goalData);
+        toast.success('Goal updated successfully!');
+      } else {
+        await createGoal(goalData);
+        toast.success('Goal created successfully!');
+      }
+      
       setSmartGoal(initialSmartGoal);
       setIsAdding(false);
       setCurrentStep(0);
       setEditingGoal(null);
       setEditMode('wizard');
-    } catch (err) {
-      console.error('Error saving goal:', err);
+    } catch (error) {
+      console.error('Error submitting goal:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to save goal. Please try again.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
   const handleEdit = (goal: SourceActivity) => {
+    setEditingGoal(goal.id);
+    setEditMode('edit');
     setSmartGoal({
       name: goal.name,
       specificAction: goal.specificAction,
@@ -249,36 +310,46 @@ const GoalsPage: React.FC = () => {
       customMetric: goal.customMetric,
       achievabilityCheck: goal.achievabilityCheck,
       relevance: goal.relevance,
-      timeTrackingType: goal.timeTracking.type,
-      deadline: goal.timeTracking.deadline ? timestampToDateString(goal.timeTracking.deadline) : undefined,
-      reviewCycle: goal.timeTracking.reviewCycle,
+      timeTracking: {
+        type: goal.timeTracking.type,
+        deadline: goal.timeTracking.deadline,
+        reviewCycle: goal.timeTracking.reviewCycle
+      },
       areaId: goal.areaId,
       milestones: goal.milestones.map(m => ({
+        id: m.id || '',
         name: m.name,
-        targetDate: timestampToDateString(m.targetDate),
+        targetDate: m.targetDate,
         successCriteria: m.successCriteria,
-        status: m.status
+        status: m.status,
+        tasks: m.tasks || []
       })),
       tasks: goal.tasks.map(task => ({
         title: task.title,
         description: task.description,
-        dueDate: task.dueDate ? timestampToDateString(task.dueDate) : undefined,
+        dueDate: task.dueDate,
         priority: task.priority,
         status: task.status,
+        completed: task.completed,
         assignedTo: task.assignedTo
       })),
-      routines: goal.routines?.map(routine => ({
+      routines: goal.routines.map(routine => ({
         title: routine.title,
         description: routine.description || '',
         frequency: routine.frequency,
+        schedule: {
+          type: routine.frequency,
+          targetCount: routine.targetCount,
+          timeOfDay: routine.schedule.timeOfDay,
+          daysOfWeek: routine.schedule.daysOfWeek,
+          dayOfMonth: routine.schedule.dayOfMonth,
+          monthsOfYear: routine.schedule.monthsOfYear
+        },
         targetCount: routine.targetCount,
-        endDate: timestampToDateString(routine.endDate),
-        weeklyCompletionTracker: routine.weeklyCompletionTracker
-      })) || []
+        endDate: routine.endDate,
+        completionDates: routine.completionDates || []
+      }))
     });
-    
-    setEditingGoal(goal.id);
-    setEditMode('edit');
     setIsAdding(true);
   };
 
@@ -290,6 +361,63 @@ const GoalsPage: React.FC = () => {
         console.error('Error deleting goal:', err);
       }
     }
+  };
+
+  const handleDateChange = (value: string | undefined): Timestamp | undefined => {
+    if (!value) return undefined;
+    const date = new Date(value);
+    return isNaN(date.getTime()) ? undefined : Timestamp.fromDate(date);
+  };
+
+  const handleTaskChange = (index: number, field: keyof SmartGoalForm['tasks'][0], value: any) => {
+    setSmartGoal(prev => {
+      const newTasks = [...prev.tasks];
+      newTasks[index] = {
+        ...newTasks[index],
+        [field]: field === 'dueDate' ? handleDateChange(value) : value,
+        completed: field === 'status' ? value === 'completed' : newTasks[index].completed
+      };
+      return { ...prev, tasks: newTasks };
+    });
+  };
+
+  const handleRoutineChange = (index: number, field: keyof SmartGoalForm['routines'][0], value: any) => {
+    setSmartGoal(prev => {
+      const newRoutines = [...prev.routines];
+      if (field === 'frequency') {
+        newRoutines[index] = {
+          ...newRoutines[index],
+          frequency: value as SmartGoalForm['routines'][0]['frequency'],
+          schedule: {
+            type: value as SmartGoalForm['routines'][0]['frequency'],
+            targetCount: newRoutines[index].targetCount,
+            timeOfDay: { hour: 9, minute: 0 }
+          }
+        };
+      } else if (field === 'endDate') {
+        newRoutines[index] = {
+          ...newRoutines[index],
+          endDate: handleDateChange(value)
+        };
+      } else {
+        newRoutines[index] = {
+          ...newRoutines[index],
+          [field]: value
+        };
+      }
+      return { ...prev, routines: newRoutines };
+    });
+  };
+
+  const handleMilestoneChange = (index: number, field: keyof SmartGoalForm['milestones'][0], value: any) => {
+    setSmartGoal(prev => {
+      const newMilestones = [...prev.milestones];
+      newMilestones[index] = {
+        ...newMilestones[index],
+        [field]: field === 'targetDate' ? handleDateChange(value) || Timestamp.now() : value
+      };
+      return { ...prev, milestones: newMilestones };
+    });
   };
 
   const renderAreaStep = () => (
@@ -429,12 +557,15 @@ const GoalsPage: React.FC = () => {
           How will you track time for this goal?
         </label>
         <select
-          value={smartGoal.timeTrackingType}
+          value={smartGoal.timeTracking.type}
           onChange={e => setSmartGoal(prev => ({ 
             ...prev, 
-            timeTrackingType: e.target.value as TimeTrackingType,
-            deadline: e.target.value === 'fixed_deadline' ? prev.deadline : undefined,
-            reviewCycle: e.target.value === 'recurring_review' ? 'monthly' : undefined
+            timeTracking: {
+              ...prev.timeTracking,
+              type: e.target.value as TimeTrackingType,
+              deadline: e.target.value === 'fixed_deadline' ? prev.timeTracking.deadline : undefined,
+              reviewCycle: e.target.value === 'recurring_review' ? 'monthly' : undefined
+            }
           }))}
           className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
           required
@@ -444,15 +575,15 @@ const GoalsPage: React.FC = () => {
         </select>
       </div>
 
-      {smartGoal.timeTrackingType === 'fixed_deadline' ? (
+      {smartGoal.timeTracking.type === 'fixed_deadline' ? (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             When will you complete this goal?
           </label>
           <input
             type="date"
-            value={smartGoal.deadline || ''}
-            onChange={e => setSmartGoal(prev => ({ ...prev, deadline: e.target.value }))}
+            value={smartGoal.timeTracking.deadline ? timestampToDateString(smartGoal.timeTracking.deadline) : ''}
+            onChange={e => setSmartGoal(prev => ({ ...prev, timeTracking: { ...prev.timeTracking, deadline: e.target.value ? dateToTimestamp(e.target.value) : undefined } }))}
             className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
             required
           />
@@ -464,8 +595,14 @@ const GoalsPage: React.FC = () => {
             How often will you review progress?
           </label>
           <select
-            value={smartGoal.reviewCycle}
-            onChange={e => setSmartGoal(prev => ({ ...prev, reviewCycle: e.target.value as ReviewCycle }))}
+            value={smartGoal.timeTracking.reviewCycle}
+            onChange={e => setSmartGoal(prev => ({ 
+              ...prev, 
+              timeTracking: {
+                ...prev.timeTracking,
+                reviewCycle: e.target.value as ReviewCycle
+              }
+            }))}
             className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
             required
           >
@@ -510,11 +647,7 @@ const GoalsPage: React.FC = () => {
               <input
                 type="text"
                 value={milestone.name}
-                onChange={e => {
-                  const newMilestones = [...smartGoal.milestones];
-                  newMilestones[index] = { ...milestone, name: e.target.value };
-                  setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
-                }}
+                onChange={e => handleMilestoneChange(index, 'name', e.target.value)}
                 className="w-full p-2 border rounded-md"
                 placeholder={`Milestone ${index + 1}`}
                 required
@@ -526,12 +659,8 @@ const GoalsPage: React.FC = () => {
               </label>
               <input
                 type="date"
-                value={milestone.targetDate}
-                onChange={e => {
-                  const newMilestones = [...smartGoal.milestones];
-                  newMilestones[index] = { ...milestone, targetDate: e.target.value };
-                  setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
-                }}
+                value={milestone.targetDate ? timestampToDateString(milestone.targetDate) : ''}
+                onChange={e => handleMilestoneChange(index, 'targetDate', e.target.value ? dateToTimestamp(e.target.value) : undefined)}
                 className="w-full p-2 border rounded-md"
                 required
               />
@@ -543,11 +672,7 @@ const GoalsPage: React.FC = () => {
               <input
                 type="text"
                 value={milestone.successCriteria}
-                onChange={e => {
-                  const newMilestones = [...smartGoal.milestones];
-                  newMilestones[index] = { ...milestone, successCriteria: e.target.value };
-                  setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
-                }}
+                onChange={e => handleMilestoneChange(index, 'successCriteria', e.target.value)}
                 className="w-full p-2 border rounded-md"
                 placeholder="How will you know this milestone is complete?"
                 required
@@ -559,11 +684,7 @@ const GoalsPage: React.FC = () => {
               </label>
               <select
                 value={milestone.status}
-                onChange={e => {
-                  const newMilestones = [...smartGoal.milestones];
-                  newMilestones[index] = { ...milestone, status: e.target.value as TaskStatus };
-                  setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
-                }}
+                onChange={e => handleMilestoneChange(index, 'status', e.target.value as TaskStatus)}
                 className="w-full p-2 border rounded-md"
                 required
               >
@@ -579,15 +700,7 @@ const GoalsPage: React.FC = () => {
       ))}
       <button
         type="button"
-        onClick={() => setSmartGoal(prev => ({
-          ...prev,
-          milestones: [...prev.milestones, {
-            name: '',
-            targetDate: '',
-            successCriteria: '',
-            status: 'not_started'
-          }]
-        }))}
+        onClick={() => setSmartGoal(addMilestone)}
         className="text-blue-600 hover:text-blue-700 text-sm font-medium"
       >
         + Add Milestone
@@ -620,11 +733,7 @@ const GoalsPage: React.FC = () => {
               <input
                 type="text"
                 value={task.title}
-                onChange={e => {
-                  const newTasks = [...smartGoal.tasks];
-                  newTasks[index] = { ...task, title: e.target.value };
-                  setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
-                }}
+                onChange={e => handleTaskChange(index, 'title', e.target.value)}
                 className="w-full p-2 border rounded-md"
                 placeholder="Task title"
                 required
@@ -637,11 +746,7 @@ const GoalsPage: React.FC = () => {
               <input
                 type="text"
                 value={task.description || ''}
-                onChange={e => {
-                  const newTasks = [...smartGoal.tasks];
-                  newTasks[index] = { ...task, description: e.target.value };
-                  setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
-                }}
+                onChange={e => handleTaskChange(index, 'description', e.target.value)}
                 className="w-full p-2 border rounded-md"
                 placeholder="Optional description"
               />
@@ -652,12 +757,8 @@ const GoalsPage: React.FC = () => {
               </label>
               <input
                 type="date"
-                value={task.dueDate || ''}
-                onChange={e => {
-                  const newTasks = [...smartGoal.tasks];
-                  newTasks[index] = { ...task, dueDate: e.target.value };
-                  setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
-                }}
+                value={task.dueDate ? timestampToDateString(task.dueDate) : ''}
+                onChange={e => handleTaskChange(index, 'dueDate', e.target.value ? dateToTimestamp(e.target.value) : undefined)}
                 className="w-full p-2 border rounded-md"
               />
             </div>
@@ -667,17 +768,12 @@ const GoalsPage: React.FC = () => {
               </label>
               <select
                 value={task.priority}
-                onChange={e => {
-                  const newTasks = [...smartGoal.tasks];
-                  newTasks[index] = { ...task, priority: e.target.value as TaskPriority };
-                  setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
-                }}
+                onChange={e => handleTaskChange(index, 'priority', e.target.value as TaskPriority)}
                 className="w-full p-2 border rounded-md"
-                required
               >
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
                 <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
               </select>
             </div>
             <div>
@@ -706,14 +802,7 @@ const GoalsPage: React.FC = () => {
       ))}
       <button
         type="button"
-        onClick={() => setSmartGoal(prev => ({
-          ...prev,
-          tasks: [...prev.tasks, {
-            title: '',
-            priority: 'medium',
-            status: 'not_started'
-          }]
-        }))}
+        onClick={() => setSmartGoal(addTask)}
         className="text-blue-600 hover:text-blue-700 text-sm font-medium"
       >
         + Add Task
@@ -814,10 +903,10 @@ const GoalsPage: React.FC = () => {
               </label>
               <input
                 type="date"
-                value={routine.endDate || ''}
+                value={routine.endDate ? timestampToDateString(routine.endDate) : ''}
                 onChange={e => {
                   const newRoutines = [...(smartGoal.routines || [])];
-                  newRoutines[index] = { ...routine, endDate: e.target.value };
+                  newRoutines[index] = { ...routine, endDate: e.target.value ? dateToTimestamp(e.target.value) : undefined };
                   setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
                 }}
                 className="w-full p-2 border rounded-md"
@@ -828,15 +917,7 @@ const GoalsPage: React.FC = () => {
       ))}
       <button
         type="button"
-        onClick={() => setSmartGoal(prev => ({
-          ...prev,
-          routines: [...(prev.routines || []), {
-            title: '',
-            description: '',
-            frequency: 'daily',
-            targetCount: 1
-          }]
-        }))}
+        onClick={() => setSmartGoal(addRoutine)}
         className="text-blue-600 hover:text-blue-700 text-sm font-medium"
       >
         + Add Habit/Routine
@@ -877,7 +958,7 @@ const GoalsPage: React.FC = () => {
       </div>
       <div>
         <h3 className="font-medium text-gray-700 mb-2">Time-bound</h3>
-        <p className="text-gray-900">{smartGoal.timeTrackingType === 'fixed_deadline' ? smartGoal.deadline : REVIEW_CYCLE_OPTIONS.find(opt => opt.value === smartGoal.reviewCycle)?.label}</p>
+        <p className="text-gray-900">{smartGoal.timeTracking.type === 'fixed_deadline' ? smartGoal.timeTracking.deadline ? timestampToDateString(smartGoal.timeTracking.deadline) : 'No deadline' : REVIEW_CYCLE_OPTIONS.find(opt => opt.value === smartGoal.timeTracking.reviewCycle)?.label}</p>
       </div>
       <div>
         <h3 className="font-medium text-gray-700 mb-2">Milestones</h3>
@@ -897,7 +978,7 @@ const GoalsPage: React.FC = () => {
                 </span>
               </div>
               <div className="mt-2 text-sm text-gray-600">
-                <p>Target Date: {milestone.targetDate}</p>
+                <p>Target Date: {milestone.targetDate ? timestampToDateString(milestone.targetDate) : 'No target date'}</p>
                 <p>Success Criteria: {milestone.successCriteria}</p>
               </div>
             </div>
@@ -917,7 +998,7 @@ const GoalsPage: React.FC = () => {
                 <div className="mt-2 text-sm text-gray-600">
                   <p>Frequency: {routine.frequency}</p>
                   <p>Target: {routine.targetCount} times per {routine.frequency}</p>
-                  {routine.endDate && <p>End Date: {routine.endDate}</p>}
+                  {routine.endDate && <p>End Date: {routine.endDate ? timestampToDateString(routine.endDate) : 'No end date'}</p>}
                 </div>
               </div>
             ))}
@@ -1045,12 +1126,15 @@ const GoalsPage: React.FC = () => {
           How will you track time for this goal?
         </label>
         <select
-          value={smartGoal.timeTrackingType}
+          value={smartGoal.timeTracking.type}
           onChange={e => setSmartGoal(prev => ({ 
             ...prev, 
-            timeTrackingType: e.target.value as TimeTrackingType,
-            deadline: e.target.value === 'fixed_deadline' ? prev.deadline : undefined,
-            reviewCycle: e.target.value === 'recurring_review' ? 'monthly' : undefined
+            timeTracking: {
+              ...prev.timeTracking,
+              type: e.target.value as TimeTrackingType,
+              deadline: e.target.value === 'fixed_deadline' ? prev.timeTracking.deadline : undefined,
+              reviewCycle: e.target.value === 'recurring_review' ? 'monthly' : undefined
+            }
           }))}
           className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
           required
@@ -1060,15 +1144,15 @@ const GoalsPage: React.FC = () => {
         </select>
       </div>
 
-      {smartGoal.timeTrackingType === 'fixed_deadline' ? (
+      {smartGoal.timeTracking.type === 'fixed_deadline' ? (
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">
             When will you complete this goal?
           </label>
           <input
             type="date"
-            value={smartGoal.deadline || ''}
-            onChange={e => setSmartGoal(prev => ({ ...prev, deadline: e.target.value }))}
+            value={smartGoal.timeTracking.deadline ? timestampToDateString(smartGoal.timeTracking.deadline) : ''}
+            onChange={e => setSmartGoal(prev => ({ ...prev, timeTracking: { ...prev.timeTracking, deadline: e.target.value ? dateToTimestamp(e.target.value) : undefined } }))}
             className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
             required
           />
@@ -1080,8 +1164,14 @@ const GoalsPage: React.FC = () => {
             How often will you review progress?
           </label>
           <select
-            value={smartGoal.reviewCycle}
-            onChange={e => setSmartGoal(prev => ({ ...prev, reviewCycle: e.target.value as ReviewCycle }))}
+            value={smartGoal.timeTracking.reviewCycle}
+            onChange={e => setSmartGoal(prev => ({ 
+              ...prev, 
+              timeTracking: {
+                ...prev.timeTracking,
+                reviewCycle: e.target.value as ReviewCycle
+              }
+            }))}
             className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
             required
           >
@@ -1244,23 +1334,17 @@ const GoalsPage: React.FC = () => {
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(event) => {
                       if (currentStep === wizardSteps.length - 1) {
-                        handleSubmit();
+                        handleSubmit(event);
                       } else {
                         setCurrentStep(prev => prev + 1);
                       }
                     }}
-                    className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                    disabled={submitting}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                   >
-                    {currentStep === wizardSteps.length - 1 ? (
-                      'Create Goal'
-                    ) : (
-                      <>
-                        Next
-                        <ChevronRight className="w-5 h-5" />
-                      </>
-                    )}
+                    {currentStep === wizardSteps.length - 1 ? (submitting ? 'Creating...' : 'Create Goal') : 'Next'}
                   </button>
                 </>
               ) : (
