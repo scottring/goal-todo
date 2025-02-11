@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Loader2, 
   CheckCircle, 
   Calendar, 
   Flag, 
@@ -11,6 +10,22 @@ import {
   BarChart,
   Plus
 } from 'lucide-react';
+import {
+  Box,
+  Typography,
+  Button,
+  Paper,
+  CircularProgress,
+  Container,
+  Chip,
+  IconButton,
+  Card,
+  CardContent,
+  Stack,
+  Divider,
+  Grid
+} from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import { useScheduledTasks } from '../hooks/useScheduledTasks';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
@@ -101,7 +116,7 @@ const TasksPage: React.FC = () => {
       if (!selectedGoal) return;
 
       const newTask = {
-        id: Math.random().toString(36).substr(2, 9), // Generate a random ID
+        id: Math.random().toString(36).substr(2, 9),
         title: formData.title.trim(),
         description: formData.description?.trim(),
         dueDate: formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : undefined,
@@ -112,7 +127,14 @@ const TasksPage: React.FC = () => {
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
         goalId: selectedGoal.id,
-        areaId: selectedGoal.areaId
+        areaId: selectedGoal.areaId,
+        sharedWith: [],
+        permissions: {
+          [selectedGoal.ownerId]: {
+            edit: true,
+            view: true
+          }
+        }
       };
 
       const updatedTasks = [...selectedGoal.tasks, newTask];
@@ -138,116 +160,168 @@ const TasksPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
+        <CircularProgress />
+      </Box>
     );
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <div className="mb-8">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-900">Tasks</h1>
-          <button
+    <Container maxWidth="md" sx={{ py: 4 }}>
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Typography variant="h4" component="h1">
+            Tasks
+          </Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
             onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
           >
-            <Plus className="w-4 h-4 mr-2" />
             Add Task
-          </button>
-        </div>
-        <div className="flex justify-between items-center mt-2">
-          <p className="text-sm text-gray-600">
+          </Button>
+        </Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="body2" color="text.secondary">
             {scheduledTasks.length === 0 
               ? 'All caught up! Great job!' 
               : `${scheduledTasks.length} tasks need your attention`}
-          </p>
-          <div className="text-sm text-gray-500">
-            <kbd className="px-2 py-1 bg-gray-100 rounded">j</kbd> down,{' '}
-            <kbd className="px-2 py-1 bg-gray-100 rounded">k</kbd> up,{' '}
-            <kbd className="px-2 py-1 bg-gray-100 rounded">x</kbd> complete,{' '}
-            <kbd className="px-2 py-1 bg-gray-100 rounded">enter</kbd> details
-          </div>
-        </div>
-      </div>
+          </Typography>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <Typography variant="body2" color="text.secondary">
+              <Box component="kbd" sx={{ px: 1, py: 0.5, bgcolor: 'grey.100', borderRadius: 1 }}>j</Box> down,{' '}
+              <Box component="kbd" sx={{ px: 1, py: 0.5, bgcolor: 'grey.100', borderRadius: 1 }}>k</Box> up,{' '}
+              <Box component="kbd" sx={{ px: 1, py: 0.5, bgcolor: 'grey.100', borderRadius: 1 }}>x</Box> complete,{' '}
+              <Box component="kbd" sx={{ px: 1, py: 0.5, bgcolor: 'grey.100', borderRadius: 1 }}>enter</Box> details
+            </Typography>
+          </Stack>
+        </Box>
+      </Box>
 
-      <div className="space-y-2">
+      <Stack spacing={1}>
         {scheduledTasks.map((task, index) => (
-          <div
+          <Card
             key={task.id}
             onClick={() => setSelectedTask(task)}
-            className={`group flex items-center gap-3 p-4 bg-white rounded-lg border transition-all cursor-pointer ${
-              task.completed ? 'opacity-50' : 'hover:shadow-md'
-            } ${index === selectedIndex ? 'ring-2 ring-blue-500' : ''}`}
+            sx={{
+              cursor: 'pointer',
+              opacity: task.completed ? 0.5 : 1,
+              transition: 'all 0.2s',
+              '&:hover': {
+                boxShadow: 3
+              },
+              ...(index === selectedIndex && {
+                outline: '2px solid',
+                outlineColor: 'primary.main'
+              })
+            }}
           >
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                completeTask(task.id);
-              }}
-              className={`flex-shrink-0 w-5 h-5 rounded-full border-2 ${
-                task.completed
-                  ? 'bg-green-500 border-green-500'
-                  : 'border-gray-300 group-hover:border-green-500'
-              } transition-colors`}
-            >
-              {task.completed && (
-                <CheckCircle className="w-4 h-4 text-white" />
-              )}
-            </button>
+            <CardContent sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 2,
+              '&:last-child': { pb: 2 }
+            }}>
+              <IconButton
+                onClick={(e) => {
+                  e.stopPropagation();
+                  completeTask(task.id);
+                }}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  border: 2,
+                  borderColor: task.completed ? 'success.main' : 'grey.300',
+                  bgcolor: task.completed ? 'success.main' : 'transparent',
+                  '&:hover': {
+                    borderColor: 'success.main'
+                  }
+                }}
+              >
+                {task.completed && (
+                  <CheckCircle color="white" size={16} />
+                )}
+              </IconButton>
 
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <h3 className={`text-gray-900 truncate ${
-                  task.completed ? 'line-through' : ''
-                }`}>
-                  {task.title}
-                </h3>
-                {task.source.type === 'routine' && (
-                  <span className="px-2 py-0.5 text-xs bg-blue-50 text-blue-700 rounded">
-                    Routine
-                  </span>
-                )}
-                {task.priority === 'high' && (
-                  <Flag className="w-4 h-4 text-red-500" />
-                )}
-              </div>
-              
-              <div className="flex items-center gap-2 mt-1 text-sm">
-                {task.source.goalName && (
-                  <span className="text-gray-500 flex items-center gap-1">
-                    <ArrowRight className="w-3 h-3" />
-                    {task.source.goalName}
-                  </span>
-                )}
-                {task.dueDate && (
-                  <span className={`flex items-center gap-1 ${
-                    task.dueDate.toDate() < new Date() 
-                      ? 'text-red-600' 
-                      : 'text-gray-500'
-                  }`}>
-                    <Calendar className="w-3 h-3" />
-                    {formatDueDate(task.dueDate)}
-                  </span>
-                )}
-              </div>
-            </div>
-          </div>
+              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography
+                    variant="body1"
+                    sx={{
+                      textDecoration: task.completed ? 'line-through' : 'none',
+                      color: 'text.primary',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    {task.title}
+                  </Typography>
+                  {task.source.type === 'routine' && (
+                    <Chip
+                      label="Routine"
+                      size="small"
+                      color="primary"
+                      sx={{ bgcolor: 'primary.light', color: 'primary.dark' }}
+                    />
+                  )}
+                  {task.priority === 'high' && (
+                    <Flag className="text-red-500" />
+                  )}
+                </Box>
+                
+                <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
+                  {task.source.goalName && (
+                    <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <ArrowRight className="w-3 h-3" />
+                      {task.source.goalName}
+                    </Typography>
+                  )}
+                  {task.dueDate && (
+                    <Typography
+                      variant="body2"
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.5,
+                        color: task.dueDate.toDate() < new Date() ? 'error.main' : 'text.secondary'
+                      }}
+                    >
+                      <Calendar className="w-3 h-3" />
+                      {formatDueDate(task.dueDate)}
+                    </Typography>
+                  )}
+                </Stack>
+              </Box>
+            </CardContent>
+          </Card>
         ))}
 
         {scheduledTasks.length === 0 && (
-          <div className="text-center py-12">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 mb-4">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-            </div>
-            <h3 className="text-lg font-medium text-gray-900">All Clear!</h3>
-            <p className="mt-1 text-gray-500">
+          <Box sx={{ textAlign: 'center', py: 6 }}>
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                bgcolor: 'success.light',
+                mb: 2
+              }}
+            >
+              <CheckCircle color="#2e7d32" size={24} />
+            </Box>
+            <Typography variant="h6" color="text.primary">
+              All Clear!
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               You're all caught up. Time to celebrate or plan your next goal!
-            </p>
-          </div>
+            </Typography>
+          </Box>
         )}
-      </div>
+      </Stack>
 
       {/* Add Task Modal */}
       {showAddModal && (
@@ -480,7 +554,7 @@ const TasksPage: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </Container>
   );
 };
 

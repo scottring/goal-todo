@@ -1,10 +1,45 @@
 import React, { useState, useEffect } from 'react';
-import { Trash2, Edit, X, ChevronLeft, Share2 } from 'lucide-react';
 import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
 import { Timestamp } from 'firebase/firestore';
+import {
+  Box,
+  Container,
+  Typography,
+  Button,
+  Card,
+  CardContent,
+  IconButton,
+  Grid,
+  Stepper,
+  Step,
+  StepLabel,
+  TextField,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  FormHelperText,
+  Stack,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Alert,
+  Paper,
+  Divider,
+  Chip
+} from '@mui/material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import EditIcon from '@mui/icons-material/Edit';
+import ShareIcon from '@mui/icons-material/Share';
+import AddIcon from '@mui/icons-material/Add';
+import { Close as CloseIcon } from '@mui/icons-material';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import type { 
   SourceActivity, 
   RoutineWithoutSystemFields, 
@@ -19,8 +54,6 @@ import type {
 } from '../types';
 import { toast } from 'react-hot-toast';
 import GoalSharingModal from '../components/GoalSharingModal';
-import ReactDatePicker from 'react-datepicker';
-import 'react-datepicker/dist/react-datepicker.css';
 
 const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
   const now = new Date();
@@ -449,92 +482,114 @@ const GoalsPage: React.FC = () => {
   };
 
   const renderAreaStep = () => (
-    <div className="space-y-4">
-      <select
-        value={smartGoal.areaId}
-        onChange={e => setSmartGoal(prev => ({ ...prev, areaId: e.target.value }))}
-        className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-        required
-      >
-        <option value="">Select an area</option>
-        {areas.map(area => (
-          <option key={area.id} value={area.id}>{area.name}</option>
-        ))}
-      </select>
-    </div>
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        Select Area
+      </Typography>
+      <Typography variant="body2" color="text.secondary" paragraph>
+        Choose the area of your life this goal belongs to
+      </Typography>
+
+      <FormControl fullWidth required>
+        <InputLabel>Area</InputLabel>
+        <Select
+          value={smartGoal.areaId}
+          onChange={(e) => setSmartGoal(prev => ({ ...prev, areaId: e.target.value }))}
+          label="Area"
+        >
+          {areas.map(area => (
+            <MenuItem key={area.id} value={area.id}>
+              {area.name}
+            </MenuItem>
+          ))}
+        </Select>
+        <FormHelperText>
+          Areas help you organize and track related goals together
+        </FormHelperText>
+      </FormControl>
+    </Box>
   );
 
   const renderSpecificStep = () => (
-    <div className="space-y-3">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Goal Name
-        </label>
-        <input
-          type="text"
-          value={smartGoal.name}
-          onChange={e => setSmartGoal(prev => ({ ...prev, name: e.target.value }))}
-          className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-          placeholder="Give your goal a name"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Specific Action
-        </label>
-        <textarea
-          value={smartGoal.specificAction}
-          onChange={e => setSmartGoal(prev => ({ ...prev, specificAction: e.target.value }))}
-          className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-          placeholder="What exactly do you want to achieve?"
-          rows={3}
-          required
-        />
-      </div>
-      <p className="text-sm text-gray-500 italic">Example: Run 2x per week for 30 minutes each session</p>
-    </div>
+    <Stack spacing={3}>
+      <Box>
+        <Typography variant="h6" gutterBottom>
+          Make it Specific
+        </Typography>
+        <Typography variant="body2" color="text.secondary" paragraph>
+          Define your goal with clear, specific details
+        </Typography>
+      </Box>
+
+      <TextField
+        label="Goal Name"
+        value={smartGoal.name}
+        onChange={(e) => setSmartGoal(prev => ({ ...prev, name: e.target.value }))}
+        fullWidth
+        required
+        helperText="Give your goal a clear, memorable name"
+      />
+
+      <TextField
+        label="Specific Action"
+        value={smartGoal.specificAction}
+        onChange={(e) => setSmartGoal(prev => ({ ...prev, specificAction: e.target.value }))}
+        fullWidth
+        required
+        multiline
+        rows={3}
+        helperText="What exactly do you want to accomplish? Be as specific as possible"
+      />
+    </Stack>
   );
 
   const renderMeasurableStep = () => (
-    <div className="space-y-3">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          How will you measure progress?
-        </label>
-        <select
+    <Stack spacing={3}>
+      <Box>
+        <Typography variant="h6" gutterBottom>
+          Make it Measurable
+        </Typography>
+        <Typography variant="body2" color="text.secondary" paragraph>
+          Define how you'll measure progress towards this goal
+        </Typography>
+      </Box>
+
+      <FormControl fullWidth required>
+        <InputLabel>Measurement Type</InputLabel>
+        <Select
           value={smartGoal.measurableMetric}
-          onChange={e => setSmartGoal(prev => ({ 
-            ...prev, 
-            measurableMetric: e.target.value as MeasurableMetric,
-            customMetric: e.target.value === 'custom' ? prev.customMetric : undefined
-          }))}
-          className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-          required
+          onChange={(e) => {
+            const value = e.target.value as MeasurableMetric;
+            setSmartGoal(prev => ({
+              ...prev,
+              measurableMetric: value,
+              customMetric: value === 'custom' ? prev.customMetric : undefined
+            }));
+          }}
+          label="Measurement Type"
         >
           {MEASURABLE_METRIC_OPTIONS.map(option => (
-            <option key={option.value} value={option.value}>
+            <MenuItem key={option.value} value={option.value}>
               {option.label}
-            </option>
+            </MenuItem>
           ))}
-        </select>
-      </div>
+        </Select>
+        <FormHelperText>
+          How will you track progress towards this goal?
+        </FormHelperText>
+      </FormControl>
+
       {smartGoal.measurableMetric === 'custom' && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Custom Metric
-          </label>
-          <input
-            type="text"
-            value={smartGoal.customMetric || ''}
-            onChange={e => setSmartGoal(prev => ({ ...prev, customMetric: e.target.value }))}
-            className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-            placeholder="Describe your custom metric"
-            required
-          />
-        </div>
+        <TextField
+          label="Custom Metric"
+          value={smartGoal.customMetric || ''}
+          onChange={(e) => setSmartGoal(prev => ({ ...prev, customMetric: e.target.value }))}
+          fullWidth
+          required
+          helperText="Define your custom way of measuring progress"
+        />
       )}
-    </div>
+    </Stack>
   );
 
   const renderAchievableStep = () => (
@@ -578,269 +633,172 @@ const GoalsPage: React.FC = () => {
     </div>
   );
 
-  const renderTimeboundStep = () => (
-    <div className="space-y-6">
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          How will you track time for this goal?
-        </label>
-        <select
+  const renderTimeboundStep = (): JSX.Element => (
+    <Stack spacing={3}>
+      <Box>
+        <Typography variant="h6" gutterBottom>
+          Make it Time-bound
+        </Typography>
+        <Typography variant="body2" color="text.secondary" paragraph>
+          Set a clear timeline for achieving your goal
+        </Typography>
+      </Box>
+
+      <FormControl fullWidth>
+        <InputLabel>Tracking Type</InputLabel>
+        <Select
           value={smartGoal.timeTracking.type}
-          onChange={e => setSmartGoal(prev => ({ 
-            ...prev, 
+          onChange={(e) => setSmartGoal(prev => ({
+            ...prev,
             timeTracking: {
               ...prev.timeTracking,
-              type: e.target.value as TimeTrackingType,
-              deadline: e.target.value === 'fixed_deadline' ? prev.timeTracking.deadline : undefined,
-              reviewCycle: e.target.value === 'recurring_review' ? 'monthly' : undefined
+              type: e.target.value as TimeTrackingType
             }
           }))}
-          className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-          required
+          label="Tracking Type"
         >
-          <option value="fixed_deadline">Fixed deadline</option>
-          <option value="recurring_review">Continuous goal with regular reviews</option>
-        </select>
-      </div>
+          <MenuItem value="fixed_deadline">Fixed Deadline</MenuItem>
+          <MenuItem value="recurring_review">Recurring Review</MenuItem>
+        </Select>
+      </FormControl>
 
       {smartGoal.timeTracking.type === 'fixed_deadline' ? (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            When will you complete this goal?
-          </label>
-          <ReactDatePicker
-            selected={smartGoal.timeTracking.deadline ? smartGoal.timeTracking.deadline.toDate() : null}
-            onChange={(date: Date | null) => {
-              setSmartGoal(prev => ({
-                ...prev,
-                timeTracking: {
-                  ...prev.timeTracking,
-                  deadline: date ? Timestamp.fromDate(date) : undefined
-                }
-              }));
-            }}
-            dateFormat="yyyy-MM-dd"
-            className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-            placeholderText="Select a date"
-            required
-          />
-          <p className="text-sm text-gray-500 italic mt-2">Set a specific completion date for your goal</p>
-        </div>
-      ) : (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            How often will you review progress?
-          </label>
-          <select
-            value={smartGoal.timeTracking.reviewCycle}
-            onChange={e => setSmartGoal(prev => ({ 
-              ...prev, 
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+          <DatePicker
+            label="Deadline"
+            value={smartGoal.timeTracking.deadline?.toDate() || null}
+            onChange={(date) => setSmartGoal(prev => ({
+              ...prev,
               timeTracking: {
                 ...prev.timeTracking,
-                reviewCycle: e.target.value as ReviewCycle
+                deadline: date ? Timestamp.fromDate(date) : undefined
               }
             }))}
-            className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-            required
+            slotProps={{
+              textField: {
+                fullWidth: true,
+                helperText: 'When do you want to achieve this goal by?'
+              }
+            }}
+          />
+        </LocalizationProvider>
+      ) : (
+        <FormControl fullWidth>
+          <InputLabel>Review Cycle</InputLabel>
+          <Select
+            value={smartGoal.timeTracking.reviewCycle || ''}
+            onChange={(e) => setSmartGoal(prev => ({
+              ...prev,
+              timeTracking: {
+                ...prev.timeTracking,
+                reviewCycle: e.target.value as ReviewCycle,
+                nextReviewDate: calculateNextReviewDate(e.target.value as ReviewCycle)
+              }
+            }))}
+            label="Review Cycle"
           >
             {REVIEW_CYCLE_OPTIONS.map(option => (
-              <option key={option.value} value={option.value}>
+              <MenuItem key={option.value} value={option.value}>
                 {option.label}
-              </option>
+              </MenuItem>
             ))}
-          </select>
-          <p className="text-sm text-gray-500 italic mt-2">
-            Regular reviews help you stay on track with continuous goals
-          </p>
-        </div>
+          </Select>
+          <FormHelperText>
+            How often do you want to review your progress?
+          </FormHelperText>
+        </FormControl>
       )}
-    </div>
+    </Stack>
   );
 
-  const renderMilestonesStep = () => (
-    <div className="space-y-3">
+  const renderMilestonesStep = (): JSX.Element => (
+    <Stack spacing={3}>
       {smartGoal.milestones.map((milestone, index) => (
-        <div key={index} className="border rounded-md p-4 space-y-4">
-          <div className="flex justify-between items-start">
-            <h4 className="font-medium">Milestone {index + 1}</h4>
+        <Box key={index} sx={{ position: 'relative' }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="subtitle1" gutterBottom>
+              Milestone {index + 1}
+            </Typography>
             {index > 0 && (
-              <button
-                type="button"
+              <IconButton
+                size="small"
                 onClick={() => {
                   const newMilestones = smartGoal.milestones.filter((_, i) => i !== index);
                   setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
                 }}
-                className="text-red-500 hover:text-red-700"
+                color="error"
               >
-                <X className="w-5 h-5" />
-              </button>
+                <CloseIcon />
+              </IconButton>
             )}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Milestone Name
-              </label>
-              <input
-                type="text"
-                value={milestone.name}
-                onChange={e => handleMilestoneChange(index, 'name', e.target.value)}
-                className="w-full p-2 border rounded-md"
-                placeholder={`Milestone ${index + 1}`}
+          </Stack>
+          <Stack spacing={2}>
+            <TextField
+              label="Name"
+              value={milestone.name}
+              onChange={(e) => handleMilestoneChange(index, 'name', e.target.value)}
+              fullWidth
+            />
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="Target Date"
+                value={milestone.targetDate?.toDate() || null}
+                onChange={(date) => handleMilestoneChange(index, 'targetDate', date ? Timestamp.fromDate(date) : undefined)}
+                slotProps={{
+                  textField: {
+                    fullWidth: true
+                  }
+                }}
               />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Target Date
-              </label>
-              <ReactDatePicker
-                selected={milestone.targetDate ? milestone.targetDate.toDate() : null}
-                onChange={(date: Date | null) => handleMilestoneChange(index, 'targetDate', date)}
-                dateFormat="yyyy-MM-dd"
-                className="w-full p-2 border rounded-md"
-                placeholderText="Select a date"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Success Criteria
-              </label>
-              <input
-                type="text"
-                value={milestone.successCriteria}
-                onChange={e => handleMilestoneChange(index, 'successCriteria', e.target.value)}
-                className="w-full p-2 border rounded-md"
-                placeholder="How will you know this milestone is complete?"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={milestone.status}
-                onChange={e => handleMilestoneChange(index, 'status', e.target.value as TaskStatus)}
-                className="w-full p-2 border rounded-md"
-              >
-                {STATUS_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
+            </LocalizationProvider>
+          </Stack>
+        </Box>
       ))}
-      <button
-        type="button"
-        onClick={() => setSmartGoal(addMilestone)}
-        className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-      >
-        + Add Milestone
-      </button>
-    </div>
+    </Stack>
   );
 
-  const renderTasksStep = () => (
-    <div className="space-y-3">
+  const renderTasksStep = (): JSX.Element => (
+    <Stack spacing={3}>
       {smartGoal.tasks.map((task, index) => (
-        <div key={index} className="border rounded-md p-4 space-y-4">
-          <div className="flex justify-between items-start">
-            <h4 className="font-medium">Task {index + 1}</h4>
-            <button
-              type="button"
+        <Box key={index}>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="subtitle1">
+              Task {index + 1}
+            </Typography>
+            <IconButton
+              size="small"
               onClick={() => {
                 const newTasks = smartGoal.tasks.filter((_, i) => i !== index);
                 setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
               }}
-              className="text-red-500 hover:text-red-700"
+              color="error"
             >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Title
-              </label>
-              <input
-                type="text"
-                value={task.title}
-                onChange={e => handleTaskChange(index, 'title', e.target.value)}
-                className="w-full p-2 border rounded-md"
-                placeholder="Task title"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description
-              </label>
-              <input
-                type="text"
-                value={task.description || ''}
-                onChange={e => handleTaskChange(index, 'description', e.target.value)}
-                className="w-full p-2 border rounded-md"
-                placeholder="Optional description"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Due Date
-              </label>
-              <ReactDatePicker
-                selected={task.dueDate ? task.dueDate.toDate() : null}
-                onChange={(date: Date | null) => handleTaskChange(index, 'dueDate', date)}
-                dateFormat="yyyy-MM-dd"
-                className="w-full p-2 border rounded-md"
-                placeholderText="Select a date"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Priority
-              </label>
-              <select
-                value={task.priority}
-                onChange={e => handleTaskChange(index, 'priority', e.target.value as TaskPriority)}
-                className="w-full p-2 border rounded-md"
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
-              </label>
-              <select
-                value={task.status}
-                onChange={e => {
-                  const newTasks = [...smartGoal.tasks];
-                  newTasks[index] = { ...task, status: e.target.value as TaskStatus };
-                  setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
+              <CloseIcon />
+            </IconButton>
+          </Stack>
+          <Stack spacing={2}>
+            <TextField
+              label="Title"
+              value={task.title}
+              onChange={(e) => handleTaskChange(index, 'title', e.target.value)}
+              fullWidth
+            />
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="Due Date"
+                value={task.dueDate?.toDate() || null}
+                onChange={(date) => handleTaskChange(index, 'dueDate', date ? Timestamp.fromDate(date) : undefined)}
+                slotProps={{
+                  textField: {
+                    fullWidth: true
+                  }
                 }}
-                className="w-full p-2 border rounded-md"
-              >
-                {STATUS_OPTIONS.map(option => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
+              />
+            </LocalizationProvider>
+          </Stack>
+        </Box>
       ))}
-      <button
-        type="button"
-        onClick={() => setSmartGoal(addTask)}
-        className="text-blue-600 hover:text-blue-700 text-sm font-medium"
-      >
-        + Add Task
-      </button>
-    </div>
+    </Stack>
   );
 
   const renderRoutinesStep = () => (
@@ -857,7 +815,7 @@ const GoalsPage: React.FC = () => {
               }}
               className="text-red-500 hover:text-red-700"
             >
-              <X className="w-5 h-5" />
+              <CloseIcon className="w-5 h-5" />
             </button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -933,10 +891,10 @@ const GoalsPage: React.FC = () => {
               </label>
               <input
                 type="date"
-                value={routine.endDate ? timestampToDateString(routine.endDate) : ''}
-                onChange={e => {
+                value={routine.endDate ? routine.endDate.toDate().toISOString().split('T')[0] : ''}
+                onChange={(e) => {
                   const newRoutines = [...(smartGoal.routines || [])];
-                  newRoutines[index] = { ...routine, endDate: e.target.value ? dateToTimestamp(e.target.value) : undefined };
+                  newRoutines[index] = { ...routine, endDate: e.target.value ? Timestamp.fromDate(new Date(e.target.value)) : undefined };
                   setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
                 }}
                 className="w-full p-2 border rounded-md"
@@ -1154,6 +1112,7 @@ const GoalsPage: React.FC = () => {
             }
           }))}
           className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+          required
         >
           <option value="fixed_deadline">Fixed deadline</option>
           <option value="recurring_review">Continuous goal with regular reviews</option>
@@ -1165,18 +1124,18 @@ const GoalsPage: React.FC = () => {
           <label className="block text-sm font-medium text-gray-700 mb-1">
             When will you complete this goal?
           </label>
-          <ReactDatePicker
-            selected={smartGoal.timeTracking.deadline ? smartGoal.timeTracking.deadline.toDate() : null}
-            onChange={(date: Date | null) => {
+          <input
+            type="date"
+            value={smartGoal.timeTracking.deadline ? smartGoal.timeTracking.deadline.toDate().toISOString().split('T')[0] : ''}
+            onChange={(e) => {
               setSmartGoal(prev => ({
                 ...prev,
                 timeTracking: {
                   ...prev.timeTracking,
-                  deadline: date ? Timestamp.fromDate(date) : undefined
+                  deadline: e.target.value ? Timestamp.fromDate(new Date(e.target.value)) : undefined
                 }
               }));
             }}
-            dateFormat="yyyy-MM-dd"
             className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
           />
         </div>
@@ -1195,6 +1154,7 @@ const GoalsPage: React.FC = () => {
               }
             }))}
             className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+            required
           >
             {REVIEW_CYCLE_OPTIONS.map(option => (
               <option key={option.value} value={option.value}>
@@ -1202,6 +1162,9 @@ const GoalsPage: React.FC = () => {
               </option>
             ))}
           </select>
+          <p className="text-sm text-gray-500 italic mt-2">
+            Regular reviews help you stay on track with continuous goals
+          </p>
         </div>
       )}
     </div>
@@ -1275,21 +1238,21 @@ const GoalsPage: React.FC = () => {
                 className="text-gray-400 hover:text-blue-600 transition-colors"
                 aria-label="Share goal"
               >
-                <Share2 className="w-5 h-5" />
+                <ShareIcon fontSize="small" />
               </button>
               <button
                 onClick={() => handleEdit(goal)}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
                 aria-label="Edit goal"
               >
-                <Edit className="w-5 h-5" />
+                <EditIcon fontSize="small" />
               </button>
               <button
                 onClick={() => handleDelete(goal.id)}
                 className="text-red-400 hover:text-red-600 transition-colors"
                 aria-label="Delete goal"
               >
-                <Trash2 className="w-5 h-5" />
+                <DeleteIcon fontSize="small" />
               </button>
             </div>
           </div>
@@ -1299,128 +1262,189 @@ const GoalsPage: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-gray-800">Goals</h1>
-        <button
-          onClick={() => {
-            setIsAdding(true);
-            setCurrentStep(0);
-            setEditingGoal(null);
-            setEditMode('wizard');
-          }}
-          className={"text-blue-600 hover:text-blue-700"}
-        >
-          + Add Goal
-        </button>
-      </div>
-
-      {renderGoalsList()}
-
-      <GoalSharingModal
-        isOpen={isShareModalOpen}
-        onClose={() => {
-          setIsShareModalOpen(false);
-          setSharingGoal(null);
-        }}
-        goalId={sharingGoal?.id || undefined}
-        initialTitle={sharingGoal?.name || undefined}
-      />
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Box sx={{ mb: 4 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box>
+            <Typography variant="h4" component="h1" gutterBottom>
+              Goals
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Set and track your SMART goals
+            </Typography>
+          </Box>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              setIsAdding(true);
+              setSmartGoal(initialSmartGoal);
+              setCurrentStep(0);
+            }}
+          >
+            Add Goal
+          </Button>
+        </Box>
+      </Box>
 
       {isAdding && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-8 max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-800">
-                  {editMode === 'wizard' ? wizardSteps[currentStep].title : 'Edit Goal'}
-                </h2>
-                {editMode === 'wizard' && wizardSteps[currentStep].subtitle && (
-                  <p className="text-gray-600 mt-1">{wizardSteps[currentStep].subtitle}</p>
-                )}
-              </div>
-              <button
-                onClick={() => {
-                  setIsAdding(false);
-                  setCurrentStep(0);
-                  setEditingGoal(null);
-                  setEditMode('wizard');
-                }}
-                className="text-gray-500 hover:text-gray-700"
+        <Dialog
+          open={true}
+          onClose={() => setIsAdding(false)}
+          maxWidth="md"
+          fullWidth
+        >
+          <DialogTitle>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="h6">
+                Create SMART Goal
+              </Typography>
+              <IconButton
+                edge="end"
+                onClick={() => setIsAdding(false)}
+                size="small"
               >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
+                <CloseIcon />
+              </IconButton>
+            </Box>
+          </DialogTitle>
 
-            <div className="mb-8">
-              {editMode === 'wizard' ? wizardSteps[currentStep].component() : renderEditForm()}
-            </div>
+          <DialogContent>
+            <Box sx={{ mt: 2 }}>
+              <Stepper activeStep={currentStep} sx={{ mb: 4 }}>
+                <Step>
+                  <StepLabel>Area</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Specific</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Measurable</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Achievable</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Relevant</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Time-bound</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Milestones</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Tasks</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Routines</StepLabel>
+                </Step>
+                <Step>
+                  <StepLabel>Review</StepLabel>
+                </Step>
+              </Stepper>
 
-            <div className="flex justify-between items-center">
-              {editMode === 'wizard' ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentStep(prev => prev - 1)}
-                    className={`flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-700 ${
-                      currentStep === 0 ? 'invisible' : ''
-                    }`}
-                  >
-                    <ChevronLeft className="w-5 h-5" />
-                    Back
-                  </button>
-                  <div className="flex gap-1">
-                    {wizardSteps.map((_, index) => (
-                      <div
-                        key={index}
-                        className={`w-2 h-2 rounded-full ${
-                          index === currentStep ? 'bg-blue-600' : 'bg-gray-300'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      if (currentStep === wizardSteps.length - 1) {
-                        handleSubmit(event);
-                      } else {
-                        setCurrentStep(prev => prev + 1);
-                      }
-                    }}
-                    disabled={submitting}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {currentStep === wizardSteps.length - 1 ? (submitting ? 'Creating...' : 'Create Goal') : 'Next'}
-                  </button>
-                </>
-              ) : (
-                <div className="flex justify-end w-full gap-3">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAdding(false);
-                      setEditingGoal(null);
-                      setEditMode('wizard');
-                    }}
-                    className="px-4 py-2 text-gray-600 hover:text-gray-700"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  >
-                    Save Changes
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+              <Box sx={{ mt: 4 }}>
+                {currentStep === 0 && renderAreaStep()}
+                {currentStep === 1 && renderSpecificStep()}
+                {currentStep === 2 && renderMeasurableStep()}
+                {currentStep === 3 && renderAchievableStep()}
+                {currentStep === 4 && renderRelevantStep()}
+                {currentStep === 5 && renderTimeboundStep()}
+                {currentStep === 6 && renderMilestonesStep()}
+                {currentStep === 7 && renderTasksStep()}
+                {currentStep === 8 && renderRoutinesStep()}
+                {currentStep === 9 && renderReviewStep()}
+              </Box>
+            </Box>
+          </DialogContent>
+
+          <DialogActions>
+            <Button
+              onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
+              disabled={currentStep === 0}
+            >
+              Back
+            </Button>
+            <Button
+              variant="contained"
+              onClick={() => {
+                if (currentStep === 9) {
+                  handleSubmit({ preventDefault: () => {} } as React.FormEvent<HTMLFormElement>);
+                } else {
+                  setCurrentStep(prev => prev + 1);
+                }
+              }}
+            >
+              {currentStep === 9 ? 'Create Goal' : 'Next'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       )}
-    </div>
+
+      <Grid container spacing={3}>
+        {goals.map(goal => (
+          <Grid item xs={12} sm={6} lg={4} key={goal.id}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <Box>
+                    <Typography variant="h6" gutterBottom>
+                      {goal.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" paragraph>
+                      {goal.specificAction}
+                    </Typography>
+                    {areas.find(a => a.id === goal.areaId)?.name && (
+                      <Chip
+                        label={areas.find(a => a.id === goal.areaId)?.name}
+                        size="small"
+                        sx={{ mr: 1 }}
+                      />
+                    )}
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleShareClick(goal)}
+                      sx={{ color: 'primary.main' }}
+                    >
+                      <ShareIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleEdit(goal)}
+                      sx={{ color: 'action.active' }}
+                    >
+                      <EditIcon fontSize="small" />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleDelete(goal.id)}
+                      sx={{ color: 'error.main' }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+
+      {isShareModalOpen && sharingGoal && (
+        <GoalSharingModal
+          isOpen={isShareModalOpen}
+          onClose={() => {
+            setIsShareModalOpen(false);
+            setSharingGoal(null);
+          }}
+          goalId={sharingGoal.id}
+          initialTitle={sharingGoal.name}
+        />
+      )}
+    </Container>
   );
 }
 

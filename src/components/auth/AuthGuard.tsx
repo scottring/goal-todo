@@ -1,7 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import SignIn from './SignIn';
-import { Loader2, AlertCircle } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import {
+  Box,
+  CircularProgress,
+  Typography,
+  Alert,
+  Button,
+  Container
+} from '@mui/material';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -9,47 +16,75 @@ interface AuthGuardProps {
 
 export default function AuthGuard({ children }: AuthGuardProps) {
   const { user, loading, error, syncError } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate('/signin', { state: { from: location.pathname } });
+    }
+  }, [user, loading, navigate, location]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto" />
-          <p className="mt-2 text-sm text-gray-600">Initializing...</p>
-        </div>
-      </div>
+      <Container>
+        <Box
+          sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Box sx={{ textAlign: 'center' }}>
+            <CircularProgress />
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+              Initializing...
+            </Typography>
+          </Box>
+        </Box>
+      </Container>
     );
   }
 
   if (error || syncError) {
     const errorMessage = error?.message || syncError?.message;
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="bg-red-50 p-4 rounded-md max-w-md">
-          <div className="flex items-center">
-            <AlertCircle className="w-5 h-5 text-red-400 mr-2" />
-            <h3 className="text-sm font-medium text-red-800">
-              Authentication Error
-            </h3>
-          </div>
-          <div className="mt-2 text-sm text-red-700">
-            {errorMessage || 'An error occurred during authentication. Please try again.'}
-          </div>
-          <div className="mt-4">
-            <button
-              onClick={() => window.location.reload()}
-              className="text-sm text-red-600 hover:text-red-500 font-medium"
+      <Container>
+        <Box
+          sx={{
+            minHeight: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Box sx={{ maxWidth: 'sm' }}>
+            <Alert
+              severity="error"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => window.location.reload()}
+                >
+                  Retry
+                </Button>
+              }
             >
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
+              <Typography variant="subtitle2">Authentication Error</Typography>
+              <Typography variant="body2">
+                {errorMessage || 'An error occurred during authentication. Please try again.'}
+              </Typography>
+            </Alert>
+          </Box>
+        </Box>
+      </Container>
     );
   }
 
   if (!user) {
-    return <SignIn />;
+    return null;
   }
 
   return <>{children}</>;

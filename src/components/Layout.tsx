@@ -1,6 +1,19 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ListTodo, Target, Layers, LogOut, Calendar } from 'lucide-react';
+import {
+  AppBar,
+  Toolbar,
+  Typography,
+  Button,
+  Box,
+  Container,
+  IconButton
+} from '@mui/material';
+import ListAltIcon from '@mui/icons-material/ListAlt';
+import LayersIcon from '@mui/icons-material/Layers';
+import TrackChangesIcon from '@mui/icons-material/TrackChanges';
+import EventNoteIcon from '@mui/icons-material/EventNote';
+import LogoutIcon from '@mui/icons-material/Logout';
 import { signOut } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,71 +31,73 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       console.error('Error signing out:', error);
     }
   };
+
+  const isActive = (path: string) => location.pathname === path;
   
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm">
-        <div className="container mx-auto px-4">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex space-x-8">
-              <Link
+    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <AppBar position="static" color="default" elevation={1}>
+        <Toolbar>
+          <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <Button
+                component={Link}
                 to="/"
-                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium ${
-                  location.pathname === '/' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
-                }`}
+                color={isActive('/') ? 'primary' : 'inherit'}
+                startIcon={<ListAltIcon />}
               >
-                <ListTodo className="w-4 h-4" />
                 Tasks
-              </Link>
-              <Link
+              </Button>
+              <Button
+                component={Link}
                 to="/areas"
-                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium ${
-                  location.pathname === '/areas' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
-                }`}
+                color={isActive('/areas') ? 'primary' : 'inherit'}
+                startIcon={<LayersIcon />}
               >
-                <Layers className="w-4 h-4" />
                 Areas
-              </Link>
-              <Link
+              </Button>
+              <Button
+                component={Link}
                 to="/goals"
-                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium ${
-                  location.pathname === '/goals' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
-                }`}
+                color={isActive('/goals') ? 'primary' : 'inherit'}
+                startIcon={<TrackChangesIcon />}
               >
-                <Target className="w-4 h-4" />
                 Goals
-              </Link>
-              <Link
+              </Button>
+              <Button
+                component={Link}
                 to="/planning"
-                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium ${
-                  location.pathname === '/planning' ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
-                }`}
+                color={isActive('/planning') ? 'primary' : 'inherit'}
+                startIcon={<EventNoteIcon />}
               >
-                <Calendar className="w-4 h-4" />
                 Weekly Planning
-              </Link>
-            </div>
+              </Button>
+            </Box>
+
             {user && (
-              <div className="flex items-center">
-                <span className="text-sm text-gray-600 mr-4">
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="body2" color="textSecondary">
                   {user.displayName || user.email}
-                </span>
-                <button
+                </Typography>
+                <IconButton
                   onClick={handleSignOut}
-                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-gray-500 hover:text-gray-700"
+                  color="inherit"
+                  size="small"
                 >
-                  <LogOut className="w-4 h-4" />
-                  Sign Out
-                </button>
-              </div>
+                  <LogoutIcon />
+                </IconButton>
+              </Box>
             )}
-          </div>
-        </div>
-      </nav>
-      <main className="container mx-auto px-4 py-8">
-        {children}
-      </main>
-    </div>
+          </Container>
+        </Toolbar>
+      </AppBar>
+
+      <Box component="main" sx={{ flexGrow: 1, py: 4 }}>
+        <Container maxWidth="lg">
+          {children}
+        </Container>
+      </Box>
+    </Box>
   );
 };
 

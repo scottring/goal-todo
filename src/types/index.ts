@@ -268,3 +268,75 @@ export interface HabitReview {
     lastCompletedDate: Timestamp;
   };
 }
+
+export interface WeeklyPlanningSession extends BaseDocument {
+  weekStartDate: Timestamp;
+  weekEndDate: Timestamp;
+  status: 'not_started' | 'review_phase' | 'planning_phase' | 'completed';
+  
+  reviewPhase: {
+    completedTasks: string[];  // Task IDs
+    missedTasks: string[];     // Task IDs
+    partiallyCompletedTasks: string[];  // Task IDs
+    longTermGoalReviews: {
+      goalId: string;
+      madeProgress: boolean;
+      adjustments?: string;
+      nextReviewDate: Timestamp;
+    }[];
+    sharedGoalReviews: {
+      goalId: string;
+      completedTasks: string[];
+      pendingTasks: string[];
+      teamReminders: string[];  // User IDs to remind
+    }[];
+    summary: {
+      totalCompleted: number;
+      totalPushedForward: number;
+      totalMissed: number;
+      totalArchived: number;
+      totalClosed: number;
+    };
+  };
+
+  planningPhase: {
+    nextWeekTasks: {
+      taskId: string;
+      priority: TaskPriority;
+      dueDate: Timestamp;
+    }[];
+    sharedGoalAssignments: {
+      goalId: string;
+      assignments: {
+        taskId: string;
+        assignedTo: string;
+        dueDate: Timestamp;
+      }[];
+    }[];
+    recurringTasks: {
+      routineId: string;
+      frequency: 'daily' | 'weekly' | 'monthly';
+      schedule: RoutineSchedule;
+    }[];
+    calendarSyncStatus: {
+      synced: boolean;
+      lastSyncedAt?: Timestamp;
+      syncedEvents: {
+        eventId: string;
+        taskId: string;
+        startTime: Timestamp;
+        endTime: Timestamp;
+      }[];
+    };
+  };
+}
+
+export interface TaskReviewItem {
+  taskId: string;
+  title: string;
+  status: 'completed' | 'missed' | 'partial' | 'needs_review';
+  originalDueDate: Timestamp;
+  completedDate?: Timestamp;
+  action?: 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close';
+  newDueDate?: Timestamp;
+}
