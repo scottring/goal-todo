@@ -1,5 +1,6 @@
 import { addDoc, collection, Timestamp, query, where, getDocs, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
+import { v4 as uuidv4 } from 'uuid';
 
 const cleanupTestData = async (userId: string) => {
   // Delete test areas
@@ -44,6 +45,10 @@ export const setupTestData = async (userId: string) => {
     }
   });
 
+  // Create unique IDs for tasks and routines
+  const taskIds = [uuidv4(), uuidv4(), uuidv4()];
+  const routineIds = [uuidv4(), uuidv4()];
+
   // Create test goal with unscheduled tasks and routines
   const goalRef = await addDoc(collection(db, 'activities'), {
     name: 'Test Goal',
@@ -63,7 +68,7 @@ export const setupTestData = async (userId: string) => {
     sharedWith: [],
     tasks: [
       {
-        id: 'task1',
+        id: taskIds[0],
         title: 'Unscheduled Task 1',
         description: 'High priority task',
         priority: 'high',
@@ -81,7 +86,7 @@ export const setupTestData = async (userId: string) => {
         }
       },
       {
-        id: 'task2',
+        id: taskIds[1],
         title: 'Unscheduled Task 2',
         description: 'Medium priority task',
         priority: 'medium',
@@ -99,7 +104,7 @@ export const setupTestData = async (userId: string) => {
         }
       },
       {
-        id: 'task3',
+        id: taskIds[2],
         title: 'Unscheduled Task 3',
         description: 'Low priority task',
         priority: 'low',
@@ -119,7 +124,7 @@ export const setupTestData = async (userId: string) => {
     ],
     routines: [
       {
-        id: 'routine1',
+        id: routineIds[0],
         title: 'Daily Routine',
         description: 'A routine that should happen daily',
         frequency: 'daily',
@@ -135,7 +140,7 @@ export const setupTestData = async (userId: string) => {
         }
       },
       {
-        id: 'routine2',
+        id: routineIds[1],
         title: 'Weekly Routine',
         description: 'A routine that should happen weekly',
         frequency: 'weekly',
@@ -155,6 +160,8 @@ export const setupTestData = async (userId: string) => {
 
   return {
     areaId: areaRef.id,
-    goalId: goalRef.id
+    goalId: goalRef.id,
+    taskIds,
+    routineIds
   };
 }; 

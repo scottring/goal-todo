@@ -35,7 +35,7 @@ interface WeeklyPlanningContextType {
   moveToPlanningPhase: () => Promise<void>;
   completeSession: () => Promise<void>;
   updateTaskReview: (taskReview: TaskReviewItem) => Promise<void>;
-  updateLongTermGoalReview: (goalId: string, madeProgress: boolean, adjustments?: string) => Promise<void>;
+  updateLongTermGoalReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => Promise<void>;
   updateSharedGoalReview: (goalId: string, completedTasks: string[], pendingTasks: string[]) => Promise<void>;
   sendTeamReminders: (goalId: string, userIds: string[]) => Promise<void>;
   addNextWeekTask: (taskId: string, priority: string, dueDate: Date, timeSlot?: { start: Date; end: Date }) => Promise<void>;
@@ -370,6 +370,41 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     }
   };
 
+  const updateLongTermGoalReview = async (
+    goalId: string,
+    madeProgress: boolean,
+    adjustments?: string,
+    nextReviewDate?: Date
+  ) => {
+    if (!currentSession) return;
+    try {
+      const updatedSession = { ...currentSession };
+      const goalReviewIndex = updatedSession.reviewPhase.longTermGoalReviews.findIndex(
+        review => review.goalId === goalId
+      );
+
+      const reviewData = {
+        goalId,
+        madeProgress,
+        adjustments,
+        nextReviewDate: nextReviewDate ? Timestamp.fromDate(nextReviewDate) : undefined
+      };
+
+      if (goalReviewIndex === -1) {
+        updatedSession.reviewPhase.longTermGoalReviews.push(reviewData);
+      } else {
+        updatedSession.reviewPhase.longTermGoalReviews[goalReviewIndex] = reviewData;
+      }
+
+      const cleanedSession = removeUndefinedFields(updatedSession);
+      await updateDocument('weeklyPlanningSessions', currentSession.id, cleanedSession);
+      setCurrentSession(updatedSession);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      throw err;
+    }
+  };
+
   const value = {
     currentSession,
     isLoading,
@@ -380,7 +415,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     moveToPlanningPhase,
     completeSession,
     updateTaskReview,
-    updateLongTermGoalReview: async () => {}, // TODO: Implement
+    updateLongTermGoalReview,
     updateSharedGoalReview: async () => {}, // TODO: Implement
     sendTeamReminders: async () => {}, // TODO: Implement
     addNextWeekTask,

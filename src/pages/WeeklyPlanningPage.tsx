@@ -221,7 +221,11 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   };
 
   const handleGoalReview = async (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => {
-    await updateLongTermGoalReview(goalId, madeProgress, adjustments);
+    try {
+      await updateLongTermGoalReview(goalId, madeProgress, adjustments, nextReviewDate);
+    } catch (error) {
+      console.error('Error updating goal review:', error);
+    }
   };
 
   const handleSharedGoalUpdate = async (goalId: string, taskId: string, status: 'completed' | 'pending') => {
@@ -261,8 +265,8 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
               goalId={goal.id}
               goalName={goal.name}
               description={goal.specificAction}
-              lastReviewDate={goal.timeTracking.reviewStatus?.lastReviewDate || Timestamp.now()}
-              nextReviewDate={goal.timeTracking.nextReviewDate || Timestamp.now()}
+              lastReviewDate={goal.timeTracking.reviewStatus?.lastReviewDate}
+              nextReviewDate={goal.timeTracking.nextReviewDate}
               onUpdateReview={handleGoalReview}
             />
           ))}
@@ -429,8 +433,8 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
           Weekly Planning
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)' }}>
-          <Box sx={{ width: 300 }}>
+        <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)', overflow: 'hidden' }}>
+          <Box sx={{ width: 300, overflow: 'auto' }}>
             <Typography variant="h6" gutterBottom>
               Unscheduled Items
             </Typography>
@@ -443,20 +447,20 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
                   sx={{ 
                     bgcolor: 'background.paper',
                     borderRadius: 1,
-                    boxShadow: 1
+                    boxShadow: 1,
+                    minHeight: 100
                   }}
                 >
                   {unscheduledItems.map((item, index) => (
                     <Draggable key={item.id} draggableId={item.id} index={index}>
-                      {(provided) => (
+                      {(provided, snapshot) => (
                         <ListItem
                           ref={provided.innerRef}
                           {...provided.draggableProps}
                           {...provided.dragHandleProps}
                           sx={{ 
-                            '&:hover': { 
-                              bgcolor: 'action.hover' 
-                            }
+                            '&:hover': { bgcolor: 'action.hover' },
+                            bgcolor: snapshot.isDragging ? 'action.selected' : 'inherit'
                           }}
                         >
                           <ListItemText
@@ -489,7 +493,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
             </Droppable>
           </Box>
 
-          <Box sx={{ flex: 1 }}>
+          <Box sx={{ flex: 1, overflow: 'auto' }}>
             <Grid container spacing={2}>
               {Array.from({ length: 7 }, (_, index) => {
                 const day = addDays(startOfWeek(new Date()), index);
@@ -510,7 +514,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
                       </Typography>
 
                       <Droppable droppableId={`day-${index}`}>
-                        {(provided) => (
+                        {(provided, snapshot) => (
                           <Box
                             ref={provided.innerRef}
                             {...provided.droppableProps}
@@ -518,9 +522,10 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
                               minHeight: 100,
                               mt: 2,
                               border: '2px dashed',
-                              borderColor: 'divider',
+                              borderColor: snapshot.isDraggingOver ? 'primary.main' : 'divider',
                               borderRadius: 1,
-                              p: 1
+                              p: 1,
+                              transition: 'border-color 0.2s ease'
                             }}
                           >
                             {currentSession?.planningPhase.nextWeekTasks

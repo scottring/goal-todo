@@ -23,8 +23,8 @@ interface LongTermGoalReviewProps {
   goalId: string;
   goalName: string;
   description: string;
-  lastReviewDate: Timestamp;
-  nextReviewDate: Timestamp;
+  lastReviewDate?: Timestamp;
+  nextReviewDate?: Timestamp;
   onUpdateReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => void;
 }
 
@@ -39,13 +39,44 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [madeProgress, setMadeProgress] = useState(false);
   const [adjustments, setAdjustments] = useState('');
-  const [reviewDate, setReviewDate] = useState<Date | null>(nextReviewDate.toDate());
+  
+  // Initialize reviewDate safely handling non-Timestamp values
+  const initialReviewDate = (() => {
+    if (nextReviewDate) {
+      if (typeof nextReviewDate.toDate === 'function') {
+        return nextReviewDate.toDate();
+      } else if (nextReviewDate instanceof Date) {
+        return nextReviewDate;
+      } else {
+        return new Date(nextReviewDate);
+      }
+    } else {
+      return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Default to 1 week from now
+    }
+  })();
+  const [reviewDate, setReviewDate] = useState<Date | null>(initialReviewDate);
 
   const handleSave = () => {
     if (reviewDate) {
       onUpdateReview(goalId, madeProgress, adjustments, reviewDate);
     }
     setIsEditing(false);
+  };
+
+  const formatDate = (timestamp: any): string => {
+    if (!timestamp) return 'Not set';
+    if (typeof timestamp.toDate === 'function') {
+      return timestamp.toDate().toLocaleDateString();
+    } else if (timestamp instanceof Date) {
+      return timestamp.toLocaleDateString();
+    } else {
+      try {
+        return new Date(timestamp).toLocaleDateString();
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        return 'Invalid date';
+      }
+    }
   };
 
   return (
@@ -74,10 +105,10 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
           <Stack spacing={2}>
             <Box>
               <Typography variant="subtitle2" gutterBottom>
-                Last Review: {lastReviewDate.toDate().toLocaleDateString()}
+                Last Review: {formatDate(lastReviewDate)}
               </Typography>
               <Typography variant="subtitle2" gutterBottom>
-                Next Review: {nextReviewDate.toDate().toLocaleDateString()}
+                Next Review: {formatDate(nextReviewDate)}
               </Typography>
             </Box>
 

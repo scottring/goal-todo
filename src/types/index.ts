@@ -283,7 +283,7 @@ export interface WeeklyPlanningSession extends BaseDocument {
       goalId: string;
       madeProgress: boolean;
       adjustments?: string;
-      nextReviewDate: Timestamp;
+      nextReviewDate?: Timestamp;
     }[];
     sharedGoalReviews: {
       goalId: string;
