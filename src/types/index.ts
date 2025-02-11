@@ -136,7 +136,7 @@ export interface SourceActivity extends BaseDocument {
   name: string;
   specificAction: string;
   measurableMetric: MeasurableMetric;
-  customMetric?: string;
+  customMetric?: string | null;
   achievabilityCheck: AchievabilityCheck;
   relevance: string;
   timeTracking: TimeTracking;

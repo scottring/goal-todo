@@ -6,7 +6,7 @@ interface GoalsContextType {
   goals: SourceActivity[];
   loading: boolean;
   error: Error | null;
-  createGoal: (data: Omit<SourceActivity, 'id' | 'ownerId' | 'createdAt' | 'updatedAt' | 'tasks' | 'routines'>) => Promise<void>;
+  createGoal: (data: Omit<SourceActivity, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
   updateGoal: (goalId: string, data: Partial<SourceActivity>) => Promise<void>;
   deleteGoal: (goalId: string) => Promise<void>;
   refreshGoals: () => Promise<void>;

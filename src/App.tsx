@@ -8,6 +8,7 @@ import GoalDetailPage from './pages/GoalDetailPage';
 import WeeklyPlanning from './components/planning/WeeklyPlanning';
 import SignUp from './components/auth/SignUp';
 import ForgotPassword from './components/auth/ForgotPassword';
+import AdminPage from './pages/AdminPage';
 import { AreasProvider } from './contexts/AreasContext';
 import { GoalsProvider } from './contexts/GoalsContext';
 import { SharedGoalsProvider } from './contexts/SharedGoalsContext';
@@ -38,6 +39,7 @@ function App() {
                             <Route path="/goals" element={<GoalsPage />} />
                             <Route path="/goals/:goalId" element={<GoalDetailPage />} />
                             <Route path="/planning" element={<WeeklyPlanning />} />
+                            <Route path="/admin" element={<AdminPage />} />
                           </Routes>
                         </Layout>
                       </SharedGoalsProvider>
