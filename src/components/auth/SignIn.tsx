@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '../../lib/firebase';
+import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
+import { auth, googleProvider, initializeUserData } from '../../lib/firebase';
 import {
   Container,
   Box,
@@ -11,7 +11,8 @@ import {
   Divider,
   Alert,
   Paper,
-  Link as MuiLink
+  Link as MuiLink,
+  CircularProgress
 } from '@mui/material';
 import GoogleIcon from '@mui/icons-material/Google';
 
@@ -34,11 +35,15 @@ export default function SignIn() {
     setLoading(true);
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const userCredential = await signInWithEmailAndPassword(auth, email, password);
+      await initializeUserData(userCredential.user.uid, {
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName
+      });
       navigate(from, { replace: true });
-    } catch (err) {
-      setError('Failed to sign in. Please check your credentials.');
+    } catch (err: any) {
       console.error('Sign in error:', err);
+      setError(err.message || 'Failed to sign in. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -49,12 +54,19 @@ export default function SignIn() {
     setLoading(true);
 
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const userCredential = await signInWithPopup(auth, googleProvider);
+      await initializeUserData(userCredential.user.uid, {
+        email: userCredential.user.email,
+        displayName: userCredential.user.displayName
+      });
       navigate(from, { replace: true });
-    } catch (err) {
-      setError('Failed to sign in with Google.');
+    } catch (err: any) {
       console.error('Google sign in error:', err);
+      if (err.code === 'auth/popup-closed-by-user') {
+        setError('Sign in cancelled. Please try again.');
+      } else {
+        setError(err.message || 'Failed to sign in with Google.');
+      }
     } finally {
       setLoading(false);
     }
@@ -91,6 +103,7 @@ export default function SignIn() {
               name="email"
               autoComplete="email"
               autoFocus
+              disabled={loading}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -103,6 +116,7 @@ export default function SignIn() {
               type="password"
               id="password"
               autoComplete="current-password"
+              disabled={loading}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -123,7 +137,7 @@ export default function SignIn() {
               disabled={loading}
               sx={{ mt: 3, mb: 2 }}
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? <CircularProgress size={24} /> : 'Sign in'}
             </Button>
 
             <Divider sx={{ my: 2 }}>
@@ -139,7 +153,7 @@ export default function SignIn() {
               onClick={handleGoogleSignIn}
               disabled={loading}
             >
-              Sign in with Google
+              {loading ? <CircularProgress size={24} /> : 'Sign in with Google'}
             </Button>
           </Box>
         </Paper>

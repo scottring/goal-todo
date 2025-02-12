@@ -69,27 +69,29 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   const [unscheduledItems, setUnscheduledItems] = useState<UnscheduledItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { goals } = useGoalsContext();
   const { getCollection, addDocument, updateDocument, getDocument } = useFirestore();
 
   useEffect(() => {
-    if (user) {
+    if (currentUser) {
       loadCurrentSession();
     }
-  }, [user]);
+  }, [currentUser]);
 
   const loadCurrentSession = async () => {
+    if (!currentUser) return;
+    
     try {
       setIsLoading(true);
       const now = new Date();
-      const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-      const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6));
+      const weekStart = startOfWeek(now);
+      const weekEnd = endOfWeek(now);
 
       const sessions = await getCollection<WeeklyPlanningSession>('weeklyPlanningSessions', [
-        where('ownerId', '==', user?.uid),
-        where('weekStartDate', '>=', Timestamp.fromDate(startOfWeek)),
-        where('weekEndDate', '<=', Timestamp.fromDate(endOfWeek))
+        where('ownerId', '==', currentUser.uid),
+        where('weekStartDate', '>=', Timestamp.fromDate(weekStart)),
+        where('weekEndDate', '<=', Timestamp.fromDate(weekEnd))
       ]);
 
       if (sessions.length > 0) {
@@ -103,11 +105,16 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   };
 
   const startNewSession = async () => {
+    if (!currentUser) {
+      setError('User must be authenticated to start a session');
+      return;
+    }
+
     try {
       setIsLoading(true);
       const now = new Date();
-      const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
-      const endOfWeek = new Date(now.setDate(now.getDate() - now.getDay() + 6));
+      const weekStart = startOfWeek(now);
+      const weekEnd = endOfWeek(now);
 
       // Get all tasks from goals
       const tasksToReview: TaskReviewItem[] = goals.flatMap(goal => 
@@ -120,9 +127,9 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
       );
 
       const newSession: Omit<WeeklyPlanningSession, 'id'> = {
-        ownerId: user!.uid,
-        weekStartDate: Timestamp.fromDate(startOfWeek),
-        weekEndDate: Timestamp.fromDate(endOfWeek),
+        ownerId: currentUser.uid,
+        weekStartDate: Timestamp.fromDate(weekStart),
+        weekEndDate: Timestamp.fromDate(weekEnd),
         status: 'not_started',
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
@@ -130,7 +137,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
           completedTasks: [],
           missedTasks: [],
           partiallyCompletedTasks: [],
-          taskReviews: tasksToReview,  // Add tasks to review
+          taskReviews: tasksToReview,
           longTermGoalReviews: [],
           sharedGoalReviews: [],
           summary: {
@@ -260,7 +267,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   };
 
   const fetchUnscheduledItems = async () => {
-    if (!user) return;
+    if (!currentUser) return;
     
     try {
       setIsLoading(true);

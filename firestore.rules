@@ -20,7 +20,7 @@ service cloud.firestore {
 
     function hasViewPermission(data) {
       return isOwner(data.ownerId) || 
-             request.auth.uid in data.sharedWith ||
+             (data.sharedWith != null && request.auth.uid in data.sharedWith) ||
              (data.permissions != null && 
               request.auth.uid in data.permissions && 
               data.permissions[request.auth.uid].view == true);
@@ -43,71 +43,95 @@ service cloud.firestore {
 
     // Areas collection
     match /areas/{areaId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
-    }
-
-    // Shared goals collection
-    match /shared_goals/{goalId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && (
-        hasEditPermission(resource.data) || 
-        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) && 
-         hasInvitePermission(resource.data))
-      );
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
-    }
-
-    // User goals collection (personal instances of shared goals)
-    match /user_goals/{goalId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith) ||
+        (resource.data.permissions != null && request.auth.uid in resource.data.permissions)
+      );
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.permissions != null && 
+         request.auth.uid in resource.data.permissions && 
+         resource.data.permissions[request.auth.uid].edit == true)
+      );
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
     }
 
     // Activities collection (regular goals)
     match /activities/{activityId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read: if isSignedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        request.auth.uid in resource.data.sharedWith
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith)
       );
-      allow update: if isSignedIn() && hasAccess(resource.data);
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.permissions != null && 
+         request.auth.uid in resource.data.permissions && 
+         resource.data.permissions[request.auth.uid].edit == true)
+      );
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
     }
 
     // Tasks collection
     match /tasks/{taskId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith)
+      );
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.permissions != null && 
+         request.auth.uid in resource.data.permissions && 
+         resource.data.permissions[request.auth.uid].edit == true)
+      );
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
     }
 
     // Routines collection
     match /routines/{routineId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read: if isSignedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.assignedTo == request.auth.uid
+        request.auth.uid == resource.data.ownerId ||
+        request.auth.uid == resource.data.assignedTo
       );
       allow update: if isSignedIn() && (
-        resource.data.ownerId == request.auth.uid ||
-        resource.data.assignedTo == request.auth.uid
+        request.auth.uid == resource.data.ownerId ||
+        request.auth.uid == resource.data.assignedTo
       );
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
+    }
+
+    // Shared goals collection
+    match /shared_goals/{goalId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith)
+      );
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participants']) && 
+         hasInvitePermission(resource.data)) ||
+        hasEditPermission(resource.data)
+      );
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
     }
 
     // Shared reviews collection
     match /shared_reviews/{reviewId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
-      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.participants != null && request.auth.uid in resource.data.participants)
+      );
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.ownerId ||
+        (resource.data.participants != null && request.auth.uid in resource.data.participants)
+      );
+      allow delete: if isSignedIn() && request.auth.uid == resource.data.ownerId;
     }
   }
 }

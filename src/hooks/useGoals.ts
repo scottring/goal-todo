@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { where, Timestamp } from 'firebase/firestore';
-import { useFirestore } from './useFirestore';
+import { useFirestoreContext } from '../contexts/FirestoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import type { SourceActivity } from '../types';
 
@@ -10,14 +10,16 @@ export const useGoals = () => {
   const [goals, setGoals] = useState<SourceActivity[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { user } = useAuth();
-  const { getCollection, addDocument, updateDocument, deleteDocument } = useFirestore();
+  const { currentUser } = useAuth();
+  const { getCollection, addDocument, updateDocument, deleteDocument } = useFirestoreContext();
 
   const fetchGoals = async () => {
+    if (!currentUser) return;
+
     try {
       setLoading(true);
       const fetchedGoals = await getCollection<SourceActivity>('activities', [
-        where('ownerId', '==', user?.uid)
+        where('ownerId', '==', currentUser.uid)
       ]);
       
       // Ensure tasks and routines are arrays
@@ -37,16 +39,20 @@ export const useGoals = () => {
   };
 
   useEffect(() => {
-    if (user) {
+    if (currentUser) {
       fetchGoals();
+    } else {
+      setGoals([]);
     }
-  }, [user]);
+  }, [currentUser]);
 
   const createGoal = async (data: CreateGoalData) => {
+    if (!currentUser) throw new Error('User must be authenticated to create a goal');
+
     try {
       await addDocument<SourceActivity>('activities', {
         ...data,
-        ownerId: user?.uid || '',
+        ownerId: currentUser.uid,
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now()
       });
@@ -59,6 +65,8 @@ export const useGoals = () => {
   };
 
   const updateGoal = async (goalId: string, data: Partial<SourceActivity>) => {
+    if (!currentUser) throw new Error('User must be authenticated to update a goal');
+
     try {
       await updateDocument<SourceActivity>('activities', goalId, {
         ...data,
@@ -73,6 +81,8 @@ export const useGoals = () => {
   };
 
   const deleteGoal = async (goalId: string) => {
+    if (!currentUser) throw new Error('User must be authenticated to delete a goal');
+
     try {
       await deleteDocument('activities', goalId);
       await fetchGoals();

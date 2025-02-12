@@ -21,7 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   
   const handleSignOut = async () => {
     try {
@@ -74,10 +74,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </Button>
             </Box>
 
-            {user && (
+            {currentUser && (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Typography variant="body2" color="textSecondary">
-                  {user.displayName || user.email}
+                  {currentUser.displayName || currentUser.email}
                 </Typography>
                 <IconButton
                   onClick={handleSignOut}

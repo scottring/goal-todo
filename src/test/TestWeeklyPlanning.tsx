@@ -8,37 +8,65 @@ import {
   Container,
   Typography,
   CircularProgress,
-  Alert
+  Alert,
+  List,
+  ListItem,
+  ListItemText
 } from '@mui/material';
 
 export const TestWeeklyPlanning: React.FC = () => {
-  const { user } = useAuth();
+  const { currentUser, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    console.log('TestWeeklyPlanning mounted', { currentUser, authLoading });
+    if (!authLoading && !currentUser) {
+      console.log('Redirecting to signin');
+      navigate('/signin');
+    }
+  }, [currentUser, authLoading, navigate]);
+
   const handleSetupTest = async () => {
-    if (!user) return;
+    if (!currentUser) {
+      setError('Please sign in to continue');
+      return;
+    }
 
     try {
       setLoading(true);
       setError(null);
       setSuccess(false);
+      console.log('Setting up test data for user:', currentUser.uid);
 
-      const { areaId, goalId } = await setupTestData(user.uid);
+      await setupTestData(currentUser.uid);
       setSuccess(true);
+      console.log('Test data setup complete');
 
       // Navigate to weekly planning page after a short delay
       setTimeout(() => {
         navigate('/planning');
       }, 1500);
     } catch (err) {
+      console.error('Error setting up test data:', err);
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
       setLoading(false);
     }
   };
+
+  if (authLoading) {
+    console.log('Auth loading...');
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  console.log('Rendering test content', { currentUser, error, success, loading });
 
   return (
     <Container maxWidth="sm">
@@ -62,7 +90,7 @@ export const TestWeeklyPlanning: React.FC = () => {
         <Button
           variant="contained"
           onClick={handleSetupTest}
-          disabled={loading || !user}
+          disabled={loading || !currentUser}
           sx={{ mt: 2 }}
         >
           {loading ? (
@@ -72,14 +100,22 @@ export const TestWeeklyPlanning: React.FC = () => {
           )}
         </Button>
 
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-          This will create:
-          <ul>
-            <li>A test area</li>
-            <li>A test goal with 3 unscheduled tasks</li>
-            <li>2 routines (daily and weekly)</li>
-          </ul>
-        </Typography>
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="body2" color="text.secondary" gutterBottom>
+            This will create:
+          </Typography>
+          <List>
+            <ListItem>
+              <ListItemText primary="A test area" />
+            </ListItem>
+            <ListItem>
+              <ListItemText primary="A test goal with 3 unscheduled tasks" />
+            </ListItem>
+            <ListItem>
+              <ListItemText primary="2 routines (daily and weekly)" />
+            </ListItem>
+          </List>
+        </Box>
       </Box>
     </Container>
   );

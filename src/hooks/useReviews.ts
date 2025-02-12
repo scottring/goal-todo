@@ -28,7 +28,7 @@ export const useReviews = () => {
   const [upcomingReviews, setUpcomingReviews] = useState<ReviewItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { updateDocument } = useFirestore();
 
   const calculateNextReviewDate = (
@@ -62,7 +62,7 @@ export const useReviews = () => {
       nextSteps: string;
     }
   ) => {
-    if (!user) return;
+    if (!currentUser) return;
 
     const now = Timestamp.now();
     const nextReviewDate = calculateNextReviewDate(item.frequency, now);
@@ -91,14 +91,9 @@ export const useReviews = () => {
 
         case 'milestone':
           if (!item.parentGoalId) throw new Error('Parent goal ID required for milestone review');
+          if (!item.id) throw new Error('Milestone ID is required for review');
           await updateDocument('user_goals', item.parentGoalId, {
-            milestones: {
-              [item.id]: {
-                review: {
-                  reviewStatus
-                }
-              }
-            }
+            [`milestones.${item.id}.review.reviewStatus`]: reviewStatus
           });
           break;
 
@@ -124,7 +119,7 @@ export const useReviews = () => {
   };
 
   const fetchUpcomingReviews = async () => {
-    if (!user) return;
+    if (!currentUser) return;
 
     try {
       setLoading(true);
@@ -196,10 +191,10 @@ export const useReviews = () => {
   };
 
   useEffect(() => {
-    if (user) {
+    if (currentUser) {
       fetchUpcomingReviews();
     }
-  }, [user]);
+  }, [currentUser]);
 
   return {
     upcomingReviews,
@@ -208,4 +203,4 @@ export const useReviews = () => {
     submitReview,
     refreshReviews: fetchUpcomingReviews
   };
-}; 
+};

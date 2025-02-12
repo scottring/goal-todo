@@ -21,7 +21,7 @@ export const useScheduledTasks = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { goals } = useGoalsContext();
   const { userGoals } = useSharedGoalsContext();
   const { getCollection, updateDocument } = useFirestore();
@@ -113,13 +113,20 @@ export const useScheduledTasks = () => {
           routineName: routine.title
         },
         isRoutine: true,
-        routineCompletionDate: todayTimestamp
+        routineCompletionDate: todayTimestamp,
+        sharedWith: [],
+        permissions: {}
       }];
     });
   };
 
   const fetchScheduledTasks = async () => {
-    if (!user) return;
+    if (!currentUser) {
+      setScheduledTasks([]);
+      setLoading(false);
+      setError(null);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -216,6 +223,7 @@ export const useScheduledTasks = () => {
       setError(null);
     } catch (err) {
       setError(err as Error);
+      setScheduledTasks([]);
       console.error('Error fetching scheduled tasks:', err);
     } finally {
       setLoading(false);
@@ -223,13 +231,20 @@ export const useScheduledTasks = () => {
   };
 
   useEffect(() => {
-    if (user) {
+    if (currentUser) {
       fetchScheduledTasks();
+    } else {
+      setScheduledTasks([]);
+      setLoading(false);
+      setError(null);
     }
-  }, [user, goals, userGoals]);
+  }, [currentUser, goals, userGoals]);
 
   const completeTask = async (taskId: string) => {
+    if (!currentUser) throw new Error('User must be authenticated to complete a task');
+
     try {
+      setLoading(true);
       const task = scheduledTasks.find(t => t.id === taskId);
       if (!task) return;
 
@@ -248,41 +263,40 @@ export const useScheduledTasks = () => {
           completionDates: [...routine.completionDates, task.routineCompletionDate!]
         };
 
-        const updatedRoutines = goal.routines.map(r => 
+        const updatedRoutines = goal.routines.map(r =>
           r.title === task.source.routineName ? updatedRoutine : r
         );
 
         if ('parentGoalId' in goal) {
-          // Update user goal
           await updateDocument('user_goals', goal.id, { routines: updatedRoutines });
         } else {
-          // Update regular goal
           await updateDocument('activities', goal.id, { routines: updatedRoutines });
         }
       } else {
-        // For regular tasks, update the completed status
+        // For regular tasks, update the task's completed status
         const goal = goals.find(g => g.tasks.some(t => t.id === taskId)) ||
                     userGoals.find(g => g.tasks.some(t => t.id === taskId));
         
         if (!goal) return;
 
         const updatedTasks = goal.tasks.map(t =>
-          t.id === taskId ? { ...t, completed: true, status: 'completed' as const } : t
+          t.id === taskId ? { ...t, completed: true, updatedAt: Timestamp.now() } : t
         );
 
         if ('parentGoalId' in goal) {
-          // Update user goal
           await updateDocument('user_goals', goal.id, { tasks: updatedTasks });
         } else {
-          // Update regular goal
           await updateDocument('activities', goal.id, { tasks: updatedTasks });
         }
       }
 
       await fetchScheduledTasks();
     } catch (err) {
+      console.error('Error completing task:', err);
       setError(err as Error);
       throw err;
+    } finally {
+      setLoading(false);
     }
   };
 

@@ -10,44 +10,53 @@ export const useAreas = () => {
   const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { getCollection, addDocument, updateDocument, deleteDocument } = useFirestoreContext();
 
   const fetchAreas = async () => {
-    if (!user) return;
+    if (!currentUser) {
+      setAreas([]);
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
       const fetchedAreas = await getCollection<Area>('areas', [
-        where('ownerId', '==', user.uid)
+        where('ownerId', '==', currentUser.uid)
       ]);
       setAreas(fetchedAreas);
       setError(null);
     } catch (err) {
       console.error('Error fetching areas:', err);
       setError(err as Error);
+      setAreas([]);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (user) {
+    if (currentUser) {
       fetchAreas();
     } else {
       setAreas([]);
+      setLoading(false);
+      setError(null);
     }
-  }, [user]);
+  }, [currentUser]);
 
   const createArea = async (data: CreateAreaData) => {
-    if (!user) throw new Error('User must be authenticated to create an area');
+    if (!currentUser) throw new Error('User must be authenticated to create an area');
 
     try {
+      setLoading(true);
       await addDocument<Area>('areas', {
         ...data,
-        ownerId: user.uid,
+        ownerId: currentUser.uid,
         createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now()
+        updatedAt: Timestamp.now(),
+        permissions: {}
       });
       await fetchAreas();
     } catch (err) {
@@ -58,9 +67,10 @@ export const useAreas = () => {
   };
 
   const updateArea = async (areaId: string, data: Partial<Area>) => {
-    if (!user) throw new Error('User must be authenticated to update an area');
+    if (!currentUser) throw new Error('User must be authenticated to update an area');
 
     try {
+      setLoading(true);
       await updateDocument<Area>('areas', areaId, data);
       await fetchAreas();
     } catch (err) {
@@ -71,9 +81,10 @@ export const useAreas = () => {
   };
 
   const deleteArea = async (areaId: string) => {
-    if (!user) throw new Error('User must be authenticated to delete an area');
+    if (!currentUser) throw new Error('User must be authenticated to delete an area');
 
     try {
+      setLoading(true);
       await deleteDocument('areas', areaId);
       await fetchAreas();
     } catch (err) {

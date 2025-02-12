@@ -14,13 +14,13 @@ import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
 
 export const useFirestore = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { currentUser, loading: authLoading } = useAuth();
 
   const checkAuth = () => {
     if (authLoading) {
       throw new Error('Authentication is still initializing');
     }
-    if (!user) {
+    if (!currentUser) {
       throw new Error('User must be authenticated to access Firestore');
     }
   };
@@ -76,7 +76,7 @@ export const useFirestore = () => {
       const collectionRef = collection(db, collectionName);
       const docRef = await addDoc(collectionRef, {
         ...data,
-        ownerId: user.uid,
+        ownerId: currentUser!.uid,
         createdAt: new Date(),
         updatedAt: new Date()
       });
@@ -96,13 +96,27 @@ export const useFirestore = () => {
     checkAuth();
     try {
       const docRef = doc(db, collectionName, documentId);
-      // Remove undefined values and create a clean update object
-      const cleanData = Object.entries(data).reduce((acc, [key, value]) => {
-        if (value !== undefined) {
-          acc[key] = value;
+
+      // Recursively remove undefined values
+      function clean(obj: any): any {
+        if (Array.isArray(obj)) {
+          return obj.map(clean).filter(value => value !== undefined);
+        } else if (typeof obj === 'object' && obj !== null) {
+          return Object.entries(obj).reduce((acc, [key, value]) => {
+            const cleanedValue = clean(value);
+            if (cleanedValue !== undefined) {
+              acc[key] = cleanedValue;
+            }
+            return acc;
+          }, {} as Record<string, any>);
+        } else if (obj !== undefined) {
+          return obj;
+        } else {
+          return undefined;
         }
-        return acc;
-      }, {} as Record<string, any>);
+      }
+
+      const cleanData = clean(data);
 
       await updateDoc(docRef, {
         ...cleanData,
@@ -135,4 +149,4 @@ export const useFirestore = () => {
     updateDocument,
     deleteDocument
   };
-}; 
+};
