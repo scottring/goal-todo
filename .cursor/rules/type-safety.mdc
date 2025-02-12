@@ -1,0 +1,15 @@
+---
+description: use totally safe typescript always
+globs: src/**/*.ts*
+---
+- Use TypeScript for all code.
+- Implement proper type safety and inference.
+- Give every function an explicit return type.
+- Prefer interfaces over types.
+- Avoid enums, use const maps instead.
+- Use guard clauses that throw errors to check types when logically necessary.
+- Never use type assertions like the `as` keywords except for making values readonly with “as const”.
+- Never use the unsafe `any` type; the “unknown” type and generic type parameters are encouraged.
+- Never use custom type guards, as their internal logic is not type safe.
+- Never use the `!` operator to avoid type checking if a value is defined.
+- Whenever possible annotate implicit `any`s with a safe type, including `unknown` if necessary.
