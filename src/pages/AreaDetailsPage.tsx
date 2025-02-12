@@ -1,10 +1,26 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Calendar, Loader2, Plus, Edit, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, Plus, Edit, Trash2 } from 'lucide-react';
 import { useAreas } from '../hooks/useAreas';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { Area } from '../types';
 import ErrorBoundary from '../components/ErrorBoundary';
+import {
+  Box,
+  Container,
+  Typography,
+  Button,
+  IconButton,
+  Grid,
+  CircularProgress,
+  Card,
+  CardContent,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemIcon
+} from '@mui/material';
+import ArrowForwardIos from '@mui/icons-material/ArrowForwardIos';
 
 const AreaDetailsPage: React.FC = () => {
   const { areaId } = useParams<{ areaId: string }>();
@@ -45,110 +61,111 @@ const AreaDetailsPage: React.FC = () => {
 
   if (areasLoading || goalsLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-      </div>
+      <Box display="flex" alignItems="center" justifyContent="center" height="100vh">
+        <CircularProgress />
+      </Box>
     );
   }
 
   return (
     <ErrorBoundary>
-    <div className="max-w-6xl mx-auto p-6">
-      <div className="flex items-center gap-4 mb-8">
-        <button
-          onClick={() => navigate('/areas')}
-          className="text-gray-600 hover:text-gray-800"
-        >
-          <ArrowLeft className="w-6 h-6" />
-        </button>
-        <div>
-          {area && (
-            <>
-              <h1 className="text-3xl font-bold text-gray-900">{area.name}</h1>
-              {area.description && (
-                <p className="mt-1 text-gray-600">{area.description}</p>
-              )}
-            </>
+      <Container maxWidth="lg" sx={{ py: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 4 }}>
+          <IconButton onClick={() => navigate('/areas')} aria-label="Back to Areas">
+            <ArrowLeft />
+          </IconButton>
+          <Box>
+            {area && (
+              <>
+                <Typography variant="h4" component="h1" gutterBottom>
+                  {area.name}
+                </Typography>
+                <Typography variant="body1" color="textSecondary">
+                  {area.description}
+                </Typography>
+              </>
+            )}
+          </Box>
+        </Box>
+
+        <Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">Goals in this Area</Typography>
+            <Button
+              variant="contained"
+              startIcon={<Plus />}
+              onClick={() => area && navigate('/goals', { state: { preselectedAreaId: area.id } })}
+            >
+              Add Goal
+            </Button>
+          </Box>
+
+          {areaGoals.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4, bgcolor: 'grey.50', borderRadius: 1 }}>
+              <Typography variant="body2" color="textSecondary">
+                No goals in this area yet
+              </Typography>
+            </Box>
+          ) : (
+            <Grid container spacing={3}>
+              {areaGoals.map((goal: any) => (
+                <Grid item xs={12} md={6} key={goal.id}>
+                  <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderLeft: `4px solid ${area?.color || '#000000'}` }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Box>
+                          <Typography variant="h6" component="h3">
+                            {goal.name}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <IconButton
+                            onClick={() => navigate('/goals', { state: { editingGoal: goal } })}
+                            aria-label="Edit goal"
+                          >
+                            <Edit fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            onClick={() => handleDelete(goal.id)}
+                            aria-label="Delete goal"
+                            color="error"
+                          >
+                            <Trash2 fontSize="small" />
+                          </IconButton>
+                        </Box>
+                      </Box>
+                      <Typography variant="body2" color="textSecondary">
+                        {goal.description}
+                      </Typography>
+                      {goal.deadline && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', mt: 2, color: 'text.secondary' }}>
+                          <Calendar style={{ marginRight: 4, width: 16, height: 16 }} />
+                          {new Date(goal.deadline).toLocaleDateString()}
+                        </Box>
+                      )}
+                      {goal.milestones && goal.milestones.length > 0 && (
+                        <Box mt={2}>
+                          <Typography variant="subtitle2">Milestones:</Typography>
+                          <List dense>
+                            {goal.milestones.map((milestone: any, index: any) => (
+                              <ListItem key={index}>
+                                <ListItemIcon>
+                                  <ArrowForwardIos style={{ fontSize: 14 }} />
+                                </ListItemIcon>
+                                <ListItemText primary={milestone} />
+                              </ListItem>
+                            ))}
+                          </List>
+                        </Box>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
           )}
-        </div>
-      </div>
-
-      <div className="mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold text-gray-800">Goals in this Area</h2>
-          <button
-            onClick={() => area && navigate('/goals', { state: { preselectedAreaId: area.id } })}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <Plus className="w-4 h-4 mr-2" />
-            Add Goal
-          </button>
-        </div>
-
-        {areaGoals.length === 0 ? (
-          <div className="text-center text-gray-500 py-12 bg-gray-50 rounded-lg">
-            No goals in this area yet
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {areaGoals.map((goal: any) => (
-              <div
-                key={goal.id}
-                className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-                style={{ borderLeft: `4px solid ${area?.color || '#000000'}` }}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-xl font-semibold text-gray-800">{goal.name}</h3>
-                    {goal.description && (
-                      <div className="mt-3 space-y-2">
-                        {goal.description.split('\n').map((line: any, index: any) => (
-                          <p key={index} className="text-gray-600 text-sm">
-                            {line}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => navigate('/goals', { state: { editingGoal: goal } })}
-                      className="text-gray-400 hover:text-gray-600 transition-colors"
-                      aria-label="Edit goal"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(goal.id)}
-                      className="text-red-400 hover:text-red-600 transition-colors"
-                      aria-label="Delete goal"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-                {goal.deadline && (
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mt-3">
-                    <Calendar className="w-4 h-4" />
-                    {new Date(goal.deadline).toLocaleDateString()}
-                  </div>
-                )}
-                {goal.milestones && goal.milestones.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-2">Milestones:</h4>
-                    <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                      {goal.milestones.map((milestone: any, index: any) => (
-                        <li key={index}>{milestone}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+        </Box>
+      </Container>
     </ErrorBoundary>
   );
 };

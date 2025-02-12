@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { where, Timestamp } from 'firebase/firestore';
 import { useFirestoreContext } from '../contexts/FirestoreContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -11,7 +11,7 @@ export const useAreas = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const { currentUser } = useAuth();
-  const { getCollection, addDocument, updateDocument, deleteDocument } = useFirestoreContext();
+  const { getCollection, addDocument, updateDocument, deleteDocument, getDocument } = useFirestoreContext();
 
   const fetchAreas = async () => {
     if (!currentUser) {
@@ -94,17 +94,8 @@ export const useAreas = () => {
     }
   };
 
-  return {
-    areas,
-    loading,
-    error,
-    createArea,
-    updateArea,
-    deleteArea,
-    refreshAreas: fetchAreas,
-   getAreaById: async (areaId: string) => {
+  const getAreaById = useCallback(async (areaId: string) => {
     if (!currentUser) throw new Error('User must be authenticated to get an area');
-    const { getDocument } = useFirestoreContext();
     try {
       console.log('Fetching area with ID:', areaId);
       const area = await getDocument<Area>('areas', areaId);
@@ -114,6 +105,16 @@ export const useAreas = () => {
       console.error("Error fetching area:", error);
       throw error;
     }
-  }
+  }, [currentUser, getDocument]);
+
+  return {
+    areas,
+    loading,
+    error,
+    createArea,
+    updateArea,
+    deleteArea,
+    refreshAreas: fetchAreas,
+    getAreaById
   };
 };
