@@ -4,7 +4,15 @@ import { useFirestore } from './useFirestore';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
-import type { Task, Routine, UserGoal, SharedGoal, RoutineWithoutSystemFields } from '../types';
+import type { 
+  Task, 
+  Routine, 
+  UserGoal, 
+  SharedGoal, 
+  RoutineWithoutSystemFields,
+  DayOfWeek,
+  DaySchedule
+} from '../types';
 
 export interface ScheduledTask extends Task {
   source: {
@@ -15,6 +23,16 @@ export interface ScheduledTask extends Task {
   isRoutine?: boolean;
   routineCompletionDate?: Timestamp;
 }
+
+const DAY_TO_NUMBER: Record<DayOfWeek, number> = {
+  'sunday': 0,
+  'monday': 1,
+  'tuesday': 2,
+  'wednesday': 3,
+  'thursday': 4,
+  'friday': 5,
+  'saturday': 6
+};
 
 export const useScheduledTasks = () => {
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
@@ -34,6 +52,12 @@ export const useScheduledTasks = () => {
     today.setHours(0, 0, 0, 0);
     const todayTimestamp = Timestamp.fromDate(today);
     
+    // Get start and end of current week
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6); // End of week (Saturday)
+    
     return routines.flatMap(routine => {
       // Skip routines without system fields
       if (!('id' in routine)) return [];
@@ -43,70 +67,80 @@ export const useScheduledTasks = () => {
         return [];
       }
 
-      // Check if routine is already completed for today
-      const completedToday = routine.completionDates.some(date => {
+      // Get completions for this week
+      const completionsThisWeek = routine.completionDates.filter(date => {
         const completionDate = date.toDate();
-        completionDate.setHours(0, 0, 0, 0);
-        return completionDate.getTime() === today.getTime();
-      });
+        return completionDate >= weekStart && completionDate <= weekEnd;
+      }).length;
 
-      if (completedToday) {
-        return [];
-      }
-
-      // Check if routine should be scheduled for today based on frequency
-      let shouldSchedule = false;
+      // Check if routine should be scheduled based on frequency
+      let scheduledDays: Date[] = [];
       const dayOfWeek = today.getDay();
       const dayOfMonth = today.getDate();
       const month = today.getMonth();
 
       switch (routine.frequency) {
         case 'daily':
-          shouldSchedule = true;
+          scheduledDays.push(today);
           break;
         case 'weekly':
-          // Schedule on Monday or if behind on weekly target
-          const completionsThisWeek = routine.completionDates.filter(date => {
-            const completionDate = date.toDate();
-            const diffTime = today.getTime() - completionDate.getTime();
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return diffDays <= dayOfWeek;
-          }).length;
-          shouldSchedule = dayOfWeek === 1 || completionsThisWeek < routine.targetCount;
+          // Check schedule.daysOfWeek if it exists
+          const daysOfWeek = routine.schedule?.daysOfWeek;
+          if (daysOfWeek && daysOfWeek.length > 0) {
+            // Check if today matches any of the scheduled days
+            const isScheduledToday = daysOfWeek.some(ds => DAY_TO_NUMBER[ds.day] === dayOfWeek);
+            
+            // If today is one of the scheduled days and we haven't met the target count
+            if (isScheduledToday && completionsThisWeek < routine.targetCount) {
+              scheduledDays.push(today);
+            }
+          } else {
+            // Fallback: Schedule if behind on weekly target
+            if (completionsThisWeek < routine.targetCount) {
+              scheduledDays.push(today);
+            }
+          }
           break;
         case 'monthly':
-          // Schedule on 1st of month or if behind on monthly target
-          const completionsThisMonth = routine.completionDates.filter(date => {
-            const completionDate = date.toDate();
-            return completionDate.getMonth() === month;
-          }).length;
-          shouldSchedule = dayOfMonth === 1 || completionsThisMonth < routine.targetCount;
+          // Check if specific day of month is scheduled
+          if (routine.schedule?.dayOfMonth) {
+            if (dayOfMonth === routine.schedule.dayOfMonth) {
+              scheduledDays.push(today);
+            }
+          } else {
+            // Fallback: Schedule on 1st of month or if behind on monthly target
+            const completionsThisMonth = routine.completionDates.filter(date => {
+              const completionDate = date.toDate();
+              return completionDate.getMonth() === month;
+            }).length;
+            if (dayOfMonth === 1 || completionsThisMonth < routine.targetCount) {
+              scheduledDays.push(today);
+            }
+          }
           break;
         case 'quarterly':
-          // Schedule on first of quarter or if behind
-          const quarterStart = Math.floor(month / 3) * 3 + 1;
-          shouldSchedule = (month === quarterStart && dayOfMonth === 1);
+          if (routine.schedule?.monthsOfYear?.includes(month + 1) && dayOfMonth === 1) {
+            scheduledDays.push(today);
+          }
           break;
         case 'yearly':
-          // Schedule on January 1st
-          shouldSchedule = (month === 0 && dayOfMonth === 1);
+          if ((routine.schedule?.monthsOfYear?.[0] === month + 1 || month === 0) && dayOfMonth === 1) {
+            scheduledDays.push(today);
+          }
           break;
       }
 
-      if (!shouldSchedule) {
-        return [];
-      }
-
-      return [{
-        id: `${routine.id}-${todayTimestamp.seconds}`,
+      // Generate tasks for each scheduled day
+      return scheduledDays.map(date => ({
+        id: `${routine.id}-${Timestamp.fromDate(date).seconds}`,
         title: routine.title,
         description: routine.description,
         completed: false,
         priority: 'medium',
         status: 'not_started',
         ownerId: routine.ownerId,
-        createdAt: todayTimestamp,
-        updatedAt: todayTimestamp,
+        createdAt: Timestamp.fromDate(date),
+        updatedAt: Timestamp.fromDate(date),
         source: {
           type: 'routine',
           goalName,
@@ -116,7 +150,7 @@ export const useScheduledTasks = () => {
         routineCompletionDate: todayTimestamp,
         sharedWith: [],
         permissions: {}
-      }];
+      }));
     });
   };
 
@@ -307,4 +341,4 @@ export const useScheduledTasks = () => {
     completeTask,
     refreshTasks: fetchScheduledTasks
   };
-}; 
+};

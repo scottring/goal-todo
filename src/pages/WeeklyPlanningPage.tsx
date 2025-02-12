@@ -487,6 +487,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     getScheduleSuggestions,
     updateSession
   } = useWeeklyPlanning();
+  const { goals } = useGoalsContext();
 
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<{
     item: UnscheduledItem;
@@ -509,9 +510,10 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [scheduledTasks, setScheduledTasks] = useState<{[key: string]: string}>({});  // Map taskId to title
 
+  // Refresh unscheduled items when goals or current session changes
   useEffect(() => {
     fetchUnscheduledItems();
-  }, []);
+  }, [goals, currentSession]);
 
   useEffect(() => {
     setLocalUnscheduledItems(unscheduledItems);

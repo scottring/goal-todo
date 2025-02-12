@@ -273,10 +273,27 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
       setIsLoading(true);
       const items: UnscheduledItem[] = [];
 
-      // Fetch tasks from goals that don't have a dueDate
+      // Fetch tasks from goals that are not completed and either:
+      // 1. Don't have a dueDate, or
+      // 2. Have a dueDate but are not in the current planning session
       for (const goal of goals) {
         const unscheduledTasks = goal.tasks
-          .filter(task => !task.dueDate && !task.completed)
+          .filter(task => {
+            // Skip completed tasks
+            if (task.completed) return false;
+            
+            // Include tasks without due dates
+            if (!task.dueDate) return true;
+            
+            // For tasks with due dates, check if they're not already in the current session
+            if (currentSession?.planningPhase?.nextWeekTasks) {
+              return !currentSession.planningPhase.nextWeekTasks.some(
+                plannedTask => plannedTask.taskId === task.id
+              );
+            }
+            
+            return true;
+          })
           .map(task => ({
             id: task.id,
             type: 'task' as const,
@@ -290,11 +307,33 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
         
         items.push(...unscheduledTasks);
 
-        // Get unscheduled routines
+        // Get unscheduled routines that:
+        // 1. Don't have a schedule, or
+        // 2. Have an incomplete schedule, or
+        // 3. Are not in the current planning session
         const unscheduledRoutines = goal.routines
           .filter(routine => {
             const r = routine as Routine | RoutineWithoutSystemFields;
-            return !r.schedule || !r.schedule.daysOfWeek?.length;
+            
+            // Skip if routine has an end date that's passed
+            if (r.endDate && r.endDate.toDate() < new Date()) {
+              return false;
+            }
+
+            // Include routines without any schedule
+            if (!r.schedule) return true;
+
+            // Include routines with incomplete schedule
+            if (!r.schedule.daysOfWeek?.length) return true;
+
+            // Check if routine is not already in current session
+            if (currentSession?.planningPhase?.recurringTasks) {
+              return !currentSession.planningPhase.recurringTasks.some(
+                plannedRoutine => plannedRoutine.routineId === ('id' in r ? r.id : undefined)
+              );
+            }
+
+            return true;
           })
           .map(routine => {
             const r = routine as Routine | RoutineWithoutSystemFields;

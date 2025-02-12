@@ -21,6 +21,7 @@ export const useGoals = () => {
       const fetchedGoals = await getCollection<SourceActivity>('activities', [
         where('ownerId', '==', currentUser.uid)
       ]);
+      console.log('fetchedGoals:', fetchedGoals);
       
       // Ensure tasks and routines are arrays
       const processedGoals = fetchedGoals.map(goal => ({

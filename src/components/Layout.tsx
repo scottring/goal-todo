@@ -42,8 +42,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <Box sx={{ display: 'flex', gap: 2 }}>
               <Button
                 component={Link}
-                to="/"
-                color={isActive('/') ? 'primary' : 'inherit'}
+                to="/tasks"
+                color={isActive('/tasks') ? 'primary' : 'inherit'}
                 startIcon={<ListAltIcon />}
               >
                 Tasks
@@ -66,8 +66,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </Button>
               <Button
                 component={Link}
-                to="/planning"
-                color={isActive('/planning') ? 'primary' : 'inherit'}
+                to="/weekly-planning"
+                color={isActive('/weekly-planning') ? 'primary' : 'inherit'}
                 startIcon={<EventNoteIcon />}
               >
                 Weekly Planning
