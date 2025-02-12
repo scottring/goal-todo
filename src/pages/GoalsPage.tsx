@@ -256,8 +256,8 @@ const removeUndefinedFields = (obj: any): any => {
 const GoalsPage: React.FC = () => {
   const location = useLocation();
   const { areas } = useAreasContext();
-  const { goals, createGoal, updateGoal, deleteGoal } = useGoalsContext();
-  const { user } = useAuth();
+    const { goals, createGoal, updateGoal, deleteGoal } = useGoalsContext();
+  const { currentUser } = useAuth();
   const [isAdding, setIsAdding] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [editingGoal, setEditingGoal] = useState<string | null>(null);
@@ -328,7 +328,7 @@ const GoalsPage: React.FC = () => {
         sharedWith: [],
         tasks: smartGoal.tasks.map(task => ({
           id: '',
-          ownerId: user?.uid || '',
+          ownerId: currentUser?.uid || '',
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now(),
           title: task.title.trim(),
@@ -754,6 +754,13 @@ const GoalsPage: React.FC = () => {
           </Stack>
         </Box>
       ))}
+      <Button
+        variant="outlined"
+        startIcon={<AddIcon />}
+        onClick={() => setSmartGoal(prev => addMilestone(prev))}
+      >
+        Add Milestone
+      </Button>
     </Stack>
   );
 
@@ -798,6 +805,13 @@ const GoalsPage: React.FC = () => {
           </Stack>
         </Box>
       ))}
+      <Button
+        variant="outlined"
+        startIcon={<AddIcon />}
+        onClick={() => setSmartGoal(prev => addTask(prev))}
+      >
+        Add Task
+      </Button>
     </Stack>
   );
 

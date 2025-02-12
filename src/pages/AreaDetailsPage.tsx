@@ -1,17 +1,37 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Loader2, Plus, Edit, Trash2 } from 'lucide-react';
-import { useAreasContext } from '../contexts/AreasContext';
+import { useAreas } from '../hooks/useAreas';
 import { useGoalsContext } from '../contexts/GoalsContext';
+import { Area } from '../types';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 const AreaDetailsPage: React.FC = () => {
   const { areaId } = useParams<{ areaId: string }>();
   const navigate = useNavigate();
-  const { areas, loading: areasLoading } = useAreasContext();
+  const { getAreaById, loading: areasLoading } = useAreas();
   const { goals, loading: goalsLoading, deleteGoal } = useGoalsContext();
+  const [area, setArea] = useState<Area | null>(null);
 
-  const area = areas.find(a => a.id === areaId);
+  useEffect(() => {
+    console.log('useEffect triggered, Area ID from URL:', areaId);
+    if (areaId) {
+      getAreaById(areaId)
+        .then(area => {
+          if (area) {
+            setArea(area);
+            console.log('Fetched Area:', area);
+          } else {
+            console.error("Area not found");
+            setArea(null);
+          }
+        })
+        .catch(error => console.error("Error fetching area:", error));
+    }
+  }, [areaId, getAreaById]);
+
   const areaGoals = goals.filter(goal => goal.areaId === areaId);
+  console.log('Area Goals:', areaGoals);
 
   const handleDelete = async (goalId: string) => {
     if (window.confirm('Are you sure you want to delete this goal?')) {
@@ -31,17 +51,8 @@ const AreaDetailsPage: React.FC = () => {
     );
   }
 
-  if (!area) {
-    return (
-      <div className="max-w-6xl mx-auto p-6">
-        <div className="text-center text-gray-500 py-12">
-          Area not found
-        </div>
-      </div>
-    );
-  }
-
   return (
+    <ErrorBoundary>
     <div className="max-w-6xl mx-auto p-6">
       <div className="flex items-center gap-4 mb-8">
         <button
@@ -51,9 +62,13 @@ const AreaDetailsPage: React.FC = () => {
           <ArrowLeft className="w-6 h-6" />
         </button>
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">{area.name}</h1>
-          {area.description && (
-            <p className="mt-1 text-gray-600">{area.description}</p>
+          {area && (
+            <>
+              <h1 className="text-3xl font-bold text-gray-900">{area.name}</h1>
+              {area.description && (
+                <p className="mt-1 text-gray-600">{area.description}</p>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -62,7 +77,7 @@ const AreaDetailsPage: React.FC = () => {
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-xl font-semibold text-gray-800">Goals in this Area</h2>
           <button
-            onClick={() => navigate('/goals', { state: { preselectedAreaId: area.id } })}
+            onClick={() => area && navigate('/goals', { state: { preselectedAreaId: area.id } })}
             className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
           >
             <Plus className="w-4 h-4 mr-2" />
@@ -76,18 +91,18 @@ const AreaDetailsPage: React.FC = () => {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-            {areaGoals.map((goal) => (
+            {areaGoals.map((goal: any) => (
               <div
                 key={goal.id}
                 className="bg-white p-6 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
-                style={{ borderLeft: `4px solid ${area.color || '#000000'}` }}
+                style={{ borderLeft: `4px solid ${area?.color || '#000000'}` }}
               >
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="text-xl font-semibold text-gray-800">{goal.name}</h3>
                     {goal.description && (
                       <div className="mt-3 space-y-2">
-                        {goal.description.split('\n').map((line, index) => (
+                        {goal.description.split('\n').map((line: any, index: any) => (
                           <p key={index} className="text-gray-600 text-sm">
                             {line}
                           </p>
@@ -122,7 +137,7 @@ const AreaDetailsPage: React.FC = () => {
                   <div className="mt-4">
                     <h4 className="text-sm font-medium text-gray-700 mb-2">Milestones:</h4>
                     <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
-                      {goal.milestones.map((milestone, index) => (
+                      {goal.milestones.map((milestone: any, index: any) => (
                         <li key={index}>{milestone}</li>
                       ))}
                     </ul>
@@ -134,7 +149,8 @@ const AreaDetailsPage: React.FC = () => {
         )}
       </div>
     </div>
+    </ErrorBoundary>
   );
 };
 
-export default AreaDetailsPage; 
+export default AreaDetailsPage;
