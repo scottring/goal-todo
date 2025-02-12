@@ -102,18 +102,18 @@ export const useAreas = () => {
     updateArea,
     deleteArea,
     refreshAreas: fetchAreas,
-    getAreaById: async (areaId: string) => {
-      if (!currentUser) throw new Error('User must be authenticated to get an area');
-      const { getDocument } = useFirestoreContext();
-      try {
-        console.log('Fetching area with ID:', areaId);
-        const area = await getDocument<Area>('areas', areaId);
-        console.log('Fetched area data:', area);
-        return area;
-      } catch (error) {
-        console.error("Error fetching area:", error);
-        throw error;
-      }
+   getAreaById: async (areaId: string) => {
+    if (!currentUser) throw new Error('User must be authenticated to get an area');
+    const { getDocument } = useFirestoreContext();
+    try {
+      console.log('Fetching area with ID:', areaId);
+      const area = await getDocument<Area>('areas', areaId);
+      console.log('Fetched area data:', area);
+      return area;
+    } catch (error) {
+      console.error("Error fetching area:", error);
+      throw error;
     }
+  }
   };
 };

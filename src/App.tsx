@@ -1,5 +1,4 @@
 import React from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { FirestoreProvider } from './contexts/FirestoreContext';
 import { AreasProvider } from './contexts/AreasContext';
@@ -18,7 +17,6 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <LocalizationProvider dateAdapter={AdapterDateFns}>
-        <Router>
           <AuthProvider>
             <FirestoreProvider>
               <AreasProvider>
@@ -32,7 +30,6 @@ function App() {
               </AreasProvider>
             </FirestoreProvider>
           </AuthProvider>
-        </Router>
       </LocalizationProvider>
     </ThemeProvider>
   );
