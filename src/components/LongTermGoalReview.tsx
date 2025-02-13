@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { Timestamp } from '../types';
+import { timestampToDate } from '../utils/date';
 import {
   Box,
   Card,
@@ -13,7 +15,8 @@ import {
   IconButton,
   Alert,
   Collapse,
-  Chip
+  Chip,
+  Paper
 } from '@mui/material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -21,16 +24,15 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { Timestamp } from 'firebase/firestore';
 import { addDays, nextSunday, previousSunday, isSunday, isAfter, isBefore, startOfDay } from 'date-fns';
 
 interface LongTermGoalReviewProps {
   goalId: string;
   goalName: string;
-  description: string;
+  description?: string;
   lastReviewDate?: Timestamp;
   nextReviewDate?: Timestamp;
-  onUpdateReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => void;
+  onUpdateReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => Promise<void>;
 }
 
 const getNextReviewDate = (currentDate: Date = new Date()): Date => {
@@ -92,13 +94,20 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
       return getNextReviewDate();
     }
   })();
-  const [reviewDate, setReviewDate] = useState<Date | null>(initialReviewDate);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(
+    nextReviewDate ? timestampToDate(nextReviewDate) : null
+  );
 
-  const handleSave = async () => {
-    if (reviewDate) {
+  const formatDate = (timestamp: Timestamp | undefined) => {
+    if (!timestamp) return 'Not set';
+    return timestampToDate(timestamp).toLocaleDateString();
+  };
+
+  const handleSubmit = async () => {
+    if (selectedDate) {
       try {
         // Always normalize the review date to the appropriate Sunday
-        const normalizedReviewDate = getNextReviewDate(reviewDate);
+        const normalizedReviewDate = getNextReviewDate(selectedDate);
         
         // Create review data with only defined values
         const reviewData = {
@@ -124,166 +133,70 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
     setIsEditing(false);
   };
 
-  const formatDate = (timestamp: any): string => {
-    if (!timestamp) return 'Not set';
-    if (typeof timestamp.toDate === 'function') {
-      return timestamp.toDate().toLocaleDateString();
-    } else if (timestamp instanceof Date) {
-      return timestamp.toLocaleDateString();
-    } else {
-      try {
-        return new Date(timestamp).toLocaleDateString();
-      } catch (error) {
-        console.error('Error formatting date:', error);
-        return 'Invalid date';
-      }
-    }
-  };
-
   return (
-    <LocalizationProvider dateAdapter={AdapterDateFns}>
-      <Card variant="outlined">
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                {goalName}
-              </Typography>
-              {hasBeenReviewed && (
-                <Chip
-                  icon={<CheckCircleIcon />}
-                  label="Reviewed"
-                  color="success"
-                  size="small"
-                  sx={{ mr: 1 }}
-                />
-              )}
-            </Box>
-            <IconButton
-              size="small"
-              onClick={() => setIsEditing(!isEditing)}
-              color={isEditing ? 'primary' : 'default'}
-            >
-              {isEditing ? <SaveIcon /> : <EditIcon />}
-            </IconButton>
-          </Box>
-
-          <Typography variant="body2" color="textSecondary" paragraph>
-            {description}
+    <Paper sx={{ p: 3 }}>
+      <Stack spacing={2}>
+        <Box>
+          <Typography variant="h6" gutterBottom>
+            {goalName}
           </Typography>
+          {description && (
+            <Typography variant="body2" color="text.secondary">
+              {description}
+            </Typography>
+          )}
+        </Box>
 
-          <Divider sx={{ my: 2 }} />
+        <Box>
+          {lastReviewDate && (
+            <Typography variant="body2" color="text.secondary">
+              Last reviewed: {formatDate(lastReviewDate)}
+            </Typography>
+          )}
+          {nextReviewDate && (
+            <Typography variant="body2" color="text.secondary">
+              Next review: {formatDate(nextReviewDate)}
+            </Typography>
+          )}
+        </Box>
 
-          <Collapse in={showSuccess}>
-            <Alert severity="success" sx={{ mb: 2 }}>
-              Review saved successfully!
-            </Alert>
-          </Collapse>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={madeProgress}
+              onChange={(e) => setMadeProgress(e.target.checked)}
+            />
+          }
+          label="Made progress since last review"
+        />
 
-          <Stack spacing={2}>
-            <Box>
-              <Typography variant="subtitle2" gutterBottom>
-                Last Review: {formatDate(lastReviewDate)}
-              </Typography>
-              <Typography variant="subtitle2" gutterBottom>
-                Next Review: {formatDate(nextReviewDate)}
-              </Typography>
-            </Box>
+        <TextField
+          label="Adjustments or Notes"
+          multiline
+          rows={3}
+          value={adjustments}
+          onChange={(e) => setAdjustments(e.target.value)}
+          fullWidth
+        />
 
-            {isEditing ? (
-              <>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={madeProgress}
-                      onChange={(e) => setMadeProgress(e.target.checked)}
-                      color="primary"
-                    />
-                  }
-                  label="Made meaningful progress this week?"
-                />
+        <LocalizationProvider dateAdapter={AdapterDateFns}>
+          <DatePicker
+            label="Next Review Date"
+            value={selectedDate}
+            onChange={(date) => setSelectedDate(date)}
+            slotProps={{
+              textField: {
+                fullWidth: true,
+                helperText: 'When would you like to review this goal again?'
+              }
+            }}
+          />
+        </LocalizationProvider>
 
-                <TextField
-                  fullWidth
-                  multiline
-                  rows={3}
-                  label="Adjustments or Notes"
-                  value={adjustments}
-                  onChange={(e) => setAdjustments(e.target.value)}
-                  variant="outlined"
-                />
-
-                <DatePicker
-                  label="Next Review Date"
-                  value={reviewDate}
-                  onChange={(newValue: Date | null) => {
-                    if (newValue) {
-                      // Automatically adjust to appropriate Sunday when date is changed
-                      setReviewDate(getNextReviewDate(newValue));
-                    } else {
-                      setReviewDate(null);
-                    }
-                  }}
-                  sx={{ width: '100%' }}
-                />
-                <Typography variant="caption" color="text.secondary">
-                  Note: Review dates are automatically adjusted to the nearest appropriate Sunday
-                </Typography>
-
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                  <Button onClick={() => setIsEditing(false)}>Cancel</Button>
-                  <Button
-                    variant="contained"
-                    onClick={handleSave}
-                    startIcon={<SaveIcon />}
-                  >
-                    Save Review
-                  </Button>
-                </Box>
-              </>
-            ) : (
-              <>
-                {savedReview ? (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                      Latest Review
-                    </Typography>
-                    <Stack spacing={1}>
-                      <Typography variant="body2">
-                        Progress: {savedReview.madeProgress ? 'Yes' : 'No'}
-                      </Typography>
-                      {savedReview.adjustments && (
-                        <Typography variant="body2">
-                          Adjustments: {savedReview.adjustments}
-                        </Typography>
-                      )}
-                      <Typography variant="body2">
-                        Next Review: {savedReview.nextReviewDate?.toLocaleDateString()}
-                      </Typography>
-                    </Stack>
-                    <Button
-                      variant="outlined"
-                      onClick={() => setIsEditing(true)}
-                      startIcon={<EditIcon />}
-                      sx={{ mt: 2 }}
-                    >
-                      Update Review
-                    </Button>
-                  </Box>
-                ) : (
-                  <Button
-                    variant="outlined"
-                    onClick={() => setIsEditing(true)}
-                    startIcon={<EditIcon />}
-                  >
-                    Start Review
-                  </Button>
-                )}
-              </>
-            )}
-          </Stack>
-        </CardContent>
-      </Card>
-    </LocalizationProvider>
+        <Button variant="contained" onClick={handleSubmit}>
+          Save Review
+        </Button>
+      </Stack>
+    </Paper>
   );
 }; 

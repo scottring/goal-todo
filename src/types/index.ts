@@ -1,4 +1,19 @@
-import { Timestamp } from 'firebase/firestore';
+// Remove Firebase import
+// import { Timestamp } from 'firebase/firestore';
+
+// Custom Timestamp interface
+export interface Timestamp {
+  seconds: number;
+  nanoseconds: number;
+}
+
+// Type for Firebase Timestamp (used only in Firebase adapter)
+export interface FirebaseTimestamp extends Timestamp {
+  toDate(): Date;
+  toMillis(): number;
+  isEqual(other: FirebaseTimestamp): boolean;
+  toJSON(): { seconds: number; nanoseconds: number };
+}
 
 export interface UserProfile {
   id: string;
@@ -335,9 +350,9 @@ export interface WeeklyPlanningSession extends BaseDocument {
 export interface TaskReviewItem {
   taskId: string;
   title: string;
-  status: 'completed' | 'missed' | 'partial' | 'needs_review';
+  status: 'completed' | 'missed' | 'needs_review' | 'partial';
   originalDueDate: Timestamp;
+  action?: 'mark_completed' | 'mark_missed' | 'push_forward' | 'archive' | 'close';
   completedDate?: Timestamp;
-  action?: 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close';
-  newDueDate?: Timestamp;
+  priority: TaskPriority;
 }

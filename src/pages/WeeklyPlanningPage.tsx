@@ -1,6 +1,8 @@
-import React, { useState, useEffect, Dispatch, SetStateAction } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
 import { TaskReviewItem, TaskPriority, RoutineSchedule, DaySchedule, TimeOfDay } from '../types';
+import { dateToTimestamp, timestampToDate, now } from '../utils/date';
+import { fromFirebaseTimestamp } from '../utils/firebase-adapter';
 import {
   Box,
   Button,
@@ -13,56 +15,25 @@ import {
   Tabs,
   Tab,
   Stack,
-  Card,
-  CardContent,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
   Chip,
   Grid,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
   Badge,
   Alert
 } from '@mui/material';
-import {
-  DndContext,
-  DragOverlay,
-  useSensors,
-  useSensor,
-  PointerSensor,
-  KeyboardSensor,
-  closestCorners,
-  DragEndEvent
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  sortableKeyboardCoordinates,
-  useSortable,
-  verticalListSortingStrategy
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
-import { Timestamp } from 'firebase/firestore';
-import { NextWeekTaskPlanner } from '../components/NextWeekTaskPlanner';
-import { RecurringTaskScheduler } from '../components/RecurringTaskScheduler';
-import { v4 as uuidv4 } from 'uuid';
 import { WeeklyPlanSummary } from '../components/WeeklyPlanSummary';
 import { format, addDays, isSameDay, startOfWeek } from 'date-fns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import { useGoalsContext } from '../contexts/GoalsContext';
-import { updateDocument } from '../utils/firestore';
 
 interface PlannedTask {
   id: string;
@@ -102,9 +73,12 @@ interface WeeklyPlanningContextType {
   updateSharedGoalReview: (goalId: string, completedTasks: string[], pendingTasks: string[]) => Promise<void>;
   sendTeamReminders: (goalId: string, userIds: string[]) => Promise<void>;
   syncWithCalendar: () => Promise<void>;
-  setCurrentSession: Dispatch<SetStateAction<any>>;
-  setUnscheduledItems: Dispatch<SetStateAction<UnscheduledItem[]>>;
   updateSession: (session: any) => Promise<void>;
+  unscheduledItems: UnscheduledItem[];
+  addNextWeekTask: (taskId: string, priority: TaskPriority, date: Date, timeSlot?: { start: Date; end: Date }) => Promise<void>;
+  scheduleRecurringTask: (routineId: string, frequency: string, schedule: any) => Promise<void>;
+  fetchUnscheduledItems: () => Promise<void>;
+  getScheduleSuggestions: () => Promise<void>;
 }
 
 const steps = ['Start Session', 'Weekly Review', 'Weekly Planning', 'Finalize'];
@@ -123,9 +97,12 @@ export const WeeklyPlanningPage: React.FC = () => {
     updateSharedGoalReview,
     sendTeamReminders,
     syncWithCalendar,
-    setCurrentSession,
-    setUnscheduledItems,
-    updateSession
+    updateSession,
+    unscheduledItems,
+    addNextWeekTask,
+    scheduleRecurringTask,
+    fetchUnscheduledItems,
+    getScheduleSuggestions
   } = useWeeklyPlanning();
 
   const [activeStep, setActiveStep] = useState(0);
@@ -251,12 +228,20 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   };
 
   const handleTaskAction = async (taskId: string, action: string) => {
+    const task = currentSession?.reviewPhase?.taskReviews?.find(t => t.taskId === taskId);
+    if (!task) {
+      console.error('Task not found:', taskId);
+      return;
+    }
+
     await updateTaskReview({
       taskId,
-      title: 'Task Title', // TODO: Get actual task title
+      title: task.title || 'Untitled Task',
       status: action === 'mark_completed' ? 'completed' : action === 'mark_missed' ? 'missed' : 'needs_review',
-      originalDueDate: Timestamp.now(), // TODO: Get actual due date
-      action: action as any
+      originalDueDate: task.originalDueDate || now(),
+      action: action as any,
+      priority: task.priority || 'medium',
+      completedDate: action === 'mark_completed' ? now() : undefined
     });
   };
 
@@ -338,17 +323,22 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
       {activeTab === 1 && (
         <Stack spacing={3}>
-          {goals.map(goal => (
-            <LongTermGoalReview
-              key={goal.id}
-              goalId={goal.id}
-              goalName={goal.name}
-              description={goal.specificAction}
-              lastReviewDate={goal.timeTracking.reviewStatus?.lastReviewDate}
-              nextReviewDate={goal.timeTracking.nextReviewDate}
-              onUpdateReview={handleGoalReview}
-            />
-          ))}
+          {goals.map(goal => {
+            const lastReviewDate = goal.timeTracking.reviewStatus?.lastReviewDate;
+            const nextReviewDate = goal.timeTracking.nextReviewDate;
+
+            return (
+              <LongTermGoalReview
+                key={goal.id}
+                goalId={goal.id}
+                goalName={goal.name}
+                description={goal.specificAction}
+                lastReviewDate={lastReviewDate ? fromFirebaseTimestamp(lastReviewDate as any) : undefined}
+                nextReviewDate={nextReviewDate ? fromFirebaseTimestamp(nextReviewDate as any) : undefined}
+                onUpdateReview={handleGoalReview}
+              />
+            );
+          })}
           {goals.length === 0 && (
             <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
               No long-term goals found. Create some goals to start tracking your progress.
@@ -381,82 +371,83 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   );
 };
 
-const SortableItem = ({ id, item }: { id: string; item: UnscheduledItem }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    position: 'relative' as const,
-    zIndex: isDragging ? 1 : 0
-  };
-
+const UnscheduledTaskItem = ({ 
+  item,
+  onSchedule 
+}: { 
+  item: UnscheduledItem;
+  onSchedule: (item: UnscheduledItem) => void;
+}) => {
   return (
-    <ListItem
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
-      sx={{ 
-        '&:hover': { bgcolor: 'action.hover' },
-        cursor: 'grab'
+    <Box
+      sx={{
+        p: 2,
+        mb: 2,
+        bgcolor: 'background.paper',
+        borderRadius: 1,
+        boxShadow: 1
       }}
     >
-      <ListItemText
-        primary={item.title}
-        primaryTypographyProps={{ component: 'span' }}
-        secondaryTypographyProps={{ component: 'span' }}
-        secondary={
-          <Box component="span" sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            <Chip
-              label={item.type}
-              size="small"
-              color={item.type === 'task' ? 'primary' : 'secondary'}
-            />
-            {item.goalName && (
-              <Typography component="span" variant="caption" color="text.secondary">
-                {item.goalName}
-              </Typography>
-            )}
-          </Box>
-        }
-      />
-      <ListItemSecondaryAction>
-        <DragIndicatorIcon color="action" />
-      </ListItemSecondaryAction>
-    </ListItem>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+        <Box>
+          <Typography variant="subtitle1">{item.title}</Typography>
+          {item.description && (
+            <Typography variant="body2" color="text.secondary">
+              {item.description}
+            </Typography>
+          )}
+        </Box>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={() => onSchedule(item)}
+          startIcon={<AccessTimeIcon />}
+        >
+          Schedule
+        </Button>
+      </Box>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+        <Chip
+          label={item.type}
+          size="small"
+          color={item.type === 'task' ? 'primary' : 'secondary'}
+        />
+        {item.goalName && (
+          <Typography component="span" variant="caption" color="text.secondary">
+            {item.goalName}
+          </Typography>
+        )}
+      </Box>
+    </Box>
   );
 };
 
-const DroppableDay = ({ day, index, children }: { day: Date; index: number; children: React.ReactNode }) => {
-  const {
-    setNodeRef,
-    isOver
-  } = useSortable({
-    id: `day-${index}`,
-    data: {
-      type: 'day',
-      date: day
-    }
-  });
-
+const DayCard = ({ 
+  day,
+  isSelectable,
+  onSelect,
+  children 
+}: { 
+  day: Date;
+  isSelectable: boolean;
+  onSelect: () => void;
+  children: React.ReactNode;
+}) => {
   return (
     <Paper 
-      ref={setNodeRef}
+      onClick={isSelectable ? onSelect : undefined}
       sx={{ 
         p: 2, 
         height: '100%',
         bgcolor: isSameDay(day, new Date()) ? 'primary.light' : 'background.paper',
-        border: isOver ? '2px dashed' : '2px solid transparent',
-        borderColor: isOver ? 'primary.main' : 'transparent'
+        cursor: isSelectable ? 'pointer' : 'default',
+        border: isSelectable ? '2px dashed' : '2px solid transparent',
+        borderColor: isSelectable ? 'primary.main' : 'transparent',
+        transition: 'all 0.2s',
+        '&:hover': isSelectable ? {
+          borderColor: 'primary.dark',
+          bgcolor: 'action.hover'
+        } : {}
       }}
     >
       <Typography variant="subtitle1" gutterBottom>
@@ -487,6 +478,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     getScheduleSuggestions,
     updateSession
   } = useWeeklyPlanning();
+  console.log('unscheduledItems:', unscheduledItems);
   const { goals } = useGoalsContext();
 
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<{
@@ -496,19 +488,9 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     end?: Date;
   } | null>(null);
 
-  const [activeId, setActiveId] = useState<string | null>(null);
-
-  const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    })
-  );
-
-  const [localUnscheduledItems, setLocalUnscheduledItems] = useState<UnscheduledItem[]>(unscheduledItems);
-
+  const [schedulingItem, setSchedulingItem] = useState<UnscheduledItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [scheduledTasks, setScheduledTasks] = useState<{[key: string]: string}>({});  // Map taskId to title
+  const [scheduledTasks, setScheduledTasks] = useState<Record<string, string>>({});
 
   // Refresh unscheduled items when goals or current session changes
   useEffect(() => {
@@ -516,14 +498,10 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   }, [goals, currentSession]);
 
   useEffect(() => {
-    setLocalUnscheduledItems(unscheduledItems);
-  }, [unscheduledItems]);
-
-  useEffect(() => {
     // Initialize scheduledTasks with existing tasks from currentSession
     if (currentSession?.planningPhase?.nextWeekTasks) {
-      const taskMap = {};
-      currentSession.planningPhase.nextWeekTasks.forEach(task => {
+      const taskMap: Record<string, string> = {};
+      currentSession.planningPhase.nextWeekTasks.forEach((task: { taskId: string }) => {
         const item = unscheduledItems.find(i => i.id === task.taskId);
         if (item) {
           taskMap[task.taskId] = item.title;
@@ -531,29 +509,19 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
       });
       setScheduledTasks(taskMap);
     }
-  }, [currentSession]);
+  }, [currentSession, unscheduledItems]);
 
-  const handleDragStart = (event: any) => {
-    setActiveId(event.active.id);
+  const handleScheduleClick = (item: UnscheduledItem) => {
+    setSchedulingItem(item);
   };
 
-  const handleDragEnd = async (event: DragEndEvent) => {
-    setActiveId(null);
-    const { active, over } = event;
-    
-    if (!over) return;
-
-    const itemId = active.id as string;
-    const targetId = over.id as string;
-    
-    if (targetId.startsWith('day-')) {
-      const dayIndex = parseInt(targetId.replace('day-', ''));
-      const item = unscheduledItems.find(i => i.id === itemId);
-      
-      if (!item) return;
-
-      const date = addDays(startOfWeek(new Date()), dayIndex);
-      setSelectedTimeSlot({ item, date });
+  const handleDaySelect = (day: Date) => {
+    if (schedulingItem) {
+      setSelectedTimeSlot({
+        item: schedulingItem,
+        date: day
+      });
+      setSchedulingItem(null);
     }
   };
 
@@ -564,27 +532,19 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     
     try {
       if (item.type === 'task') {
-        // Validate and create task data with default values if needed
         const taskData = {
           taskId: item.id,
           priority: (item.priority as TaskPriority) || 'medium',
-          dueDate: Timestamp.fromDate(date)
+          dueDate: dateToTimestamp(date)
         };
 
-        // Validate taskData
-        if (!taskData.taskId || !taskData.priority || !taskData.dueDate) {
-          console.error('Invalid task data:', taskData);
-          throw new Error('Invalid task data: Missing required fields');
-        }
-
-        // Create calendar event only if both start and end times exist
         let calendarEvent = null;
         if (start && end) {
           calendarEvent = {
             eventId: `task_${item.id}`,
             taskId: item.id,
-            startTime: Timestamp.fromDate(start),
-            endTime: Timestamp.fromDate(end)
+            startTime: dateToTimestamp(start),
+            endTime: dateToTimestamp(end)
           };
         }
 
@@ -604,28 +564,6 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
             };
           }
 
-          // Ensure all arrays exist
-          if (!Array.isArray(updatedSession.planningPhase.nextWeekTasks)) {
-            updatedSession.planningPhase.nextWeekTasks = [];
-          }
-          if (!Array.isArray(updatedSession.planningPhase.sharedGoalAssignments)) {
-            updatedSession.planningPhase.sharedGoalAssignments = [];
-          }
-          if (!Array.isArray(updatedSession.planningPhase.recurringTasks)) {
-            updatedSession.planningPhase.recurringTasks = [];
-          }
-
-          // Ensure calendarSyncStatus exists
-          if (!updatedSession.planningPhase.calendarSyncStatus) {
-            updatedSession.planningPhase.calendarSyncStatus = {
-              synced: false,
-              syncedEvents: []
-            };
-          }
-          if (!Array.isArray(updatedSession.planningPhase.calendarSyncStatus.syncedEvents)) {
-            updatedSession.planningPhase.calendarSyncStatus.syncedEvents = [];
-          }
-
           // Add the task
           updatedSession.planningPhase.nextWeekTasks.push(taskData);
 
@@ -634,17 +572,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
             updatedSession.planningPhase.calendarSyncStatus.syncedEvents.push(calendarEvent);
           }
 
-          // Clean any potential undefined values before updating
-          const cleanedSession = JSON.parse(JSON.stringify(updatedSession));
-          await updateSession(cleanedSession);
-
-          // Update task scheduling only after session is updated
-          await addNextWeekTask(
-            item.id,
-            taskData.priority,
-            date,
-            start && end ? { start, end } : undefined
-          );
+          await updateSession(updatedSession);
         }
 
         // After successful scheduling
@@ -654,9 +582,6 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
         }));
         setSuccessMessage(`Successfully scheduled "${item.title}" for ${format(date, 'EEEE, MMMM d')}`);
         setTimeout(() => setSuccessMessage(null), 3000);
-
-        // Update local unscheduled items list
-        setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
       } else {
         // Handle routine scheduling
         const timeOfDay: TimeOfDay = start ? {
@@ -695,42 +620,18 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
             };
           }
 
-          // Ensure all arrays exist
-          if (!Array.isArray(updatedSession.planningPhase.nextWeekTasks)) {
-            updatedSession.planningPhase.nextWeekTasks = [];
-          }
-          if (!Array.isArray(updatedSession.planningPhase.sharedGoalAssignments)) {
-            updatedSession.planningPhase.sharedGoalAssignments = [];
-          }
-          if (!Array.isArray(updatedSession.planningPhase.recurringTasks)) {
-            updatedSession.planningPhase.recurringTasks = [];
-          }
-
           // Add the routine
           updatedSession.planningPhase.recurringTasks.push(scheduleData);
 
-          // Clean any potential undefined values before updating
-          const cleanedSession = JSON.parse(JSON.stringify(updatedSession));
-          await updateSession(cleanedSession);
-
-          // Update routine scheduling only after session is updated
-          await scheduleRecurringTask(item.id, 'weekly', {
-            type: 'weekly',
-            daysOfWeek: [daySchedule],
-            timeOfDay,
-            targetCount: 1
-          });
+          await updateSession(updatedSession);
         }
 
         setSuccessMessage(`Successfully scheduled routine "${item.title}" for ${format(date, 'EEEE, MMMM d')}`);
         setTimeout(() => setSuccessMessage(null), 3000);
-
-        // Update local unscheduled items list
-        setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error scheduling item:', error);
-      setSuccessMessage(`Error scheduling item: ${error.message}`);
+      setSuccessMessage(`Error scheduling item: ${error instanceof Error ? error.message : 'Unknown error'}`);
       setTimeout(() => setSuccessMessage(null), 3000);
     }
 
@@ -753,88 +654,87 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
         </Alert>
       )}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCorners}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-      >
-        <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)', overflow: 'auto' }}>
-          <Box sx={{ width: 300, overflow: 'auto' }}>
-            <Typography variant="h6" gutterBottom>
-              Unscheduled Items
-            </Typography>
-            
-            <List sx={{ 
-              bgcolor: 'background.paper',
-              borderRadius: 1,
-              boxShadow: 1,
-              minHeight: 100
-            }}>
-              <SortableContext items={unscheduledItems.map(item => item.id)} strategy={verticalListSortingStrategy}>
-                {unscheduledItems.map((item) => (
-                  <SortableItem key={item.id} id={item.id} item={item} />
-                ))}
-              </SortableContext>
-            </List>
-          </Box>
-
-          <Box sx={{ flex: 1, overflow: 'auto' }}>
-            <Grid container spacing={2}>
-              {Array.from({ length: 7 }, (_, index) => {
-                const day = addDays(startOfWeek(new Date()), index);
-                return (
-                  <Grid item xs key={index}>
-                    <DroppableDay day={day} index={index}>
-                      {currentSession?.planningPhase?.nextWeekTasks
-                        ?.filter(task => isSameDay(task.dueDate.toDate(), day))
-                        ?.map((task) => (
-                          <Box
-                            key={task.taskId}
-                            sx={{
-                              p: 1,
-                              mb: 1,
-                              bgcolor: 'background.default',
-                              borderRadius: 1,
-                              boxShadow: 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 1
-                            }}
-                          >
-                            <Box
-                              sx={{
-                                width: 4,
-                                height: 24,
-                                borderRadius: 1,
-                                bgcolor: task.priority === 'high' ? 'error.main' : 
-                                        task.priority === 'medium' ? 'warning.main' : 
-                                        'success.main'
-                              }}
-                            />
-                            <Typography variant="body2" noWrap>
-                              {scheduledTasks[task.taskId] || task.taskId}
-                            </Typography>
-                          </Box>
-                        ))}
-                    </DroppableDay>
-                  </Grid>
-                );
-              })}
-            </Grid>
+      <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)', overflow: 'auto' }}>
+        <Box sx={{ width: 300, overflow: 'auto' }}>
+          <Typography variant="h6" gutterBottom>
+            Unscheduled Items
+          </Typography>
+          
+          <Box sx={{ 
+            bgcolor: 'background.paper',
+            borderRadius: 1,
+            boxShadow: 1,
+            minHeight: 100,
+            p: 2
+          }}>
+            {unscheduledItems.map((item) => (
+              <UnscheduledTaskItem
+                key={`unscheduled-${item.id}`}
+                item={item}
+                onSchedule={handleScheduleClick}
+              />
+            ))}
+            {unscheduledItems.length === 0 && (
+              <Typography color="text.secondary" align="center">
+                No unscheduled items
+              </Typography>
+            )}
           </Box>
         </Box>
 
-        <DragOverlay>
-          {activeId ? (
-            <Paper sx={{ p: 2, bgcolor: 'background.paper', width: 280 }}>
-              <Typography variant="body1">
-                {unscheduledItems.find(item => item.id === activeId)?.title}
-              </Typography>
-            </Paper>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+        <Box sx={{ flex: 1, overflow: 'auto' }}>
+          <Grid container spacing={2}>
+            {Array.from({ length: 7 }, (_, index) => {
+              const day = addDays(startOfWeek(new Date()), index);
+              return (
+                <Grid item xs key={`day-grid-${index}`}>
+                  <DayCard 
+                    day={day}
+                    isSelectable={!!schedulingItem}
+                    onSelect={() => handleDaySelect(day)}
+                  >
+                    {currentSession?.planningPhase?.nextWeekTasks
+                      ?.filter(task => {
+                        if (!task.dueDate) return false;
+                        const dueDate = 'toDate' in task.dueDate ? fromFirebaseTimestamp(task.dueDate as any) : task.dueDate;
+                        return isSameDay(timestampToDate(dueDate), day);
+                      })
+                      ?.map((task) => (
+                        <Box
+                          key={`scheduled-task-${task.taskId}`}
+                          sx={{
+                            p: 1,
+                            mb: 1,
+                            bgcolor: 'background.default',
+                            borderRadius: 1,
+                            boxShadow: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              width: 4,
+                              height: 24,
+                              borderRadius: 1,
+                              bgcolor: task.priority === 'high' ? 'error.main' : 
+                                      task.priority === 'medium' ? 'warning.main' : 
+                                      'success.main'
+                            }}
+                          />
+                          <Typography variant="body2" noWrap>
+                            {scheduledTasks[task.taskId] || `Task ${task.taskId}`}
+                          </Typography>
+                        </Box>
+                      ))}
+                  </DayCard>
+                </Grid>
+              );
+            })}
+          </Grid>
+        </Box>
+      </Box>
 
       {selectedTimeSlot && (
         <Dialog open={true} onClose={() => setSelectedTimeSlot(null)}>

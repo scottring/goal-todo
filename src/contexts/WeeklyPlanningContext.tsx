@@ -14,6 +14,9 @@ import {
 import { useAuth } from './AuthContext';
 import { useGoalsContext } from './GoalsContext';
 import { startOfWeek, endOfWeek, addDays } from 'date-fns';
+import { dateToTimestamp, timestampToDate, now } from '../utils/date';
+import { toFirebaseTimestamp, fromFirebaseTimestamp, convertToFirebaseTimestamp, convertFromFirebaseTimestamp } from '../utils/firebase-adapter';
+import { updateDocument } from '../utils/firestore';
 
 interface UnscheduledItem {
   id: string;
@@ -41,7 +44,7 @@ export interface WeeklyPlanningContextType {
   sendTeamReminders: (goalId: string, userIds: string[]) => Promise<void>;
   syncWithCalendar: () => Promise<void>;
   updateSession: (session: WeeklyPlanningSession) => Promise<void>;
-  addNextWeekTask: (taskId: string, priority: TaskPriority, dueDate: Date, timeSlot?: { start: Date; end: Date }) => Promise<void>;
+  addNextWeekTask: (taskId: string, priority: TaskPriority, date: Date, timeSlot?: { start: Date; end: Date }) => Promise<void>;
   scheduleRecurringTask: (routineId: string, frequency: string, schedule: RoutineSchedule) => Promise<void>;
   fetchUnscheduledItems: () => Promise<void>;
   getScheduleSuggestions: (item: UnscheduledItem) => Date[];
@@ -71,7 +74,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   const [error, setError] = useState<string | null>(null);
   const { currentUser } = useAuth();
   const { goals } = useGoalsContext();
-  const { getCollection, addDocument, updateDocument, getDocument } = useFirestore();
+  const { getCollection, addDocument, getDocument } = useFirestore();
 
   useEffect(() => {
     if (currentUser) {
@@ -122,7 +125,8 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
           taskId: task.id,
           title: task.title,
           status: task.completed ? 'completed' : 'needs_review',
-          originalDueDate: task.dueDate || Timestamp.now()
+          originalDueDate: task.dueDate || Timestamp.now(),
+          priority: task.priority || 'medium'
         }))
       );
 
@@ -161,6 +165,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
 
       const sessionId = await addDocument('weeklyPlanningSessions', newSession);
       const session = await getDocument('weeklyPlanningSessions', sessionId);
+      console.log('session', session)
       setCurrentSession(session as WeeklyPlanningSession);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -208,154 +213,60 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     }
   };
 
-  const updateTaskReview = async (taskReview: TaskReviewItem) => {
+  const updateTaskReview = async (task: TaskReviewItem) => {
     if (!currentSession) return;
     try {
       const updatedSession = { ...currentSession };
       const taskIndex = updatedSession.reviewPhase.taskReviews.findIndex(
-        t => t.taskId === taskReview.taskId
+        t => t.taskId === task.taskId
       );
 
-      if (taskIndex === -1) return;
+      if (taskIndex === -1) {
+        console.error('Task not found:', task.taskId);
+        return;
+      }
 
-      // Update the task review with the new status and action
-      updatedSession.reviewPhase.taskReviews[taskIndex] = {
-        ...updatedSession.reviewPhase.taskReviews[taskIndex],
-        status: taskReview.status,
-        action: taskReview.action,
-        completedDate: taskReview.status === 'completed' ? Timestamp.now() : undefined
+      // Convert any Firebase timestamps to our custom timestamps
+      const taskToUpdate = {
+        ...task,
+        originalDueDate: 'toDate' in task.originalDueDate ? fromFirebaseTimestamp(task.originalDueDate as any) : task.originalDueDate,
+        completedDate: task.completedDate && 'toDate' in task.completedDate ? fromFirebaseTimestamp(task.completedDate as any) : task.completedDate
       };
 
-      // Update the summary counts
-      const summary = updatedSession.reviewPhase.summary;
-      switch (taskReview.action) {
-        case 'mark_completed':
-          summary.totalCompleted++;
-          break;
-        case 'push_forward':
-          summary.totalPushedForward++;
-          break;
-        case 'mark_missed':
-          summary.totalMissed++;
-          break;
-        case 'archive':
-          summary.totalArchived++;
-          break;
-      }
+      updatedSession.reviewPhase.taskReviews[taskIndex] = {
+        ...updatedSession.reviewPhase.taskReviews[taskIndex],
+        status: taskToUpdate.status,
+        action: taskToUpdate.action,
+        completedDate: taskToUpdate.status === 'completed' ? now() : undefined,
+        priority: taskToUpdate.priority || 'medium'
+      };
 
-      // Update the appropriate task lists
-      switch (taskReview.action) {
-        case 'mark_completed':
-          updatedSession.reviewPhase.completedTasks.push(taskReview.taskId);
-          break;
-        case 'mark_missed':
-          updatedSession.reviewPhase.missedTasks.push(taskReview.taskId);
-          break;
-        case 'push_forward':
-          updatedSession.reviewPhase.partiallyCompletedTasks.push(taskReview.taskId);
-          break;
-      }
-
-      // Clean the object before updating Firestore
-      const cleanedSession = removeUndefinedFields(updatedSession);
-      await updateDocument('weeklyPlanningSessions', currentSession.id, cleanedSession);
-      setCurrentSession(updatedSession);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-      throw err; // Propagate error for UI handling
+      await updateSession(updatedSession);
+    } catch (error) {
+      console.error('Error updating task review:', error);
+      throw error;
     }
   };
 
   const fetchUnscheduledItems = async () => {
-    if (!currentUser) return;
-    
+    if (!currentSession) return;
     try {
-      setIsLoading(true);
-      const items: UnscheduledItem[] = [];
+      const tasks = currentSession.reviewPhase?.taskReviews
+        ?.filter((t: TaskReviewItem) => {
+          const dueDate = 'toDate' in t.originalDueDate ? fromFirebaseTimestamp(t.originalDueDate as any) : t.originalDueDate;
+          return !t.action && timestampToDate(dueDate) > new Date();
+        })
+        .map((t: TaskReviewItem) => ({
+          id: t.taskId,
+          type: 'task' as const,
+          title: t.title,
+          priority: t.priority
+        })) || [];
 
-      // Fetch tasks from goals that are not completed and either:
-      // 1. Don't have a dueDate, or
-      // 2. Have a dueDate but are not in the current planning session
-      for (const goal of goals) {
-        const unscheduledTasks = goal.tasks
-          .filter(task => {
-            // Skip completed tasks
-            if (task.completed) return false;
-            
-            // Include tasks without due dates
-            if (!task.dueDate) return true;
-            
-            // For tasks with due dates, check if they're not already in the current session
-            if (currentSession?.planningPhase?.nextWeekTasks) {
-              return !currentSession.planningPhase.nextWeekTasks.some(
-                plannedTask => plannedTask.taskId === task.id
-              );
-            }
-            
-            return true;
-          })
-          .map(task => ({
-            id: task.id,
-            type: 'task' as const,
-            title: task.title,
-            description: task.description,
-            goalId: goal.id,
-            goalName: goal.name,
-            priority: task.priority,
-            suggestedDate: getSuggestedDateForTask(task, goal)
-          }));
-        
-        items.push(...unscheduledTasks);
-
-        // Get unscheduled routines that:
-        // 1. Don't have a schedule, or
-        // 2. Have an incomplete schedule, or
-        // 3. Are not in the current planning session
-        const unscheduledRoutines = goal.routines
-          .filter(routine => {
-            const r = routine as Routine | RoutineWithoutSystemFields;
-            
-            // Skip if routine has an end date that's passed
-            if (r.endDate && r.endDate.toDate() < new Date()) {
-              return false;
-            }
-
-            // Include routines without any schedule
-            if (!r.schedule) return true;
-
-            // Include routines with incomplete schedule
-            if (!r.schedule.daysOfWeek?.length) return true;
-
-            // Check if routine is not already in current session
-            if (currentSession?.planningPhase?.recurringTasks) {
-              return !currentSession.planningPhase.recurringTasks.some(
-                plannedRoutine => plannedRoutine.routineId === ('id' in r ? r.id : undefined)
-              );
-            }
-
-            return true;
-          })
-          .map(routine => {
-            const r = routine as Routine | RoutineWithoutSystemFields;
-            return {
-              id: 'id' in r ? r.id : `temp_${Math.random()}`,
-              type: 'routine' as const,
-              title: r.title,
-              description: r.description,
-              goalId: goal.id,
-              goalName: goal.name,
-              suggestedDate: getSuggestedDateForRoutine(r as Routine)
-            };
-          });
-
-        items.push(...unscheduledRoutines);
-      }
-
-      setUnscheduledItems(items);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setIsLoading(false);
+      setUnscheduledItems(tasks);
+    } catch (error) {
+      console.error('Error fetching unscheduled items:', error);
+      throw error;
     }
   };
 
@@ -394,37 +305,67 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
 
   const addNextWeekTask = async (
     taskId: string,
-    priority: string,
-    dueDate: Date,
+    priority: TaskPriority,
+    date: Date,
     timeSlot?: { start: Date; end: Date }
   ) => {
     if (!currentSession) return;
 
     try {
       const updatedSession = { ...currentSession };
+      
+      // Initialize arrays if they don't exist
+      if (!updatedSession.planningPhase) {
+        updatedSession.planningPhase = {
+          nextWeekTasks: [],
+          sharedGoalAssignments: [],
+          recurringTasks: [],
+          calendarSyncStatus: { synced: false, syncedEvents: [] }
+        };
+      }
+
+      // Add the task with our custom Timestamp
       updatedSession.planningPhase.nextWeekTasks.push({
         taskId,
         priority: priority as TaskPriority,
-        dueDate: Timestamp.fromDate(dueDate)
+        dueDate: dateToTimestamp(date)
       });
 
-      // Only add calendar sync event if both start and end times are provided
-      if (timeSlot && timeSlot.start && timeSlot.end) {
-        updatedSession.planningPhase.calendarSyncStatus.syncedEvents.push({
+      // Add calendar event if timeSlot is provided
+      if (timeSlot) {
+        const calendarEvent = {
           eventId: `task_${taskId}`,
           taskId,
-          startTime: Timestamp.fromDate(timeSlot.start),
-          endTime: Timestamp.fromDate(timeSlot.end)
-        });
+          startTime: dateToTimestamp(timeSlot.start),
+          endTime: dateToTimestamp(timeSlot.end)
+        };
+        updatedSession.planningPhase.calendarSyncStatus.syncedEvents.push(calendarEvent);
       }
 
-      await updateDocument('weeklyPlanningSessions', currentSession.id, updatedSession);
-      setCurrentSession(updatedSession);
+      // Convert timestamps before saving to Firestore
+      const sessionToSave = {
+        ...updatedSession,
+        planningPhase: {
+          ...updatedSession.planningPhase,
+          nextWeekTasks: updatedSession.planningPhase.nextWeekTasks.map(t => ({
+            ...t,
+            dueDate: toFirebaseTimestamp(t.dueDate)
+          })),
+          calendarSyncStatus: {
+            ...updatedSession.planningPhase.calendarSyncStatus,
+            syncedEvents: updatedSession.planningPhase.calendarSyncStatus.syncedEvents.map(e => ({
+              ...e,
+              startTime: toFirebaseTimestamp(e.startTime),
+              endTime: toFirebaseTimestamp(e.endTime)
+            }))
+          }
+        }
+      };
 
-      // Update the unscheduled items list
-      setUnscheduledItems(prev => prev.filter(item => item.id !== taskId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      await updateSession(sessionToSave);
+    } catch (error) {
+      console.error('Error adding next week task:', error);
+      throw error;
     }
   };
 
@@ -464,18 +405,53 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   };
 
   const updateSession = async (session: WeeklyPlanningSession) => {
+    if (!session) return;
+
     try {
-      setIsLoading(true);
-      // Clean the session data before updating Firestore
-      const cleanedSession = removeUndefinedFields(session);
+      // Convert our custom Timestamps to Firebase Timestamps before saving
+      const sessionToSave = {
+        ...session,
+        reviewPhase: session.reviewPhase ? {
+          ...session.reviewPhase,
+          taskReviews: session.reviewPhase.taskReviews?.map((t: TaskReviewItem) => ({
+            taskId: t.taskId,
+            title: t.title,
+            status: t.status,
+            originalDueDate: convertToFirebaseTimestamp(t.originalDueDate),
+            action: t.action,
+            completedDate: t.completedDate ? convertToFirebaseTimestamp(t.completedDate) : null,
+            priority: t.priority
+          })).filter(t => t.taskId && t.title && t.status && t.originalDueDate && t.priority)
+        } : null,
+        planningPhase: session.planningPhase ? {
+          ...session.planningPhase,
+          nextWeekTasks: session.planningPhase.nextWeekTasks?.map((t: any) => ({
+            taskId: t.taskId,
+            priority: t.priority,
+            dueDate: convertToFirebaseTimestamp(t.dueDate)
+          })).filter(t => t.taskId && t.priority && t.dueDate),
+          calendarSyncStatus: session.planningPhase.calendarSyncStatus ? {
+            ...session.planningPhase.calendarSyncStatus,
+            lastSyncedAt: session.planningPhase.calendarSyncStatus.lastSyncedAt ? 
+              convertToFirebaseTimestamp(session.planningPhase.calendarSyncStatus.lastSyncedAt) : null,
+            syncedEvents: session.planningPhase.calendarSyncStatus.syncedEvents?.map((e: any) => ({
+              eventId: e.eventId,
+              taskId: e.taskId,
+              startTime: convertToFirebaseTimestamp(e.startTime),
+              endTime: convertToFirebaseTimestamp(e.endTime)
+            })).filter(e => e.eventId && e.taskId && e.startTime && e.endTime)
+          } : null
+        } : null
+      };
+
+      // Remove any null or undefined values
+      const cleanedSession = JSON.parse(JSON.stringify(sessionToSave));
+
       await updateDocument('weeklyPlanningSessions', session.id, cleanedSession);
       setCurrentSession(session);
     } catch (error) {
       console.error('Error updating session:', error);
-      setError('Failed to update session');
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -533,7 +509,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
 
 export const useWeeklyPlanning = () => {
   const context = useContext(WeeklyPlanningContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useWeeklyPlanning must be used within a WeeklyPlanningProvider');
   }
   return context;

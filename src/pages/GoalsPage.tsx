@@ -30,7 +30,10 @@ import {
   Alert,
   Paper,
   Divider,
-  Chip
+  Chip,
+  Tabs,
+  Tab,
+  Badge
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
@@ -51,10 +54,16 @@ import type {
   TimeTrackingType,
   ReviewCycle,
   RoutineSchedule,
-  Routine
+  Routine,
+  TaskReviewItem as TaskReviewItemType
 } from '../types';
 import { toast } from 'react-hot-toast';
 import GoalSharingModal from '../components/GoalSharingModal';
+import { v4 as uuidv4 } from 'uuid';
+import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
+import { TaskReviewList } from '../components/TaskReviewList';
+import { LongTermGoalReview } from '../components/LongTermGoalReview';
+import { SharedGoalReview } from '../components/SharedGoalReview';
 
 const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
   const now = new Date();
@@ -117,6 +126,7 @@ interface SmartGoalForm {
     tasks: string[];
   }[];
   tasks: {
+    id: string;
     title: string;
     description?: string;
     dueDate?: Timestamp;
@@ -126,6 +136,7 @@ interface SmartGoalForm {
     assignedTo?: string;
   }[];
   routines: {
+    id: string;
     title: string;
     description?: string;
     frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
@@ -177,7 +188,7 @@ const initialSmartGoal: SmartGoalForm = {
   },
   areaId: '',
   milestones: [{
-    id: '',
+    id: uuidv4(),
     name: '',
     targetDate: Timestamp.fromDate(new Date()),
     successCriteria: '',
@@ -193,6 +204,7 @@ const addTask = (smartGoal: SmartGoalForm) => ({
   tasks: [
     ...smartGoal.tasks,
     {
+      id: uuidv4(),
       title: '',
       description: '',
       priority: 'medium' as TaskPriority,
@@ -209,6 +221,7 @@ const addRoutine = (smartGoal: SmartGoalForm) => ({
   routines: [
     ...smartGoal.routines,
     {
+      id: uuidv4(),
       title: '',
       description: '',
       frequency: 'daily' as const,
@@ -232,7 +245,7 @@ const addMilestone = (smartGoal: SmartGoalForm) => ({
   milestones: [
     ...smartGoal.milestones,
     {
-      id: '',
+      id: uuidv4(),
       name: '',
       targetDate: Timestamp.fromDate(new Date()),
       successCriteria: '',
@@ -242,19 +255,202 @@ const addMilestone = (smartGoal: SmartGoalForm) => ({
   ]
 });
 
-const removeUndefinedFields = (obj: any): any => {
-  const cleanObj = { ...obj };
-  Object.keys(cleanObj).forEach(key => {
-    if (cleanObj[key] === undefined) {
-      delete cleanObj[key];
-    } else if (typeof cleanObj[key] === 'object' && cleanObj[key] !== null) {
-      cleanObj[key] = removeUndefinedFields(cleanObj[key]);
-      if (Object.keys(cleanObj[key]).length === 0) {
-        delete cleanObj[key];
+interface CleanableObject {
+  [key: string]: unknown;
+}
+
+const isObject = (value: unknown): value is CleanableObject => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+const removeUndefinedFields = <T extends CleanableObject>(obj: T): T => {
+  const cleanObj = {} as T;
+  
+  Object.entries(obj).forEach(([key, value]) => {
+    if (value === undefined) {
+      return;
+    }
+    
+    if (Array.isArray(value)) {
+      cleanObj[key as keyof T] = value.map(item => 
+        isObject(item) ? removeUndefinedFields(item) : item
+      ) as T[keyof T];
+    } else if (isObject(value)) {
+      const cleaned = removeUndefinedFields(value);
+      if (Object.keys(cleaned).length > 0) {
+        cleanObj[key as keyof T] = cleaned as T[keyof T];
       }
+    } else {
+      cleanObj[key as keyof T] = value as T[keyof T];
     }
   });
+  
   return cleanObj;
+};
+
+type TaskAction = 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close';
+
+interface StepProps {
+  onNext: () => void;
+  onBack: () => void;
+}
+
+const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
+  const [activeTab, setActiveTab] = useState(0);
+  const {
+    currentSession,
+    updateTaskReview,
+    updateLongTermGoalReview,
+    updateSharedGoalReview,
+    sendTeamReminders
+  } = useWeeklyPlanning();
+  const { goals } = useGoalsContext();
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setActiveTab(newValue);
+  };
+
+  const handleTaskAction = async (taskId: string, action: TaskAction) => {
+    const task = currentSession?.reviewPhase?.taskReviews?.find((t: TaskReviewItemType) => t.taskId === taskId);
+    if (!task) {
+      console.error('Task not found:', taskId);
+      return;
+    }
+
+    const reviewData: TaskReviewItemType = {
+      taskId,
+      title: task.title || 'Untitled Task',
+      status: action === 'mark_completed' ? 'completed' : 
+             action === 'mark_missed' ? 'missed' : 
+             'needs_review',
+      originalDueDate: task.originalDueDate instanceof Timestamp ? 
+                      task.originalDueDate : 
+                      Timestamp.fromDate(new Date()),
+      action
+    };
+
+    await updateTaskReview(reviewData);
+  };
+
+  const handleGoalReview = async (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => {
+    try {
+      await updateLongTermGoalReview(goalId, madeProgress, adjustments, nextReviewDate);
+    } catch (error) {
+      console.error('Error updating goal review:', error);
+    }
+  };
+
+  const handleSharedGoalUpdate = async (goalId: string, taskId: string, status: 'completed' | 'pending') => {
+    await updateSharedGoalReview(goalId, status === 'completed' ? [taskId] : [], status === 'pending' ? [taskId] : []);
+  };
+
+  const handleSendReminder = async (goalId: string, userId: string) => {
+    await sendTeamReminders(goalId, [userId]);
+  };
+
+  const getTaskReviewCount = () => {
+    return currentSession?.reviewPhase?.taskReviews?.length || 0;
+  };
+
+  const getSharedGoalReviewCount = () => {
+    return currentSession?.reviewPhase?.sharedGoalReviews?.length || 0;
+  };
+
+  const getLongTermGoalCount = () => {
+    return goals?.length || 0;
+  };
+
+  return (
+    <Paper sx={{ p: 3 }}>
+      <Typography variant="h5" gutterBottom>
+        Weekly Review
+      </Typography>
+
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={activeTab} onChange={handleTabChange} aria-label="review tabs">
+          <Tab
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <span>TASKS & ROUTINES</span>
+                {getTaskReviewCount() > 0 && (
+                  <Badge badgeContent={getTaskReviewCount()} color="error" sx={{ ml: 1 }} />
+                )}
+              </Box>
+            }
+          />
+          <Tab
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <span>LONG-TERM GOALS</span>
+                {getLongTermGoalCount() > 0 && (
+                  <Badge badgeContent={getLongTermGoalCount()} color="error" sx={{ ml: 1 }} />
+                )}
+              </Box>
+            }
+          />
+          <Tab
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <span>SHARED GOALS</span>
+                {getSharedGoalReviewCount() > 0 && (
+                  <Badge badgeContent={getSharedGoalReviewCount()} color="error" sx={{ ml: 1 }} />
+                )}
+              </Box>
+            }
+          />
+        </Tabs>
+      </Box>
+
+      {activeTab === 0 && (
+        <TaskReviewList
+          tasks={currentSession?.reviewPhase.taskReviews || []}
+          onTaskAction={handleTaskAction}
+        />
+      )}
+
+      {activeTab === 1 && (
+        <Stack spacing={3}>
+          {goals.map(goal => (
+            <LongTermGoalReview
+              key={goal.id}
+              goalId={goal.id}
+              goalName={goal.name}
+              description={goal.specificAction}
+              lastReviewDate={goal.timeTracking.reviewStatus?.lastReviewDate}
+              nextReviewDate={goal.timeTracking.nextReviewDate}
+              onUpdateReview={handleGoalReview}
+            />
+          ))}
+          {goals.length === 0 && (
+            <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
+              No long-term goals found. Create some goals to start tracking your progress.
+            </Typography>
+          )}
+        </Stack>
+      )}
+
+      {activeTab === 2 && (
+        <Stack spacing={3}>
+          {/* TODO: Get shared goals from currentSession */}
+          <SharedGoalReview
+            goalId="example"
+            goalName="Example Shared Goal"
+            tasks={[]}
+            collaborators={[]}
+            onSendReminder={handleSendReminder}
+            onUpdateTaskStatus={handleSharedGoalUpdate}
+          />
+        </Stack>
+      )}
+
+      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
+        <Button onClick={onBack}>Back</Button>
+        <Button variant="contained" onClick={onNext}>
+          Continue to Planning
+        </Button>
+      </Box>
+    </Paper>
+  );
 };
 
 const GoalsPage: React.FC = () => {
@@ -305,23 +501,23 @@ const GoalsPage: React.FC = () => {
         name: smartGoal.name.trim(),
         specificAction: smartGoal.specificAction.trim(),
         measurableMetric: smartGoal.measurableMetric,
-        customMetric: smartGoal.customMetric?.trim() || undefined,
+        customMetric: smartGoal.customMetric?.trim(),
         achievabilityCheck: smartGoal.achievabilityCheck,
         relevance: smartGoal.relevance.trim(),
         timeTracking: {
           type: smartGoal.timeTracking.type,
           ...(smartGoal.timeTracking.type === 'fixed_deadline' 
-            ? { deadline: smartGoal.timeTracking.deadline || undefined }
+            ? { deadline: smartGoal.timeTracking.deadline }
             : {
                 reviewCycle: smartGoal.timeTracking.reviewCycle || 'monthly',
                 nextReviewDate: smartGoal.timeTracking.reviewCycle 
                   ? calculateNextReviewDate(smartGoal.timeTracking.reviewCycle)
-                  : undefined
+                  : Timestamp.now()
               }
           )
         },
         milestones: smartGoal.milestones.map(m => ({
-          id: m.id || '',
+          id: m.id || uuidv4(),
           name: m.name.trim(),
           targetDate: m.targetDate || Timestamp.fromDate(new Date()),
           successCriteria: m.successCriteria.trim(),
@@ -331,7 +527,7 @@ const GoalsPage: React.FC = () => {
         areaId: smartGoal.areaId,
         sharedWith: [],
         tasks: smartGoal.tasks.map(task => ({
-          id: '',
+          id: task.id || uuidv4(),
           ownerId: currentUser?.uid || '',
           createdAt: Timestamp.now(),
           updatedAt: Timestamp.now(),
@@ -341,12 +537,12 @@ const GoalsPage: React.FC = () => {
           priority: task.priority,
           status: task.status,
           completed: task.completed,
-          assignedTo: task.assignedTo || undefined,
+          assignedTo: task.assignedTo,
           sharedWith: [],
           permissions: {}
         })),
         routines: smartGoal.routines.map(routine => ({
-          id: 'id' in routine ? routine.id : '',
+          id: 'id' in routine && routine.id ? routine.id : uuidv4(),
           title: routine.title.trim(),
           description: routine.description?.trim() || '',
           frequency: routine.frequency,
@@ -359,7 +555,7 @@ const GoalsPage: React.FC = () => {
             monthsOfYear: routine.schedule?.monthsOfYear || []
           },
           targetCount: routine.targetCount || 1,
-          endDate: routine.endDate || undefined,
+          endDate: routine.endDate,
           completionDates: routine.completionDates || [],
           ownerId: currentUser?.uid || '',
           createdAt: Timestamp.now(),
@@ -367,8 +563,8 @@ const GoalsPage: React.FC = () => {
         }))
       };
 
-      // Clean up any remaining undefined values
-      const cleanedGoalData = removeUndefinedFields(goalData);
+      // Since we've already handled all optional fields above, we can safely cast the cleaned data
+      const cleanedGoalData = removeUndefinedFields(goalData) as typeof goalData;
 
       if (editingGoal) {
         await updateGoal(editingGoal, cleanedGoalData);
@@ -408,17 +604,18 @@ const GoalsPage: React.FC = () => {
       },
       areaId: goal.areaId,
       milestones: Array.isArray(goal.milestones) ? goal.milestones.map(m => ({
-        id: m.id || '',
+        id: m.id || uuidv4(),
         name: m.name,
-        targetDate: m.targetDate,
+        targetDate: m.targetDate instanceof Timestamp ? m.targetDate : Timestamp.fromDate(new Date()),
         successCriteria: m.successCriteria,
         status: m.status,
         tasks: Array.isArray(m.tasks) ? m.tasks : []
       })) : [],
       tasks: Array.isArray(goal.tasks) ? goal.tasks.map(task => ({
+        id: task.id || uuidv4(),
         title: task.title,
         description: task.description,
-        dueDate: task.dueDate,
+        dueDate: task.dueDate instanceof Timestamp ? task.dueDate : undefined,
         priority: task.priority,
         status: task.status,
         completed: task.completed,
@@ -427,6 +624,7 @@ const GoalsPage: React.FC = () => {
       routines: Array.isArray(goal.routines) ? goal.routines.map(routine => {
         const hasSystemFields = 'id' in routine;
         return {
+          id: hasSystemFields ? (routine as Routine).id : uuidv4(),
           title: routine.title,
           description: routine.description || '',
           frequency: routine.frequency,
@@ -439,14 +637,12 @@ const GoalsPage: React.FC = () => {
             monthsOfYear: routine.schedule?.monthsOfYear || []
           },
           targetCount: routine.targetCount || 1,
-          endDate: routine.endDate,
-          completionDates: Array.isArray(routine.completionDates) ? routine.completionDates : [],
-          ...(hasSystemFields && {
-            id: (routine as Routine).id,
-            ownerId: (routine as Routine).ownerId,
-            createdAt: (routine as Routine).createdAt,
-            updatedAt: (routine as Routine).updatedAt
-          })
+          endDate: routine.endDate instanceof Timestamp ? routine.endDate : undefined,
+          completionDates: Array.isArray(routine.completionDates) 
+            ? routine.completionDates.map(date => 
+                date instanceof Timestamp ? date : Timestamp.fromDate(new Date(date))
+              )
+            : []
         };
       }) : []
     });
