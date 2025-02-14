@@ -1,8 +1,13 @@
-import React, { useState } from 'react';
-import { X, Plus, Check } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Check, Users } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useFirestore } from '../hooks/useFirestore';
+import { getUserService } from '../services/UserService';
+import { getEmailService } from '../services/EmailService';
 import { toast } from 'react-hot-toast';
+import { onSnapshot, doc } from 'firebase/firestore';
+import { db } from '../lib/firebase';
+import { UserProfile } from '../types';
 
 interface GoalSharingModalProps {
   isOpen: boolean;
@@ -29,56 +34,166 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
   }>({});
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [participants, setParticipants] = useState<UserProfile[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { updateDocument, addDocument } = useFirestore();
+  const userService = getUserService();
 
-  const addCollaborator = () => {
-    if (email && !sharedWith.includes(email)) {
-      setSharedWith([...sharedWith, email]);
-      setPermissions(prev => ({
-        ...prev,
-        [email]: {
+  // Set up real-time listener for goal updates
+  useEffect(() => {
+    if (!goalId || !isOpen) return;
+
+    const unsubscribe = onSnapshot(doc(db, 'shared_goals', goalId), 
+      (doc) => {
+        if (doc.exists()) {
+          const data = doc.data();
+          setSharedWith(data.sharedWith || []);
+          setPermissions(data.permissions || {});
+          
+          // Update participants list
+          userService.findUsersByIds(data.sharedWith)
+            .then(users => setParticipants(users))
+            .catch(console.error);
+        }
+      },
+      (error) => {
+        console.error('Error listening to goal updates:', error);
+        setError('Failed to get real-time updates');
+      }
+    );
+
+    return () => unsubscribe();
+  }, [goalId, isOpen]);
+
+  const addCollaborator = async () => {
+    if (!email || sharedWith.includes(email)) return;
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      // Look up user by email
+      const user = await userService.findUserByEmail(email);
+      if (!user) {
+        setError('User not found');
+        return;
+      }
+
+      // Add user to shared list
+      const updatedSharedWith = [...sharedWith, user.id];
+      const updatedPermissions = {
+        ...permissions,
+        [user.id]: {
           edit: false,
           view: true,
           invite: false
         }
-      }));
+      };
+
+      setSharedWith(updatedSharedWith);
+      setPermissions(updatedPermissions);
       setEmail('');
+
+      // Send email notification
+      if (currentUser) {
+        try {
+          await getEmailService().sendShareInvite(
+            email,
+            currentUser.email || 'unknown',
+            goalTitle,
+            goalId || '',
+            updatedPermissions[user.id]
+          );
+        } catch (error) {
+          console.error('Failed to send email notification:', error);
+          // Don't block the sharing process if email fails
+        }
+      }
+    } catch (error) {
+      console.error('Error adding collaborator:', error);
+      setError('Failed to add collaborator');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
-  const handlePermissionChange = (email: string, permission: 'edit' | 'view' | 'invite') => {
-    setPermissions(prev => ({
-      ...prev,
-      [email]: {
-        ...prev[email],
-        [permission]: !prev[email][permission]
+  const handlePermissionChange = async (userId: string, permission: 'edit' | 'view' | 'invite') => {
+    const updatedPermissions = {
+      ...permissions,
+      [userId]: {
+        ...permissions[userId],
+        [permission]: !permissions[userId][permission]
       }
-    }));
+    };
+
+    setPermissions(updatedPermissions);
+
+    // If this is an existing goal, update permissions immediately
+    if (goalId) {
+      try {
+        await updateDocument('shared_goals', goalId, {
+          permissions: updatedPermissions
+        });
+
+        // Find user email for notification
+        const user = participants.find(p => p.id === userId);
+        if (user && currentUser) {
+          try {
+            await getEmailService().sendCollaboratorUpdate(
+              user.email,
+              currentUser.email || 'unknown',
+              goalTitle,
+              goalId,
+              'goal_updated'
+            );
+          } catch (error) {
+            console.error('Failed to send permission update notification:', error);
+          }
+        }
+      } catch (error) {
+        console.error('Error updating permissions:', error);
+        toast.error('Failed to update permissions');
+      }
+    }
   };
 
   const handleShare = async () => {
-    if (!goalTitle.trim() || !user) return;
+    if (!goalTitle.trim() || !currentUser) return;
 
     setIsSubmitting(true);
     try {
       if (goalId) {
         // Update existing goal
-        await updateDocument('activities', goalId, {
+        await updateDocument('shared_goals', goalId, {
           name: goalTitle,
           sharedWith,
           permissions
         });
+
+        // Send update notifications
+        await Promise.all(
+          participants.map(user => 
+            getEmailService().sendCollaboratorUpdate(
+              user.email,
+              currentUser.email || 'unknown',
+              goalTitle,
+              goalId,
+              'goal_updated'
+            )
+          )
+        );
+
         toast.success('Goal sharing updated successfully');
       } else {
         // Create new shared goal
-        await addDocument('shared_goals', {
+        const newGoalId = await addDocument('shared_goals', {
           name: goalTitle,
-          ownerId: user.uid,
+          ownerId: currentUser.uid,
           sharedWith,
           participants: {
-            [user.uid]: {
+            [currentUser.uid]: {
               role: 'owner',
               permissions: {
                 edit: true,
@@ -87,17 +202,31 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
               }
             },
             ...Object.fromEntries(
-              sharedWith.map(email => [
-                email,
+              sharedWith.map(userId => [
+                userId,
                 {
                   role: 'collaborator',
-                  permissions: permissions[email]
+                  permissions: permissions[userId]
                 }
               ])
             )
           },
           status: 'active'
         });
+
+        // Send share invites
+        await Promise.all(
+          participants.map(user =>
+            getEmailService().sendShareInvite(
+              user.email,
+              currentUser.email || 'unknown',
+              goalTitle,
+              newGoalId,
+              permissions[user.id]
+            )
+          )
+        );
+
         toast.success('Goal shared successfully');
       }
       
@@ -131,6 +260,12 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
           </button>
         </div>
 
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md">
+            {error}
+          </div>
+        )}
+
         <div className="space-y-6">
           <div>
             <input
@@ -154,39 +289,43 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
 
           {sharingEnabled && (
             <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Invite Collaborators</h3>
-                <div className="flex gap-2">
-                  <input
-                    type="email"
-                    placeholder="Enter email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="flex-1 p-2 border rounded-md"
-                  />
-                  <button
-                    onClick={addCollaborator}
-                    disabled={!email.trim()}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    <Plus className="w-5 h-5" />
-                  </button>
-                </div>
+              <div className="flex gap-2">
+                <input
+                  type="email"
+                  placeholder="Enter email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+                <button
+                  onClick={addCollaborator}
+                  disabled={!email || isSubmitting}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                >
+                  Add
+                </button>
               </div>
 
-              {sharedWith.length > 0 && (
+              {participants.length > 0 && (
                 <div>
                   <h3 className="text-sm font-semibold text-gray-700 mb-2">Permissions</h3>
                   <div className="space-y-3">
-                    {sharedWith.map((email) => (
-                      <div key={email} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                        <span className="text-sm font-medium">{email}</span>
+                    {participants.map((user) => (
+                      <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
+                        <div>
+                          <span className="text-sm font-medium">{user.email}</span>
+                          {user.displayName && (
+                            <span className="text-xs text-gray-500 ml-2">
+                              ({user.displayName})
+                            </span>
+                          )}
+                        </div>
                         <div className="flex gap-3">
                           <label className="flex items-center space-x-2">
                             <input
                               type="checkbox"
-                              checked={permissions[email]?.view ?? false}
-                              onChange={() => handlePermissionChange(email, 'view')}
+                              checked={permissions[user.id]?.view ?? false}
+                              onChange={() => handlePermissionChange(user.id, 'view')}
                               className="rounded text-blue-600"
                             />
                             <span className="text-sm">View</span>
@@ -194,8 +333,8 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
                           <label className="flex items-center space-x-2">
                             <input
                               type="checkbox"
-                              checked={permissions[email]?.edit ?? false}
-                              onChange={() => handlePermissionChange(email, 'edit')}
+                              checked={permissions[user.id]?.edit ?? false}
+                              onChange={() => handlePermissionChange(user.id, 'edit')}
                               className="rounded text-blue-600"
                             />
                             <span className="text-sm">Edit</span>
@@ -203,8 +342,8 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
                           <label className="flex items-center space-x-2">
                             <input
                               type="checkbox"
-                              checked={permissions[email]?.invite ?? false}
-                              onChange={() => handlePermissionChange(email, 'invite')}
+                              checked={permissions[user.id]?.invite ?? false}
+                              onChange={() => handlePermissionChange(user.id, 'invite')}
                               className="rounded text-blue-600"
                             />
                             <span className="text-sm">Invite</span>
