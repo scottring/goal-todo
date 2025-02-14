@@ -147,12 +147,12 @@ const AreaDetailsPage: React.FC = () => {
                         <Box mt={2}>
                           <Typography variant="subtitle2">Milestones:</Typography>
                           <List dense>
-                            {goal.milestones.map((milestone: any, index: any) => (
-                              <ListItem key={index}>
+                            {goal.milestones.map((milestone: any) => (
+                              <ListItem key={milestone.id}>
                                 <ListItemIcon>
                                   <ArrowForwardIos style={{ fontSize: 14 }} />
                                 </ListItemIcon>
-                                <ListItemText primary={milestone} />
+                                <ListItemText primary={milestone.name} />
                               </ListItem>
                             ))}
                           </List>

@@ -47,7 +47,7 @@ export const TestWeeklyPlanning: React.FC = () => {
 
       // Navigate to weekly planning page after a short delay
       setTimeout(() => {
-        navigate('/planning');
+        navigate('/weekly-planning');
       }, 1500);
     } catch (err) {
       console.error('Error setting up test data:', err);

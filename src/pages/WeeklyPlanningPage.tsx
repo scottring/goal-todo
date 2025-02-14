@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
+import { useWeeklyPlanning, UnscheduledItem } from '../contexts/WeeklyPlanningContext';
 import { TaskReviewItem, TaskPriority, RoutineSchedule, DaySchedule, TimeOfDay } from '../types';
 import { dateToTimestamp, timestampToDate, now } from '../utils/date';
 import { fromFirebaseTimestamp } from '../utils/firebase-adapter';
@@ -47,17 +47,6 @@ interface RecurringTask {
   title: string;
   frequency: 'daily' | 'weekly' | 'monthly';
   schedule: RoutineSchedule;
-}
-
-interface UnscheduledItem {
-  id: string;
-  type: 'task' | 'routine';
-  title: string;
-  description?: string;
-  goalId?: string;
-  goalName?: string;
-  priority?: string;
-  suggestedDate?: Date;
 }
 
 interface WeeklyPlanningContextType {
@@ -478,7 +467,6 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     getScheduleSuggestions,
     updateSession
   } = useWeeklyPlanning();
-  console.log('unscheduledItems:', unscheduledItems);
   const { goals } = useGoalsContext();
 
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<{
@@ -491,6 +479,12 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const [schedulingItem, setSchedulingItem] = useState<UnscheduledItem | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [scheduledTasks, setScheduledTasks] = useState<Record<string, string>>({});
+  const [localUnscheduledItems, setLocalUnscheduledItems] = useState<UnscheduledItem[]>([]);
+
+  // Initialize localUnscheduledItems when unscheduledItems changes
+  useEffect(() => {
+    setLocalUnscheduledItems(unscheduledItems);
+  }, [unscheduledItems]);
 
   // Refresh unscheduled items when goals or current session changes
   useEffect(() => {
@@ -573,6 +567,9 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
           }
 
           await updateSession(updatedSession);
+
+          // After successful scheduling, remove the item from localUnscheduledItems
+          setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
         }
 
         // After successful scheduling
@@ -624,6 +621,9 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
           updatedSession.planningPhase.recurringTasks.push(scheduleData);
 
           await updateSession(updatedSession);
+
+          // After successful scheduling, remove the item from localUnscheduledItems
+          setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
         }
 
         setSuccessMessage(`Successfully scheduled routine "${item.title}" for ${format(date, 'EEEE, MMMM d')}`);
@@ -667,14 +667,14 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
             minHeight: 100,
             p: 2
           }}>
-            {unscheduledItems.map((item) => (
+            {localUnscheduledItems.map((item) => (
               <UnscheduledTaskItem
                 key={`unscheduled-${item.id}`}
                 item={item}
                 onSchedule={handleScheduleClick}
               />
             ))}
-            {unscheduledItems.length === 0 && (
+            {localUnscheduledItems.length === 0 && (
               <Typography color="text.secondary" align="center">
                 No unscheduled items
               </Typography>

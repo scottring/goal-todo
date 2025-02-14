@@ -13,14 +13,15 @@ import {
 } from '../types';
 import { useAuth } from './AuthContext';
 import { useGoalsContext } from './GoalsContext';
-import { startOfWeek, endOfWeek, addDays } from 'date-fns';
+import { startOfWeek, endOfWeek, addDays, isSameWeek } from 'date-fns';
 import { dateToTimestamp, timestampToDate, now } from '../utils/date';
 import { toFirebaseTimestamp, fromFirebaseTimestamp, convertToFirebaseTimestamp, convertFromFirebaseTimestamp } from '../utils/firebase-adapter';
 import { updateDocument } from '../utils/firestore';
+import { v4 as uuidv4 } from 'uuid';
 
-interface UnscheduledItem {
+export interface UnscheduledItem {
   id: string;
-  type: 'task' | 'routine';
+  type: 'task' | 'routine' | 'milestone';
   title: string;
   description?: string;
   goalId?: string;
@@ -251,19 +252,69 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   const fetchUnscheduledItems = async () => {
     if (!currentSession) return;
     try {
-      const tasks = currentSession.reviewPhase?.taskReviews
+      const items: UnscheduledItem[] = [];
+
+      // Get unscheduled tasks from review phase:
+      // 1. Tasks that haven't been actioned yet
+      // 2. Tasks that were explicitly pushed forward
+      const reviewTasks = currentSession.reviewPhase?.taskReviews
         ?.filter((t: TaskReviewItem) => {
-          const dueDate = 'toDate' in t.originalDueDate ? fromFirebaseTimestamp(t.originalDueDate as any) : t.originalDueDate;
-          return !t.action && timestampToDate(dueDate) > new Date();
+          // Include tasks that either:
+          // - Haven't been actioned and aren't completed
+          // - Were explicitly pushed forward to next week
+          return (!t.action && !t.completedDate) || t.action === 'push_forward';
         })
         .map((t: TaskReviewItem) => ({
           id: t.taskId,
           type: 'task' as const,
           title: t.title,
-          priority: t.priority
+          priority: t.priority,
+          description: t.action === 'push_forward' ? 'Pushed forward from last week' : undefined
         })) || [];
+      
+      items.push(...reviewTasks);
 
-      setUnscheduledItems(tasks);
+      // Get unscheduled routines that need scheduling
+      if (goals) {
+        goals.forEach(goal => {
+          // Add only weekly routines without specific days assigned
+          const weeklyRoutines = goal.routines
+            .filter(routine => 
+              'frequency' in routine && 
+              routine.frequency === 'weekly' && 
+              (!routine.schedule.daysOfWeek || routine.schedule.daysOfWeek.length === 0)
+            )
+            .map(routine => ({
+              id: 'id' in routine ? routine.id : uuidv4(),
+              type: 'routine' as const,
+              title: routine.title,
+              description: routine.description,
+              goalId: goal.id,
+              goalName: goal.name
+            }));
+          
+          items.push(...weeklyRoutines);
+
+          // Add milestones without specific dates or with dates in the upcoming week
+          const unscheduledMilestones = goal.milestones
+            .filter(milestone => 
+              !milestone.targetDate || 
+              (milestone.targetDate && isSameWeek(timestampToDate(milestone.targetDate), new Date()))
+            )
+            .map(milestone => ({
+              id: milestone.id,
+              type: 'milestone' as const,
+              title: milestone.name,
+              description: milestone.successCriteria,
+              goalId: goal.id,
+              goalName: goal.name
+            }));
+          
+          items.push(...unscheduledMilestones);
+        });
+      }
+
+      setUnscheduledItems(items);
     } catch (error) {
       console.error('Error fetching unscheduled items:', error);
       throw error;

@@ -15,6 +15,8 @@ import {
 import { WeeklyPlanningSession } from '../types';
 import { format } from 'date-fns';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
+import { timestampToDate } from '../utils/date';
+import { fromFirebaseTimestamp } from '../utils/firebase-adapter';
 
 interface WeeklyPlanSummaryProps {
   session: WeeklyPlanningSession;
@@ -32,6 +34,10 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
     weekEndDate
   } = session;
 
+  // Convert timestamps if they are Firebase timestamps
+  const startDate = 'toDate' in weekStartDate ? fromFirebaseTimestamp(weekStartDate as any) : weekStartDate;
+  const endDate = 'toDate' in weekEndDate ? fromFirebaseTimestamp(weekEndDate as any) : weekEndDate;
+
   return (
     <Card variant="outlined">
       <CardContent>
@@ -40,7 +46,7 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
         </Typography>
 
         <Typography variant="subtitle1" color="textSecondary" gutterBottom>
-          {format(weekStartDate.toDate(), 'MMM d')} - {format(weekEndDate.toDate(), 'MMM d, yyyy')}
+          {format(timestampToDate(startDate), 'MMM d')} - {format(timestampToDate(endDate), 'MMM d, yyyy')}
         </Typography>
 
         <Stack spacing={3}>
@@ -77,25 +83,28 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
               Next Week's Plan
             </Typography>
             <List dense>
-              {planningPhase.nextWeekTasks.map((task) => (
-                <ListItem key={task.taskId}>
-                  <ListItemText
-                    primary={task.taskId}
-                    secondary={format(task.dueDate.toDate(), 'MMM d')}
-                  />
-                  <Chip
-                    label={task.priority}
-                    size="small"
-                    color={
-                      task.priority === 'high'
-                        ? 'error'
-                        : task.priority === 'medium'
-                        ? 'warning'
-                        : 'success'
-                    }
-                  />
-                </ListItem>
-              ))}
+              {planningPhase.nextWeekTasks.map((task) => {
+                const dueDate = 'toDate' in task.dueDate ? fromFirebaseTimestamp(task.dueDate as any) : task.dueDate;
+                return (
+                  <ListItem key={task.taskId}>
+                    <ListItemText
+                      primary={task.taskId}
+                      secondary={format(timestampToDate(dueDate), 'MMM d')}
+                    />
+                    <Chip
+                      label={task.priority}
+                      size="small"
+                      color={
+                        task.priority === 'high'
+                          ? 'error'
+                          : task.priority === 'medium'
+                          ? 'warning'
+                          : 'success'
+                      }
+                    />
+                  </ListItem>
+                );
+              })}
             </List>
           </Box>
 
@@ -131,7 +140,14 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
                   size="small"
                 />
                 <Typography variant="body2" color="textSecondary">
-                  Last synced: {format(planningPhase.calendarSyncStatus.lastSyncedAt?.toDate() || new Date(), 'MMM d, h:mm a')}
+                  Last synced: {planningPhase.calendarSyncStatus.lastSyncedAt && format(
+                    timestampToDate(
+                      'toDate' in planningPhase.calendarSyncStatus.lastSyncedAt 
+                        ? fromFirebaseTimestamp(planningPhase.calendarSyncStatus.lastSyncedAt as any)
+                        : planningPhase.calendarSyncStatus.lastSyncedAt
+                    ),
+                    'MMM d, h:mm a'
+                  )}
                 </Typography>
               </Box>
             ) : (
