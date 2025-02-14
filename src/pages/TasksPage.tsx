@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   CheckCircle, 
   Calendar, 
@@ -8,7 +8,8 @@ import {
   Clock,
   AlertCircle,
   BarChart,
-  Plus
+  Plus,
+  AlertTriangle
 } from 'lucide-react';
 import {
   Box,
@@ -23,15 +24,19 @@ import {
   CardContent,
   Stack,
   Divider,
-  Grid
+  Grid,
+  Alert
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import { useScheduledTasks } from '../hooks/useScheduledTasks';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp as FirebaseTimestamp } from 'firebase/firestore';
 import type { ScheduledTask } from '../hooks/useScheduledTasks';
 import type { TaskPriority, TaskStatus } from '../types';
+import { timestampToDate, dateToTimestamp } from '../utils/date';
+import { fromFirebaseTimestamp, toFirebaseTimestamp } from '../utils/firebase-adapter';
+import { Timestamp } from '../types';
 
 interface TaskFormData {
   title: string;
@@ -39,6 +44,13 @@ interface TaskFormData {
   dueDate?: string;
   priority: TaskPriority;
   goalId?: string;
+}
+
+interface TaskSection {
+  title: string;
+  tasks: ScheduledTask[];
+  icon?: React.ReactNode;
+  color?: string;
 }
 
 const TasksPage: React.FC = () => {
@@ -93,7 +105,7 @@ const TasksPage: React.FC = () => {
   }, [scheduledTasks, selectedIndex, completeTask]);
 
   const formatDueDate = (timestamp: Timestamp) => {
-    const date = timestamp.toDate();
+    const date = timestampToDate(timestamp);
     const today = new Date();
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
@@ -119,13 +131,13 @@ const TasksPage: React.FC = () => {
         id: Math.random().toString(36).substr(2, 9),
         title: formData.title.trim(),
         description: formData.description?.trim(),
-        dueDate: formData.dueDate ? Timestamp.fromDate(new Date(formData.dueDate)) : undefined,
+        dueDate: formData.dueDate ? toFirebaseTimestamp(dateToTimestamp(new Date(formData.dueDate))) : undefined,
         priority: formData.priority,
         status: 'not_started' as TaskStatus,
         completed: false,
         ownerId: selectedGoal.ownerId,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
+        createdAt: FirebaseTimestamp.now(),
+        updatedAt: FirebaseTimestamp.now(),
         goalId: selectedGoal.id,
         areaId: selectedGoal.areaId,
         sharedWith: [],
@@ -157,6 +169,158 @@ const TasksPage: React.FC = () => {
       console.error('Error adding task:', err);
     }
   };
+
+  const categorizedTasks = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    const threeDaysFromNow = new Date(today);
+    threeDaysFromNow.setDate(threeDaysFromNow.getDate() + 3);
+
+    const sections: TaskSection[] = [
+      {
+        title: 'Overdue',
+        tasks: [],
+        icon: <AlertTriangle className="text-error" />,
+        color: 'error.main'
+      },
+      {
+        title: 'Today',
+        tasks: [],
+        icon: <Calendar className="text-primary" />,
+        color: 'primary.main'
+      },
+      {
+        title: 'Next 3 Days',
+        tasks: [],
+        icon: <Clock className="text-info" />,
+        color: 'info.main'
+      }
+    ];
+
+    scheduledTasks.forEach(task => {
+      if (!task.completed) {
+        if (task.dueDate) {
+          const dueDate = timestampToDate(task.dueDate);
+          dueDate.setHours(0, 0, 0, 0);
+
+          if (dueDate < today) {
+            sections[0].tasks.push(task);
+          } else if (dueDate.getTime() === today.getTime()) {
+            sections[1].tasks.push(task);
+          } else if (dueDate <= threeDaysFromNow) {
+            sections[2].tasks.push(task);
+          }
+        } else if (task.isRoutine) {
+          // Routines without specific dates go into Today
+          sections[1].tasks.push(task);
+        }
+      }
+    });
+
+    // Only return sections that have tasks
+    return sections.filter(section => section.tasks.length > 0);
+  }, [scheduledTasks]);
+
+  const TaskCard: React.FC<{ task: ScheduledTask; index: number }> = ({ task, index }) => (
+    <Card
+      onClick={() => setSelectedTask(task)}
+      sx={{
+        cursor: 'pointer',
+        opacity: task.completed ? 0.5 : 1,
+        transition: 'all 0.2s',
+        '&:hover': {
+          boxShadow: 3
+        },
+        ...(index === selectedIndex && {
+          outline: '2px solid',
+          outlineColor: 'primary.main'
+        })
+      }}
+    >
+      <CardContent sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: 2,
+        '&:last-child': { pb: 2 }
+      }}>
+        <IconButton
+          onClick={(e) => {
+            e.stopPropagation();
+            completeTask(task.id);
+          }}
+          sx={{
+            width: 32,
+            height: 32,
+            border: 2,
+            borderColor: task.completed ? 'success.main' : 'grey.300',
+            bgcolor: task.completed ? 'success.main' : 'transparent',
+            '&:hover': {
+              borderColor: 'success.main'
+            }
+          }}
+        >
+          {task.completed && (
+            <CheckCircle color="white" size={16} />
+          )}
+        </IconButton>
+
+        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography
+              variant="body1"
+              sx={{
+                textDecoration: task.completed ? 'line-through' : 'none',
+                color: task.dueDate && timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.primary',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {task.title}
+            </Typography>
+            {task.source.type === 'routine' && (
+              <Chip
+                label="Routine"
+                size="small"
+                color="primary"
+                sx={{ bgcolor: 'primary.light', color: 'primary.dark' }}
+              />
+            )}
+            {task.priority === 'high' && (
+              <Flag className="text-red-500" />
+            )}
+          </Box>
+          
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
+            {task.source.goalName && (
+              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <ArrowRight className="w-3 h-3" />
+                {task.source.goalName}
+              </Typography>
+            )}
+            {task.dueDate && (
+              <Typography
+                variant="body2"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.5,
+                  color: timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.secondary'
+                }}
+              >
+                <Calendar className="w-3 h-3" />
+                {formatDueDate(task.dueDate)}
+              </Typography>
+            )}
+          </Stack>
+        </Box>
+      </CardContent>
+    </Card>
+  );
 
   if (loading) {
     return (
@@ -198,130 +362,51 @@ const TasksPage: React.FC = () => {
         </Box>
       </Box>
 
-      <Stack spacing={1}>
-        {scheduledTasks.map((task, index) => (
-          <Card
-            key={task.id}
-            onClick={() => setSelectedTask(task)}
+      {categorizedTasks.length > 0 ? (
+        <Stack spacing={4}>
+          {categorizedTasks.map((section) => (
+            <Box key={section.title}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                {section.icon}
+                <Typography variant="h6" color={section.color}>
+                  {section.title}
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>
+                  ({section.tasks.length})
+                </Typography>
+              </Box>
+              <Stack spacing={1}>
+                {section.tasks.map((task, index) => (
+                  <TaskCard key={task.id} task={task} index={index} />
+                ))}
+              </Stack>
+            </Box>
+          ))}
+        </Stack>
+      ) : (
+        <Box sx={{ textAlign: 'center', py: 6 }}>
+          <Box
             sx={{
-              cursor: 'pointer',
-              opacity: task.completed ? 0.5 : 1,
-              transition: 'all 0.2s',
-              '&:hover': {
-                boxShadow: 3
-              },
-              ...(index === selectedIndex && {
-                outline: '2px solid',
-                outlineColor: 'primary.main'
-              })
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 48,
+              height: 48,
+              borderRadius: '50%',
+              bgcolor: 'success.light',
+              mb: 2
             }}
           >
-            <CardContent sx={{ 
-              display: 'flex', 
-              alignItems: 'center', 
-              gap: 2,
-              '&:last-child': { pb: 2 }
-            }}>
-              <IconButton
-                onClick={(e) => {
-                  e.stopPropagation();
-                  completeTask(task.id);
-                }}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  border: 2,
-                  borderColor: task.completed ? 'success.main' : 'grey.300',
-                  bgcolor: task.completed ? 'success.main' : 'transparent',
-                  '&:hover': {
-                    borderColor: 'success.main'
-                  }
-                }}
-              >
-                {task.completed && (
-                  <CheckCircle color="white" size={16} />
-                )}
-              </IconButton>
-
-              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography
-                    variant="body1"
-                    sx={{
-                      textDecoration: task.completed ? 'line-through' : 'none',
-                      color: 'text.primary',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
-                    {task.title}
-                  </Typography>
-                  {task.source.type === 'routine' && (
-                    <Chip
-                      label="Routine"
-                      size="small"
-                      color="primary"
-                      sx={{ bgcolor: 'primary.light', color: 'primary.dark' }}
-                    />
-                  )}
-                  {task.priority === 'high' && (
-                    <Flag className="text-red-500" />
-                  )}
-                </Box>
-                
-                <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
-                  {task.source.goalName && (
-                    <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <ArrowRight className="w-3 h-3" />
-                      {task.source.goalName}
-                    </Typography>
-                  )}
-                  {task.dueDate && (
-                    <Typography
-                      variant="body2"
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 0.5,
-                        color: task.dueDate.toDate() < new Date() ? 'error.main' : 'text.secondary'
-                      }}
-                    >
-                      <Calendar className="w-3 h-3" />
-                      {formatDueDate(task.dueDate)}
-                    </Typography>
-                  )}
-                </Stack>
-              </Box>
-            </CardContent>
-          </Card>
-        ))}
-
-        {scheduledTasks.length === 0 && (
-          <Box sx={{ textAlign: 'center', py: 6 }}>
-            <Box
-              sx={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: 48,
-                height: 48,
-                borderRadius: '50%',
-                bgcolor: 'success.light',
-                mb: 2
-              }}
-            >
-              <CheckCircle color="#2e7d32" size={24} />
-            </Box>
-            <Typography variant="h6" color="text.primary">
-              All Clear!
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              You're all caught up. Time to celebrate or plan your next goal!
-            </Typography>
+            <CheckCircle color="#2e7d32" size={24} />
           </Box>
-        )}
-      </Stack>
+          <Typography variant="h6" color="text.primary">
+            All Clear!
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            You're all caught up. Time to celebrate or plan your next goal!
+          </Typography>
+        </Box>
+      )}
 
       {/* Add Task Modal */}
       {showAddModal && (
@@ -480,7 +565,7 @@ const TasksPage: React.FC = () => {
                     <div>
                       <p className="text-sm font-medium text-gray-700">Created</p>
                       <p className="text-sm text-gray-600">
-                        {selectedTask.createdAt.toDate().toLocaleDateString()}
+                        {timestampToDate(selectedTask.createdAt).toLocaleDateString()}
                       </p>
                     </div>
                   </div>
@@ -491,7 +576,7 @@ const TasksPage: React.FC = () => {
                       <div>
                         <p className="text-sm font-medium text-gray-700">Due Date</p>
                         <p className={`text-sm ${
-                          selectedTask.dueDate.toDate() < new Date()
+                          timestampToDate(selectedTask.dueDate) < new Date()
                             ? 'text-red-600'
                             : 'text-gray-600'
                         }`}>
