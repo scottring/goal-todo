@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useWeeklyPlanning, UnscheduledItem } from '../contexts/WeeklyPlanningContext';
-import { TaskReviewItem, TaskPriority, RoutineSchedule, DaySchedule, TimeOfDay } from '../types';
+import { TaskReviewItem, TaskPriority, RoutineSchedule, DaySchedule, TimeOfDay, SourceActivity } from '../types';
 import { dateToTimestamp, timestampToDate, now } from '../utils/date';
 import { fromFirebaseTimestamp } from '../utils/firebase-adapter';
 import {
@@ -216,6 +216,31 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     setActiveTab(newValue);
   };
 
+  const isGoalDueForReview = (goal: SourceActivity): boolean => {
+    if (!currentSession) return false;
+
+    // Only consider goals with recurring review type
+    if (goal.timeTracking.type !== 'recurring_review') return false;
+
+    const nextReviewDate = goal.timeTracking.nextReviewDate;
+    if (!nextReviewDate) return false;
+
+    // Convert Firebase timestamp if needed
+    const reviewDate = 'toDate' in nextReviewDate ? 
+      fromFirebaseTimestamp(nextReviewDate as any) : 
+      nextReviewDate;
+
+    // Get the date range for the current weekly review
+    const weekStart = timestampToDate(currentSession.weekStartDate);
+    const weekEnd = timestampToDate(currentSession.weekEndDate);
+
+    // Check if the next review date falls within this week
+    const reviewDateTime = timestampToDate(reviewDate);
+    return reviewDateTime >= weekStart && reviewDateTime <= weekEnd;
+  };
+
+  const goalsForReview = goals.filter(isGoalDueForReview);
+
   const handleTaskAction = async (taskId: string, action: string) => {
     const task = currentSession?.reviewPhase?.taskReviews?.find(t => t.taskId === taskId);
     if (!task) {
@@ -251,7 +276,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   };
 
   const getTaskReviewCount = () => {
-    return currentSession?.reviewPhase?.taskReviews?.length || 0;
+    return currentSession?.reviewPhase.taskReviews?.length || 0;
   };
 
   const getSharedGoalReviewCount = () => {
@@ -259,7 +284,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   };
 
   const getLongTermGoalCount = () => {
-    return goals?.length || 0;
+    return goalsForReview.length;
   };
 
   return (
@@ -312,7 +337,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
       {activeTab === 1 && (
         <Stack spacing={3}>
-          {goals.map(goal => {
+          {goalsForReview.map(goal => {
             const lastReviewDate = goal.timeTracking.reviewStatus?.lastReviewDate;
             const nextReviewDate = goal.timeTracking.nextReviewDate;
 
@@ -328,9 +353,9 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
               />
             );
           })}
-          {goals.length === 0 && (
+          {goalsForReview.length === 0 && (
             <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
-              No long-term goals found. Create some goals to start tracking your progress.
+              No goals due for review this week.
             </Typography>
           )}
         </Stack>
@@ -480,16 +505,19 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [scheduledTasks, setScheduledTasks] = useState<Record<string, string>>({});
   const [localUnscheduledItems, setLocalUnscheduledItems] = useState<UnscheduledItem[]>([]);
+  const [hasScheduledNewItem, setHasScheduledNewItem] = useState(false);
 
-  // Initialize localUnscheduledItems when unscheduledItems changes
+  // Initialize localUnscheduledItems only once when component mounts or when explicitly fetched
   useEffect(() => {
-    setLocalUnscheduledItems(unscheduledItems);
-  }, [unscheduledItems]);
+    if (!hasScheduledNewItem) {
+      setLocalUnscheduledItems(unscheduledItems);
+    }
+  }, [unscheduledItems, hasScheduledNewItem]);
 
-  // Refresh unscheduled items when goals or current session changes
+  // Fetch unscheduled items only when component mounts or goals change
   useEffect(() => {
     fetchUnscheduledItems();
-  }, [goals, currentSession]);
+  }, [goals]); // Removed currentSession dependency
 
   useEffect(() => {
     // Initialize scheduledTasks with existing tasks from currentSession
@@ -570,6 +598,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
           // After successful scheduling, remove the item from localUnscheduledItems
           setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
+          setHasScheduledNewItem(true); // Prevent useEffect from resetting our local state
         }
 
         // After successful scheduling
@@ -624,6 +653,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
           // After successful scheduling, remove the item from localUnscheduledItems
           setLocalUnscheduledItems(prev => prev.filter(i => i.id !== item.id));
+          setHasScheduledNewItem(true); // Prevent useEffect from resetting our local state
         }
 
         setSuccessMessage(`Successfully scheduled routine "${item.title}" for ${format(date, 'EEEE, MMMM d')}`);
@@ -811,12 +841,58 @@ const FinalizeStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     currentSession,
     syncWithCalendar
   } = useWeeklyPlanning();
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!currentSession) {
     return (
       <Paper sx={{ p: 3 }}>
         <Typography color="error">
           No active planning session found.
+        </Typography>
+      </Paper>
+    );
+  }
+
+  const handleComplete = async () => {
+    setIsSubmitting(true);
+    try {
+      await onNext();
+      setIsCompleted(true);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isCompleted) {
+    return (
+      <Paper sx={{ p: 3 }}>
+        <Alert severity="success" sx={{ mb: 3 }}>
+          Weekly planning session completed successfully! Your review and plan have been saved.
+        </Alert>
+        
+        <Typography variant="h5" gutterBottom>
+          Session Complete
+        </Typography>
+        
+        <Typography paragraph>
+          Your weekly planning session has been completed. Here's what was saved:
+        </Typography>
+        
+        <Stack spacing={2}>
+          <Typography>
+            • Review of last week's tasks ({currentSession.reviewPhase.taskReviews.length} tasks reviewed)
+          </Typography>
+          <Typography>
+            • Next week's task schedule ({currentSession.planningPhase.nextWeekTasks.length} tasks scheduled)
+          </Typography>
+          <Typography>
+            • Habits and routines ({currentSession.planningPhase.recurringTasks.length} routines scheduled)
+          </Typography>
+        </Stack>
+
+        <Typography sx={{ mt: 3 }} variant="subtitle1">
+          You can now check your calendar and daily dashboard for your scheduled tasks and routines.
         </Typography>
       </Paper>
     );
@@ -834,9 +910,15 @@ const FinalizeStep: React.FC<StepProps> = ({ onNext, onBack }) => {
       />
 
       <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-        <Button onClick={onBack}>Back</Button>
-        <Button variant="contained" onClick={onNext}>
-          Complete Session
+        <Button onClick={onBack}>
+          Back
+        </Button>
+        <Button 
+          variant="contained" 
+          onClick={handleComplete}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'Completing...' : 'Complete Session'}
         </Button>
       </Box>
     </Paper>

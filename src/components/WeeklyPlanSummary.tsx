@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   Box,
   Card,
@@ -17,6 +17,7 @@ import { format } from 'date-fns';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import { timestampToDate } from '../utils/date';
 import { fromFirebaseTimestamp } from '../utils/firebase-adapter';
+import { useGoalsContext } from '../contexts/GoalsContext';
 
 interface WeeklyPlanSummaryProps {
   session: WeeklyPlanningSession;
@@ -27,12 +28,50 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
   session,
   onSyncCalendar
 }) => {
+  const { goals } = useGoalsContext();
   const {
     reviewPhase,
     planningPhase,
     weekStartDate,
     weekEndDate
   } = session;
+
+  // Find routine details from goals
+  const routineDetails = useMemo(() => {
+    const details: Record<string, { title: string; goalName: string }> = {};
+    goals.forEach(goal => {
+      goal.routines.forEach(routine => {
+        if ('id' in routine) {
+          details[routine.id] = {
+            title: routine.title,
+            goalName: goal.name
+          };
+        }
+      });
+    });
+    return details;
+  }, [goals]);
+
+  // Calculate review statistics from taskReviews
+  const reviewStats = useMemo(() => {
+    const stats = {
+      completed: 0,
+      pushed: 0,
+      missed: 0
+    };
+
+    reviewPhase.taskReviews.forEach(task => {
+      if (task.action === 'mark_completed' || task.status === 'completed') {
+        stats.completed++;
+      } else if (task.action === 'push_forward') {
+        stats.pushed++;
+      } else if (task.action === 'mark_missed' || task.status === 'missed') {
+        stats.missed++;
+      }
+    });
+
+    return stats;
+  }, [reviewPhase.taskReviews]);
 
   // Convert timestamps if they are Firebase timestamps
   const startDate = 'toDate' in weekStartDate ? fromFirebaseTimestamp(weekStartDate as any) : weekStartDate;
@@ -52,25 +91,25 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
         <Stack spacing={3}>
           <Box>
             <Typography variant="subtitle1" gutterBottom>
-              Review Phase Summary
+              Previous Week Review Summary
             </Typography>
             <List dense>
               <ListItem>
                 <ListItemText
                   primary="Tasks Completed"
-                  secondary={reviewPhase.summary.totalCompleted}
+                  secondary={reviewStats.completed}
                 />
               </ListItem>
               <ListItem>
                 <ListItemText
                   primary="Tasks Pushed Forward"
-                  secondary={reviewPhase.summary.totalPushedForward}
+                  secondary={reviewStats.pushed}
                 />
               </ListItem>
               <ListItem>
                 <ListItemText
                   primary="Tasks Missed"
-                  secondary={reviewPhase.summary.totalMissed}
+                  secondary={reviewStats.missed}
                 />
               </ListItem>
             </List>
@@ -84,11 +123,16 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
             </Typography>
             <List dense>
               {planningPhase.nextWeekTasks.map((task) => {
+                // Look up the task name from reviewPhase.taskReviews
+                const taskDetails = reviewPhase.taskReviews.find(
+                  review => review.taskId === task.taskId
+                );
                 const dueDate = 'toDate' in task.dueDate ? fromFirebaseTimestamp(task.dueDate as any) : task.dueDate;
+                
                 return (
                   <ListItem key={task.taskId}>
                     <ListItemText
-                      primary={task.taskId}
+                      primary={taskDetails?.title || 'Unknown Task'}
                       secondary={format(timestampToDate(dueDate), 'MMM d')}
                     />
                     <Chip
@@ -105,6 +149,14 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
                   </ListItem>
                 );
               })}
+              {planningPhase.nextWeekTasks.length === 0 && (
+                <ListItem>
+                  <ListItemText
+                    primary="No tasks scheduled for next week"
+                    sx={{ color: 'text.secondary' }}
+                  />
+                </ListItem>
+              )}
             </List>
           </Box>
 
@@ -112,17 +164,44 @@ export const WeeklyPlanSummary: React.FC<WeeklyPlanSummaryProps> = ({
 
           <Box>
             <Typography variant="subtitle1" gutterBottom>
-              Recurring Tasks
+              Habits and Routines
             </Typography>
             <List dense>
-              {planningPhase.recurringTasks.map((task) => (
-                <ListItem key={task.routineId}>
+              {planningPhase.recurringTasks.map((task) => {
+                const routineInfo = routineDetails[task.routineId];
+                return (
+                  <ListItem key={task.routineId}>
+                    <ListItemText
+                      primary={routineInfo?.title || 'Unknown Routine'}
+                      secondary={
+                        <>
+                          {routineInfo?.goalName && (
+                            <Typography variant="caption" component="span" color="text.secondary" sx={{ display: 'block' }}>
+                              {routineInfo.goalName}
+                            </Typography>
+                          )}
+                          {`${task.frequency} | ${task.schedule.targetCount}x per ${task.frequency}`}
+                        </>
+                      }
+                    />
+                    {task.schedule.daysOfWeek?.[0]?.time && (
+                      <Chip
+                        label={`${String(task.schedule.daysOfWeek[0].time.hour).padStart(2, '0')}:${String(task.schedule.daysOfWeek[0].time.minute).padStart(2, '0')}`}
+                        size="small"
+                        variant="outlined"
+                      />
+                    )}
+                  </ListItem>
+                );
+              })}
+              {planningPhase.recurringTasks.length === 0 && (
+                <ListItem>
                   <ListItemText
-                    primary={task.routineId}
-                    secondary={`${task.frequency} | ${task.schedule.targetCount}x`}
+                    primary="No habits or routines scheduled"
+                    sx={{ color: 'text.secondary' }}
                   />
                 </ListItem>
-              ))}
+              )}
             </List>
           </Box>
 

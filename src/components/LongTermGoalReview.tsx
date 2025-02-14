@@ -73,7 +73,9 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
   const [madeProgress, setMadeProgress] = useState(false);
   const [adjustments, setAdjustments] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
+  const [showError, setShowError] = useState<string | null>(null);
   const [hasBeenReviewed, setHasBeenReviewed] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [savedReview, setSavedReview] = useState<{
     madeProgress: boolean;
     adjustments?: string;
@@ -100,42 +102,64 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
 
   const formatDate = (timestamp: Timestamp | undefined) => {
     if (!timestamp) return 'Not set';
-    return timestampToDate(timestamp).toLocaleDateString();
+    const date = timestampToDate(timestamp);
+    return date.toLocaleDateString();
   };
 
   const handleSubmit = async () => {
-    if (selectedDate) {
-      try {
-        // Always normalize the review date to the appropriate Sunday
-        const normalizedReviewDate = getNextReviewDate(selectedDate);
-        
-        // Create review data with only defined values
-        const reviewData = {
-          goalId,
-          madeProgress,
-          ...(adjustments && { adjustments }), // Only include if adjustments exists
-          nextReviewDate: normalizedReviewDate
-        };
-        
-        await onUpdateReview(goalId, madeProgress, adjustments || '', normalizedReviewDate);
-        setSavedReview({
-          madeProgress,
-          ...(adjustments && { adjustments }),
-          nextReviewDate: normalizedReviewDate
-        });
-        setHasBeenReviewed(true);
-        setShowSuccess(true);
-        setTimeout(() => setShowSuccess(false), 3000);
-      } catch (error) {
-        console.error('Error saving review:', error);
-      }
+    if (!selectedDate) {
+      setShowError('Please select a next review date');
+      return;
     }
-    setIsEditing(false);
+
+    try {
+      setIsSubmitting(true);
+      setShowError(null);
+      
+      // Always normalize the review date to the appropriate Sunday
+      const normalizedReviewDate = getNextReviewDate(selectedDate);
+      
+      // Create review data with only defined values
+      const reviewData = {
+        goalId,
+        madeProgress,
+        ...(adjustments && { adjustments }), // Only include if adjustments exists
+        nextReviewDate: normalizedReviewDate
+      };
+      
+      await onUpdateReview(goalId, madeProgress, adjustments || '', normalizedReviewDate);
+      setSavedReview({
+        madeProgress,
+        ...(adjustments && { adjustments }),
+        nextReviewDate: normalizedReviewDate
+      });
+      setHasBeenReviewed(true);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 3000);
+    } catch (error) {
+      console.error('Error saving review:', error);
+      setShowError(error instanceof Error ? error.message : 'Failed to save review');
+    } finally {
+      setIsSubmitting(false);
+      setIsEditing(false);
+    }
   };
 
   return (
     <Paper sx={{ p: 3 }}>
       <Stack spacing={2}>
+        {showSuccess && (
+          <Alert severity="success" onClose={() => setShowSuccess(false)}>
+            Review saved successfully!
+          </Alert>
+        )}
+        
+        {showError && (
+          <Alert severity="error" onClose={() => setShowError(null)}>
+            {showError}
+          </Alert>
+        )}
+
         <Box>
           <Typography variant="h6" gutterBottom>
             {goalName}
@@ -165,6 +189,7 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
             <Switch
               checked={madeProgress}
               onChange={(e) => setMadeProgress(e.target.checked)}
+              disabled={isSubmitting}
             />
           }
           label="Made progress since last review"
@@ -177,6 +202,7 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
           value={adjustments}
           onChange={(e) => setAdjustments(e.target.value)}
           fullWidth
+          disabled={isSubmitting}
         />
 
         <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -184,18 +210,45 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
             label="Next Review Date"
             value={selectedDate}
             onChange={(date) => setSelectedDate(date)}
+            disabled={isSubmitting}
             slotProps={{
               textField: {
                 fullWidth: true,
-                helperText: 'When would you like to review this goal again?'
+                helperText: 'When would you like to review this goal again?',
+                error: !selectedDate && showError !== null
               }
             }}
           />
         </LocalizationProvider>
 
-        <Button variant="contained" onClick={handleSubmit}>
-          Save Review
+        <Button 
+          variant="contained" 
+          onClick={handleSubmit}
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'Saving...' : 'Save Review'}
         </Button>
+
+        {hasBeenReviewed && savedReview && (
+          <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Last Saved Review:
+            </Typography>
+            <Typography variant="body2">
+              Progress Made: {savedReview.madeProgress ? 'Yes' : 'No'}
+            </Typography>
+            {savedReview.adjustments && (
+              <Typography variant="body2">
+                Adjustments: {savedReview.adjustments}
+              </Typography>
+            )}
+            {savedReview.nextReviewDate && (
+              <Typography variant="body2">
+                Next Review: {savedReview.nextReviewDate.toLocaleDateString()}
+              </Typography>
+            )}
+          </Box>
+        )}
       </Stack>
     </Paper>
   );
