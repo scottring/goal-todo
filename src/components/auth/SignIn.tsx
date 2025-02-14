@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { signInWithEmailAndPassword, signInWithPopup } from 'firebase/auth';
-import { auth, googleProvider, initializeUserData } from '../../lib/firebase';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   Container,
   Box,
@@ -23,138 +22,115 @@ interface LocationState {
 export default function SignIn() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { signIn, signInWithGoogle, error } = useAuth();
   const from = (location.state as LocationState)?.from || '/';
 
   const handleEmailSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setLoading(true);
+    if (!email.trim() || !password.trim()) return;
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      await initializeUserData(userCredential.user.uid, {
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName
-      });
+      setLoading(true);
+      await signIn(email, password);
       navigate(from, { replace: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Sign in error:', err);
-      setError(err.message || 'Failed to sign in. Please check your credentials.');
     } finally {
       setLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
-    setError(null);
-    setLoading(true);
-
     try {
-      const userCredential = await signInWithPopup(auth, googleProvider);
-      await initializeUserData(userCredential.user.uid, {
-        email: userCredential.user.email,
-        displayName: userCredential.user.displayName
-      });
+      setLoading(true);
+      await signInWithGoogle();
       navigate(from, { replace: true });
-    } catch (err: any) {
+    } catch (err) {
       console.error('Google sign in error:', err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setError('Sign in cancelled. Please try again.');
-      } else {
-        setError(err.message || 'Failed to sign in with Google.');
-      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <Container component="main" maxWidth="xs">
-      <Box
-        sx={{
-          marginTop: 8,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-        }}
-      >
-        <Paper elevation={3} sx={{ p: 4, width: '100%' }}>
-          <Typography component="h1" variant="h5" align="center" gutterBottom>
-            Sign in to your account
+    <Container maxWidth="sm">
+      <Box sx={{ mt: 8, mb: 4 }}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Typography variant="h4" component="h1" align="center" gutterBottom>
+            Sign In
           </Typography>
 
           {error && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {error}
+            <Alert severity="error" sx={{ mb: 3 }}>
+              {error.message}
             </Alert>
           )}
 
-          <Box component="form" onSubmit={handleEmailSignIn} sx={{ mt: 1 }}>
+          <form onSubmit={handleEmailSignIn}>
             <TextField
-              margin="normal"
-              required
+              label="Email"
+              type="email"
               fullWidth
-              id="email"
-              label="Email Address"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              disabled={loading}
+              margin="normal"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={loading}
             />
             <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
               label="Password"
               type="password"
-              id="password"
-              autoComplete="current-password"
-              disabled={loading}
+              fullWidth
+              margin="normal"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={loading}
             />
-
-            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
-              <MuiLink component={Link} to="/forgot-password" variant="body2">
-                Forgot password?
-              </MuiLink>
-              <MuiLink component={Link} to="/signup" variant="body2">
-                Create an account
-              </MuiLink>
-            </Box>
 
             <Button
               type="submit"
               fullWidth
               variant="contained"
+              size="large"
               disabled={loading}
               sx={{ mt: 3, mb: 2 }}
             >
-              {loading ? <CircularProgress size={24} /> : 'Sign in'}
+              {loading ? <CircularProgress size={24} /> : 'Sign In'}
             </Button>
+          </form>
 
-            <Divider sx={{ my: 2 }}>
-              <Typography variant="body2" color="text.secondary">
-                Or continue with
-              </Typography>
-            </Divider>
+          <Divider sx={{ my: 3 }}>or</Divider>
 
-            <Button
-              fullWidth
-              variant="outlined"
-              startIcon={<GoogleIcon />}
-              onClick={handleGoogleSignIn}
-              disabled={loading}
+          <Button
+            fullWidth
+            variant="outlined"
+            size="large"
+            startIcon={<GoogleIcon />}
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+          >
+            Sign in with Google
+          </Button>
+
+          <Box sx={{ mt: 3, textAlign: 'center' }}>
+            <MuiLink
+              component={Link}
+              to="/forgot-password"
+              variant="body2"
+              sx={{ display: 'block', mb: 1 }}
             >
-              {loading ? <CircularProgress size={24} /> : 'Sign in with Google'}
-            </Button>
+              Forgot Password?
+            </MuiLink>
+            <Typography variant="body2">
+              Don't have an account?{' '}
+              <MuiLink component={Link} to="/signup">
+                Sign Up
+              </MuiLink>
+            </Typography>
           </Box>
         </Paper>
       </Box>

@@ -9,85 +9,61 @@ import {
   Container,
   IconButton
 } from '@mui/material';
-import ListAltIcon from '@mui/icons-material/ListAlt';
-import LayersIcon from '@mui/icons-material/Layers';
-import TrackChangesIcon from '@mui/icons-material/TrackChanges';
-import EventNoteIcon from '@mui/icons-material/EventNote';
-import LogoutIcon from '@mui/icons-material/Logout';
-import { signOut } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import {
+  Home,
+  Target,
+  CheckSquare,
+  Calendar,
+  Settings
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { UserAccountButton } from './UserAccountButton';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
-  
-  const handleSignOut = async () => {
-    try {
-      await signOut(auth);
-      navigate('/');
-    } catch (error) {
-      console.error('Error signing out:', error);
-    }
-  };
 
   const isActive = (path: string) => location.pathname === path;
-  
+
+  const menuItems = [
+    { text: 'Areas', icon: <Home size={20} />, path: '/areas' },
+    { text: 'Goals', icon: <Target size={20} />, path: '/goals' },
+    { text: 'Tasks', icon: <CheckSquare size={20} />, path: '/tasks' },
+    { text: 'Weekly Planning', icon: <Calendar size={20} />, path: '/weekly-planning' }
+  ];
+
+  // Don't show navigation for auth pages
+  const isAuthPage = ['/signin', '/signup', '/forgot-password'].includes(location.pathname);
+  if (isAuthPage) {
+    return <>{children}</>;
+  }
+
+  // Redirect to sign in if not authenticated
+  if (!currentUser) {
+    navigate('/signin', { state: { from: location.pathname } });
+    return null;
+  }
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       <AppBar position="static" color="default" elevation={1}>
         <Toolbar>
-          <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button
-                component={Link}
-                to="/tasks"
-                color={isActive('/tasks') ? 'primary' : 'inherit'}
-                startIcon={<ListAltIcon />}
-              >
-                Tasks
-              </Button>
-              <Button
-                component={Link}
-                to="/areas"
-                color={isActive('/areas') ? 'primary' : 'inherit'}
-                startIcon={<LayersIcon />}
-              >
-                Areas
-              </Button>
-              <Button
-                component={Link}
-                to="/goals"
-                color={isActive('/goals') ? 'primary' : 'inherit'}
-                startIcon={<TrackChangesIcon />}
-              >
-                Goals
-              </Button>
-              <Button
-                component={Link}
-                to="/weekly-planning"
-                color={isActive('/weekly-planning') ? 'primary' : 'inherit'}
-                startIcon={<EventNoteIcon />}
-              >
-                Weekly Planning
-              </Button>
-            </Box>
-
-            {currentUser && (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Typography variant="body2" color="textSecondary">
-                  {currentUser.displayName || currentUser.email}
-                </Typography>
-                <IconButton
-                  onClick={handleSignOut}
-                  color="inherit"
-                  size="small"
+              {menuItems.map((item) => (
+                <Button
+                  key={item.text}
+                  component={Link}
+                  to={item.path}
+                  color={isActive(item.path) ? 'primary' : 'inherit'}
+                  startIcon={item.icon}
                 >
-                  <LogoutIcon />
-                </IconButton>
-              </Box>
-            )}
+                  {item.text}
+                </Button>
+              ))}
+            </Box>
+            <UserAccountButton />
           </Container>
         </Toolbar>
       </AppBar>

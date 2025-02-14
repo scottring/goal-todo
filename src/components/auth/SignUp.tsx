@@ -1,136 +1,145 @@
 import React, { useState } from 'react';
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
-import { UserPlus } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  Container,
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Alert,
+  Paper,
+  Link as MuiLink,
+  CircularProgress
+} from '@mui/material';
+import { UserPlus } from 'lucide-react';
 
 export default function SignUp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { signUp, error } = useAuth();
+
+  const validateForm = (): boolean => {
+    if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
+      setValidationError('All fields are required');
+      return false;
+    }
+
+    if (password !== confirmPassword) {
+      setValidationError('Passwords do not match');
+      return false;
+    }
+
+    if (password.length < 6) {
+      setValidationError('Password must be at least 6 characters long');
+      return false;
+    }
+
+    setValidationError(null);
+    return true;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!validateForm()) return;
+
     try {
-      setError(null);
       setLoading(true);
-      
-      const { user } = await createUserWithEmailAndPassword(auth, email, password);
-      
-      // Update profile with display name
-      if (displayName) {
-        await updateProfile(user, { displayName });
-      }
-
-      // Create user profile in Firestore
-      await setDoc(doc(db, 'users', user.uid), {
-        email: user.email,
-        displayName: displayName || null,
-        photoURL: null,
-        createdAt: Timestamp.now()
-      });
-
-      // Redirect to home page after successful signup
+      await signUp(email, password, displayName);
       navigate('/');
     } catch (err) {
       console.error('Signup error:', err);
-      setError('Failed to create account. Please check your information and try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="flex justify-center">
-            <UserPlus className="h-12 w-12 text-blue-600" />
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
-            Create your account
-          </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
-            Or{' '}
-            <Link to="/" className="font-medium text-blue-600 hover:text-blue-500">
-              sign in to your account
-            </Link>
-          </p>
-        </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
-          {error && (
-            <div className="rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
-            </div>
-          )}
-          <div className="rounded-md shadow-sm -space-y-px">
-            <div>
-              <label htmlFor="display-name" className="sr-only">
-                Display Name
-              </label>
-              <input
-                id="display-name"
-                name="displayName"
-                type="text"
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Display Name"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="email-address" className="sr-only">
-                Email address
-              </label>
-              <input
-                id="email-address"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Email address"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="password" className="sr-only">
-                Password
-              </label>
-              <input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete="new-password"
-                required
-                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
+    <Container maxWidth="sm">
+      <Box sx={{ mt: 8, mb: 4 }}>
+        <Paper elevation={3} sx={{ p: 4 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3 }}>
+            <UserPlus size={32} className="mr-2" />
+            <Typography variant="h4" component="h1">
+              Create Account
+            </Typography>
+          </Box>
 
-          <div>
-            <button
-              type="submit"
+          {(error || validationError) && (
+            <Alert severity="error" sx={{ mb: 3 }}>
+              {validationError || error?.message}
+            </Alert>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <TextField
+              label="Display Name"
+              fullWidth
+              margin="normal"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
               disabled={loading}
-              className={`group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white ${
-                loading
-                  ? 'bg-blue-400 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500'
-              }`}
+            />
+            <TextField
+              label="Email"
+              type="email"
+              fullWidth
+              margin="normal"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={loading}
+            />
+            <TextField
+              label="Password"
+              type="password"
+              fullWidth
+              margin="normal"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={loading}
+              helperText="Password must be at least 6 characters long"
+            />
+            <TextField
+              label="Confirm Password"
+              type="password"
+              fullWidth
+              margin="normal"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              disabled={loading}
+            />
+
+            <Button
+              type="submit"
+              fullWidth
+              variant="contained"
+              size="large"
+              disabled={loading}
+              sx={{ mt: 3, mb: 2 }}
             >
-              {loading ? 'Creating account...' : 'Sign up'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+              {loading ? <CircularProgress size={24} /> : 'Create Account'}
+            </Button>
+          </form>
+
+          <Box sx={{ mt: 3, textAlign: 'center' }}>
+            <Typography variant="body2">
+              Already have an account?{' '}
+              <MuiLink component={Link} to="/signin">
+                Sign In
+              </MuiLink>
+            </Typography>
+          </Box>
+        </Paper>
+      </Box>
+    </Container>
   );
 }

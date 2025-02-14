@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, setPersistence, browserLocalPersistence, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { getEnvironment, getPrefixedCollection } from '../utils/environment';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -13,7 +14,7 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase
-export const app = initializeApp(firebaseConfig);
+const app = initializeApp(firebaseConfig);
 
 // Initialize Firebase Authentication and get a reference to the service
 export const auth = getAuth(app);
@@ -23,29 +24,39 @@ setPersistence(auth, browserLocalPersistence).catch((error) => {
   console.error("Auth persistence error:", error);
 });
 
-// Configure Google provider
+// Configure Google provider with proper settings for production
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
-  prompt: 'select_account'
+  prompt: 'select_account',
+  // Add these parameters to help with popup issues
+  access_type: 'offline',
+  // Specify origins that are allowed to embed the sign-in popup
+  hosted_domain: window.location.hostname
 });
 
 // Initialize Cloud Firestore and get a reference to the service
 export const db = getFirestore(app);
 
-// Initialize user data in Firestore
-export const initializeUserData = async (userId: string, userData: { email: string | null, displayName: string | null }) => {
+// Initialize user data with environment-specific collection
+export async function initializeUserData(
+  uid: string,
+  userData: { email: string | null; displayName: string | null }
+) {
   try {
-    const userRef = doc(db, 'users', userId);
+    const userCollection = getPrefixedCollection('users');
+    const userRef = doc(db, userCollection, uid);
+    
+    // First check if user exists
     const userDoc = await getDoc(userRef);
-
+    
     if (!userDoc.exists()) {
       // Create new user document with default data
       await setDoc(userRef, {
         email: userData.email,
         displayName: userData.displayName || 'User',
-        ownerId: userId,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        environment: getEnvironment(),
         sharedWith: [],
         permissions: {},
         settings: {
@@ -53,28 +64,19 @@ export const initializeUserData = async (userId: string, userData: { email: stri
           notifications: true
         }
       });
-
-      // Create default area
-      const defaultAreaRef = doc(db, 'areas', 'default-' + userId);
-      await setDoc(defaultAreaRef, {
-        name: 'Personal',
-        description: 'Your personal area',
-        color: '#1976d2',
-        ownerId: userId,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        sharedWith: [],
-        permissions: {}
-      });
     } else {
       // Update existing user's last login
       await setDoc(userRef, {
         lastLogin: serverTimestamp(),
-        updatedAt: serverTimestamp()
+        updatedAt: serverTimestamp(),
+        environment: getEnvironment()
       }, { merge: true });
     }
   } catch (error) {
     console.error('Error initializing user data:', error);
     throw error;
   }
-};
+}
+
+// Export environment information
+export const currentEnvironment = getEnvironment();
