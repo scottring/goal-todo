@@ -326,7 +326,8 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
       originalDueDate: task.originalDueDate instanceof Timestamp ? 
                       task.originalDueDate : 
                       Timestamp.fromDate(new Date()),
-      action
+      action,
+      priority: task.priority || 'medium'
     };
 
     await updateTaskReview(reviewData);

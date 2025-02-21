@@ -20,9 +20,11 @@ import type {
   Routine,
   ReviewStatus,
   RoutineWithoutSystemFields,
-  DayOfWeek
+  DayOfWeek,
+  DaySchedule
 } from '../types';
 import { Stepper, Step, StepLabel, Typography } from '@mui/material';
+import { HouseholdMemberSelect } from '../components/HouseholdMemberSelect';
 
 const MEASURABLE_METRIC_OPTIONS: { label: string; value: MeasurableMetric }[] = [
   { label: 'Count occurrences', value: 'count_occurrences' },
@@ -52,6 +54,12 @@ const REVIEW_CYCLE_OPTIONS: { label: string; value: ReviewCycle }[] = [
   { label: 'Every 6 months', value: 'biannual' },
   { label: 'Yearly', value: 'yearly' }
 ];
+
+// Helper function to get day of week from date
+const getDayOfWeek = (date: Date): DayOfWeek => {
+  const days: DayOfWeek[] = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  return days[date.getDay()];
+};
 
 const EditGoalPage: React.FC = () => {
   const { goalId } = useParams<{ goalId: string }>();
@@ -623,11 +631,13 @@ const EditGoalPage: React.FC = () => {
                                 </option>
                               ))}
                             </select>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                value={task.sharedWith.join(', ')}
-                                onChange={e => {
+                            <div className="mt-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Assign To
+                              </label>
+                              <HouseholdMemberSelect
+                                value={task.assignedTo || ''}
+                                onChange={(value) => {
                                   setFormData(prev => {
                                     const newTasks = [...prev.tasks];
                                     const taskIndex = newTasks.findIndex(t => t.id === taskId);
@@ -635,13 +645,12 @@ const EditGoalPage: React.FC = () => {
                                     
                                     newTasks[taskIndex] = {
                                       ...newTasks[taskIndex],
-                                      sharedWith: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
+                                      assignedTo: value
                                     };
                                     return { ...prev, tasks: newTasks };
                                   });
                                 }}
-                                className="flex-1 p-1 border rounded"
-                                placeholder="Share with (comma-separated emails)"
+                                className="w-full p-2 border rounded-md"
                               />
                             </div>
                           </div>
@@ -782,7 +791,7 @@ const EditGoalPage: React.FC = () => {
                                 const frequency = e.target.value as Routine['frequency'];
                                 setFormData(prev => {
                                   const newRoutines = [...prev.routines];
-                                  const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === routineId);
+                                  const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
                                   if (routineIndex === -1) return prev;
                                   
                                   newRoutines[routineIndex] = {
@@ -807,76 +816,152 @@ const EditGoalPage: React.FC = () => {
                               <option value="yearly">Yearly</option>
                             </select>
                             {routine.frequency === 'weekly' && (
-                              <div className="space-y-2">
+                              <div className="space-y-4">
                                 <label className="block text-sm font-medium text-gray-700">
-                                  Schedule
+                                  Schedule Weekly Occurrences
                                 </label>
-                                {[...Array(routine.targetCount)].map((_, scheduleIndex) => (
-                                  <div key={scheduleIndex} className="flex gap-2">
-                                    <select
-                                      value={routine.schedule.daysOfWeek?.[scheduleIndex]?.day || 'monday'}
-                                      onChange={e => {
-                                        setFormData(prev => {
-                                          const newRoutines = [...prev.routines];
-                                          const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                                          if (routineIndex === -1) return prev;
-                                          
-                                          const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
-                                          newDaysOfWeek[scheduleIndex] = {
-                                            ...(newDaysOfWeek[scheduleIndex] || { time: { hour: 9, minute: 0 } }),
-                                            day: e.target.value as DayOfWeek
-                                          };
-                                          
-                                          newRoutines[routineIndex] = {
-                                            ...newRoutines[routineIndex],
-                                            schedule: {
-                                              ...newRoutines[routineIndex].schedule,
-                                              daysOfWeek: newDaysOfWeek
-                                            }
-                                          };
-                                          return { ...prev, routines: newRoutines };
-                                        });
-                                      }}
-                                      className="flex-1 p-2 border rounded-md"
-                                    >
-                                      <option value="monday">Monday</option>
-                                      <option value="tuesday">Tuesday</option>
-                                      <option value="wednesday">Wednesday</option>
-                                      <option value="thursday">Thursday</option>
-                                      <option value="friday">Friday</option>
-                                      <option value="saturday">Saturday</option>
-                                      <option value="sunday">Sunday</option>
-                                    </select>
-                                    <input
-                                      type="time"
-                                      value={`${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.minute || 0).padStart(2, '0')}`}
-                                      onChange={e => {
-                                        const [hours, minutes] = e.target.value.split(':').map(Number);
-                                        setFormData(prev => {
-                                          const newRoutines = [...prev.routines];
-                                          const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                                          if (routineIndex === -1) return prev;
-                                          
-                                          const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
-                                          newDaysOfWeek[scheduleIndex] = {
-                                            ...(newDaysOfWeek[scheduleIndex] || { day: 'monday' }),
-                                            time: { hour: hours, minute: minutes }
-                                          };
-                                          
-                                          newRoutines[routineIndex] = {
-                                            ...newRoutines[routineIndex],
-                                            schedule: {
-                                              ...newRoutines[routineIndex].schedule,
-                                              daysOfWeek: newDaysOfWeek
-                                            }
-                                          };
-                                          return { ...prev, routines: newRoutines };
-                                        });
-                                      }}
-                                      className="w-32 p-2 border rounded-md"
-                                    />
-                                  </div>
-                                ))}
+                                <div className="space-y-4">
+                                  {[...Array(routine.targetCount)].map((_, scheduleIndex) => (
+                                    <div key={scheduleIndex} className="p-3 bg-gray-50 rounded-md space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <span className="text-sm font-medium">Occurrence {scheduleIndex + 1}</span>
+                                      </div>
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                          <DatePicker
+                                            label="Date"
+                                            value={getDateFromTimestamp(routine.schedule.daysOfWeek?.[scheduleIndex]?.specificDate) || null}
+                                            onChange={(date) => {
+                                              setFormData(prev => {
+                                                const newRoutines = [...prev.routines];
+                                                const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                                if (routineIndex === -1) return prev;
+                                                
+                                                const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                                newDaysOfWeek[scheduleIndex] = {
+                                                  ...(newDaysOfWeek[scheduleIndex] || {}),
+                                                  specificDate: date ? createTimestamp(date) : undefined,
+                                                  day: date ? getDayOfWeek(date) : 'monday'
+                                                };
+                                                
+                                                newRoutines[routineIndex] = {
+                                                  ...newRoutines[routineIndex],
+                                                  schedule: {
+                                                    ...newRoutines[routineIndex].schedule,
+                                                    daysOfWeek: newDaysOfWeek
+                                                  }
+                                                };
+                                                return { ...prev, routines: newRoutines };
+                                              });
+                                            }}
+                                            slotProps={{
+                                              textField: {
+                                                fullWidth: true,
+                                                className: "w-full p-2 border rounded-md"
+                                              }
+                                            }}
+                                          />
+                                        </LocalizationProvider>
+                                        <div className="flex gap-2">
+                                          <select
+                                            value={routine.schedule.daysOfWeek?.[scheduleIndex]?.day || 'monday'}
+                                            onChange={e => {
+                                              setFormData(prev => {
+                                                const newRoutines = [...prev.routines];
+                                                const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                                if (routineIndex === -1) return prev;
+                                                
+                                                const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                                newDaysOfWeek[scheduleIndex] = {
+                                                  ...(newDaysOfWeek[scheduleIndex] || { time: { hour: 9, minute: 0 } }),
+                                                  day: e.target.value as DayOfWeek
+                                                };
+                                                
+                                                newRoutines[routineIndex] = {
+                                                  ...newRoutines[routineIndex],
+                                                  schedule: {
+                                                    ...newRoutines[routineIndex].schedule,
+                                                    daysOfWeek: newDaysOfWeek
+                                                  }
+                                                };
+                                                return { ...prev, routines: newRoutines };
+                                              });
+                                            }}
+                                            className="flex-1 p-2 border rounded-md"
+                                          >
+                                            <option value="">Select day (optional)</option>
+                                            <option value="monday">Monday</option>
+                                            <option value="tuesday">Tuesday</option>
+                                            <option value="wednesday">Wednesday</option>
+                                            <option value="thursday">Thursday</option>
+                                            <option value="friday">Friday</option>
+                                            <option value="saturday">Saturday</option>
+                                            <option value="sunday">Sunday</option>
+                                          </select>
+                                          <input
+                                            type="time"
+                                            value={`${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.minute || 0).padStart(2, '0')}`}
+                                            onChange={e => {
+                                              const [hours, minutes] = e.target.value.split(':').map(Number);
+                                              setFormData(prev => {
+                                                const newRoutines = [...prev.routines];
+                                                const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                                if (routineIndex === -1) return prev;
+                                                
+                                                const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                                newDaysOfWeek[scheduleIndex] = {
+                                                  ...(newDaysOfWeek[scheduleIndex] || { day: 'monday' }),
+                                                  time: { hour: hours, minute: minutes }
+                                                };
+                                                
+                                                newRoutines[routineIndex] = {
+                                                  ...newRoutines[routineIndex],
+                                                  schedule: {
+                                                    ...newRoutines[routineIndex].schedule,
+                                                    daysOfWeek: newDaysOfWeek
+                                                  }
+                                                };
+                                                return { ...prev, routines: newRoutines };
+                                              });
+                                            }}
+                                            className="w-32 p-2 border rounded-md"
+                                          />
+                                        </div>
+                                      </div>
+                                      <div className="mt-2">
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                          Assign To
+                                        </label>
+                                        <HouseholdMemberSelect
+                                          value={routine.schedule.daysOfWeek?.[scheduleIndex]?.assignedTo || ''}
+                                          onChange={(value) => {
+                                            setFormData(prev => {
+                                              const newRoutines = [...prev.routines];
+                                              const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                              if (routineIndex === -1) return prev;
+                                              
+                                              const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                              newDaysOfWeek[scheduleIndex] = {
+                                                ...(newDaysOfWeek[scheduleIndex] || {}),
+                                                assignedTo: value
+                                              };
+                                              
+                                              newRoutines[routineIndex] = {
+                                                ...newRoutines[routineIndex],
+                                                schedule: {
+                                                  ...newRoutines[routineIndex].schedule,
+                                                  daysOfWeek: newDaysOfWeek
+                                                }
+                                              };
+                                              return { ...prev, routines: newRoutines };
+                                            });
+                                          }}
+                                          className="w-full p-2 border rounded-md"
+                                        />
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             )}
                             {routine.frequency === 'monthly' && (
@@ -1058,6 +1143,28 @@ const EditGoalPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                  <div className="mt-2">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Assign To
+                    </label>
+                    <HouseholdMemberSelect
+                      value={task.assignedTo || ''}
+                      onChange={(value) => {
+                        setFormData(prev => {
+                          const newTasks = [...prev.tasks];
+                          const taskIndex = newTasks.findIndex(t => t.id === task.id);
+                          if (taskIndex === -1) return prev;
+                          
+                          newTasks[taskIndex] = {
+                            ...newTasks[taskIndex],
+                            assignedTo: value
+                          };
+                          return { ...prev, tasks: newTasks };
+                        });
+                      }}
+                      className="w-full p-2 border rounded-md"
+                    />
+                  </div>
                 </div>
               ))}
               <button
@@ -1151,76 +1258,121 @@ const EditGoalPage: React.FC = () => {
                     <option value="yearly">Yearly</option>
                   </select>
                   {routine.frequency === 'weekly' && (
-                    <div className="space-y-2">
+                    <div className="space-y-4">
                       <label className="block text-sm font-medium text-gray-700">
-                        Schedule
+                        Schedule Weekly Occurrences
                       </label>
-                      {[...Array(routine.targetCount)].map((_, scheduleIndex) => (
-                        <div key={scheduleIndex} className="flex gap-2">
-                          <select
-                            value={routine.schedule.daysOfWeek?.[scheduleIndex]?.day || 'monday'}
-                            onChange={e => {
-                              setFormData(prev => {
-                                const newRoutines = [...prev.routines];
-                                const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                                if (routineIndex === -1) return prev;
-                                
-                                const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
-                                newDaysOfWeek[scheduleIndex] = {
-                                  ...(newDaysOfWeek[scheduleIndex] || { time: { hour: 9, minute: 0 } }),
-                                  day: e.target.value as DayOfWeek
-                                };
-                                
-                                newRoutines[routineIndex] = {
-                                  ...newRoutines[routineIndex],
-                                  schedule: {
-                                    ...newRoutines[routineIndex].schedule,
-                                    daysOfWeek: newDaysOfWeek
-                                  }
-                                };
-                                return { ...prev, routines: newRoutines };
-                              });
-                            }}
-                            className="flex-1 p-2 border rounded-md"
-                          >
-                            <option value="monday">Monday</option>
-                            <option value="tuesday">Tuesday</option>
-                            <option value="wednesday">Wednesday</option>
-                            <option value="thursday">Thursday</option>
-                            <option value="friday">Friday</option>
-                            <option value="saturday">Saturday</option>
-                            <option value="sunday">Sunday</option>
-                          </select>
-                          <input
-                            type="time"
-                            value={`${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.minute || 0).padStart(2, '0')}`}
-                            onChange={e => {
-                              const [hours, minutes] = e.target.value.split(':').map(Number);
-                              setFormData(prev => {
-                                const newRoutines = [...prev.routines];
-                                const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                                if (routineIndex === -1) return prev;
-                                
-                                const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
-                                newDaysOfWeek[scheduleIndex] = {
-                                  ...(newDaysOfWeek[scheduleIndex] || { day: 'monday' }),
-                                  time: { hour: hours, minute: minutes }
-                                };
-                                
-                                newRoutines[routineIndex] = {
-                                  ...newRoutines[routineIndex],
-                                  schedule: {
-                                    ...newRoutines[routineIndex].schedule,
-                                    daysOfWeek: newDaysOfWeek
-                                  }
-                                };
-                                return { ...prev, routines: newRoutines };
-                              });
-                            }}
-                            className="w-32 p-2 border rounded-md"
-                          />
-                        </div>
-                      ))}
+                      <div className="space-y-4">
+                        {[...Array(routine.targetCount)].map((_, scheduleIndex) => (
+                          <div key={scheduleIndex} className="p-3 bg-gray-50 rounded-md space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">Occurrence {scheduleIndex + 1}</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                                <DatePicker
+                                  label="Date"
+                                  value={getDateFromTimestamp(routine.schedule.daysOfWeek?.[scheduleIndex]?.specificDate) || null}
+                                  onChange={(date) => {
+                                    setFormData(prev => {
+                                      const newRoutines = [...prev.routines];
+                                      const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                      if (routineIndex === -1) return prev;
+                                      
+                                      const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                      newDaysOfWeek[scheduleIndex] = {
+                                        ...(newDaysOfWeek[scheduleIndex] || {}),
+                                        specificDate: date ? createTimestamp(date) : undefined,
+                                        day: date ? getDayOfWeek(date) : 'monday'
+                                      };
+                                      
+                                      newRoutines[routineIndex] = {
+                                        ...newRoutines[routineIndex],
+                                        schedule: {
+                                          ...newRoutines[routineIndex].schedule,
+                                          daysOfWeek: newDaysOfWeek
+                                        }
+                                      };
+                                      return { ...prev, routines: newRoutines };
+                                    });
+                                  }}
+                                  slotProps={{
+                                    textField: {
+                                      fullWidth: true,
+                                      className: "w-full p-2 border rounded-md"
+                                    }
+                                  }}
+                                />
+                              </LocalizationProvider>
+                              <div className="flex gap-2">
+                                <select
+                                  value={routine.schedule.daysOfWeek?.[scheduleIndex]?.day || 'monday'}
+                                  onChange={e => {
+                                    setFormData(prev => {
+                                      const newRoutines = [...prev.routines];
+                                      const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                      if (routineIndex === -1) return prev;
+                                      
+                                      const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                      newDaysOfWeek[scheduleIndex] = {
+                                        ...(newDaysOfWeek[scheduleIndex] || { time: { hour: 9, minute: 0 } }),
+                                        day: e.target.value as DayOfWeek
+                                      };
+                                      
+                                      newRoutines[routineIndex] = {
+                                        ...newRoutines[routineIndex],
+                                        schedule: {
+                                          ...newRoutines[routineIndex].schedule,
+                                          daysOfWeek: newDaysOfWeek
+                                        }
+                                      };
+                                      return { ...prev, routines: newRoutines };
+                                    });
+                                  }}
+                                  className="flex-1 p-2 border rounded-md"
+                                >
+                                  <option value="">Select day (optional)</option>
+                                  <option value="monday">Monday</option>
+                                  <option value="tuesday">Tuesday</option>
+                                  <option value="wednesday">Wednesday</option>
+                                  <option value="thursday">Thursday</option>
+                                  <option value="friday">Friday</option>
+                                  <option value="saturday">Saturday</option>
+                                  <option value="sunday">Sunday</option>
+                                </select>
+                                <input
+                                  type="time"
+                                  value={`${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[scheduleIndex]?.time?.minute || 0).padStart(2, '0')}`}
+                                  onChange={e => {
+                                    const [hours, minutes] = e.target.value.split(':').map(Number);
+                                    setFormData(prev => {
+                                      const newRoutines = [...prev.routines];
+                                      const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                      if (routineIndex === -1) return prev;
+                                      
+                                      const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                      newDaysOfWeek[scheduleIndex] = {
+                                        ...(newDaysOfWeek[scheduleIndex] || { day: 'monday' }),
+                                        time: { hour: hours, minute: minutes }
+                                      };
+                                      
+                                      newRoutines[routineIndex] = {
+                                        ...newRoutines[routineIndex],
+                                        schedule: {
+                                          ...newRoutines[routineIndex].schedule,
+                                          daysOfWeek: newDaysOfWeek
+                                        }
+                                      };
+                                      return { ...prev, routines: newRoutines };
+                                    });
+                                  }}
+                                  className="w-32 p-2 border rounded-md"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {routine.frequency === 'monthly' && (

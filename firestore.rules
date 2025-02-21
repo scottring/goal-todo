@@ -8,7 +8,7 @@ service cloud.firestore {
     }
     
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function hasEditPermission(data) {
@@ -33,11 +33,19 @@ service cloud.firestore {
               data.participants[request.auth.uid].permissions.invite == true);
     }
 
-    // Allow initial user document creation during sign-up
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    // Users collection
     match /users/{userId} {
-      allow create: if isSignedIn() && userId == request.auth.uid;
-      allow read, update: if isSignedIn() && userId == request.auth.uid;
-      allow delete: if false;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() 
+        && (request.resource.data.email == request.auth.token.email 
+            || getUserData().sharedWith.hasAny([userId]));
+      allow update: if isSignedIn() 
+        && (isOwner(userId) 
+            || getUserData().sharedWith.hasAny([userId]));
     }
 
     match /dev_users/{userId} {
@@ -50,6 +58,17 @@ service cloud.firestore {
       allow create: if isSignedIn() && userId == request.auth.uid;
       allow read, update: if isSignedIn() && userId == request.auth.uid;
       allow delete: if false;
+    }
+
+    // Pending household members collection
+    match /pendingHouseholdMembers/{inviteId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() 
+        && (resource.data.email == request.auth.token.email 
+            || resource.data.invitedBy == request.auth.uid);
+      allow delete: if isSignedIn() 
+        && (resource.data.email == request.auth.token.email 
+            || resource.data.invitedBy == request.auth.uid);
     }
 
     // Areas collection rules

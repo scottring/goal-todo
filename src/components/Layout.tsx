@@ -3,23 +3,24 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   AppBar,
   Toolbar,
-  Typography,
   Button,
   Box,
-  Container,
-  IconButton
+  Container
 } from '@mui/material';
 import {
   Home,
   Target,
   CheckSquare,
-  Calendar,
-  Settings
+  Calendar
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { UserAccountButton } from './UserAccountButton';
 
-const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+interface LayoutProps {
+  children: React.ReactNode;
+}
+
+const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const { currentUser } = useAuth();
@@ -33,20 +34,29 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { text: 'Weekly Planning', icon: <Calendar size={20} />, path: '/weekly-planning' }
   ];
 
-  // Don't show navigation for auth pages
-  const isAuthPage = ['/signin', '/signup', '/forgot-password'].includes(location.pathname);
-  if (isAuthPage) {
-    return <>{children}</>;
+  // Public routes that don't require authentication
+  const isPublicPage = ['/signin', '/signup', '/forgot-password', '/accept-invite'].includes(location.pathname);
+
+  console.log('Layout rendering:', {
+    pathname: location.pathname,
+    search: location.search,
+    isPublicPage,
+    currentUser: !!currentUser
+  });
+
+  // Return just the children for public pages
+  if (isPublicPage) {
+    return <Box sx={{ minHeight: '100vh', p: 0 }}>{children}</Box>;
   }
 
-  // Redirect to sign in if not authenticated
+  // Redirect to sign in if not authenticated (only for protected pages)
   if (!currentUser) {
     navigate('/signin', { state: { from: location.pathname } });
     return null;
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppBar position="static" color="default" elevation={1}>
         <Toolbar>
           <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -68,10 +78,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </Toolbar>
       </AppBar>
 
-      <Box component="main" sx={{ flexGrow: 1, py: 4 }}>
-        <Container maxWidth="lg">
-          {children}
-        </Container>
+      <Box component="main" sx={{ flexGrow: 1 }}>
+        {children}
       </Box>
     </Box>
   );

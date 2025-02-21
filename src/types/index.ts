@@ -21,10 +21,21 @@ export interface UserProfile {
   displayName?: string;
   photoURL?: string;
   createdAt: Timestamp;
+  ownerId: string;
   sharedWith: string[]; // List of users this person shares goals with
   sharedAreas: string[]; // Entire shared categories
   sharedGoals: string[]; // Goals shared with them
   sharedTasks: string[]; // Tasks shared separately
+  pendingInvites?: {
+    email: string;
+    invitedAt: Timestamp;
+  }[];
+  permissions: {
+    [userId: string]: {
+      edit: boolean;
+      view: boolean;
+    }
+  };
 }
 
 export interface BaseDocument {
@@ -107,6 +118,9 @@ export type TimeOfDay = {
 export interface DaySchedule {
   day: DayOfWeek;
   time: TimeOfDay;
+  specificDate?: Timestamp;  // Optional specific date for this occurrence
+  assignedTo?: string;      // User ID of the person assigned to this occurrence
+  assignedToEmail?: string; // Email of the person assigned (for easier UI display)
 }
 
 export interface RoutineSchedule {

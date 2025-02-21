@@ -18,13 +18,29 @@ export const useGoals = () => {
 
     try {
       setLoading(true);
-      const fetchedGoals = await getCollection<SourceActivity>('activities', [
+      
+      // Fetch goals where user is owner
+      const ownedGoals = await getCollection<SourceActivity>('activities', [
         where('ownerId', '==', currentUser.uid)
       ]);
-      console.log('fetchedGoals:', fetchedGoals);
+      
+      // Fetch goals shared with the user
+      const sharedGoals = await getCollection<SourceActivity>('activities', [
+        where('sharedWith', 'array-contains', currentUser.uid)
+      ]);
+      
+      // Combine and deduplicate goals
+      const allGoals = [...ownedGoals];
+      sharedGoals.forEach(goal => {
+        if (!allGoals.some(g => g.id === goal.id)) {
+          allGoals.push(goal);
+        }
+      });
+
+      console.log('fetchedGoals:', allGoals);
       
       // Ensure tasks and routines are arrays
-      const processedGoals = fetchedGoals.map(goal => ({
+      const processedGoals = allGoals.map(goal => ({
         ...goal,
         tasks: Array.isArray(goal.tasks) ? goal.tasks : [],
         routines: Array.isArray(goal.routines) ? goal.routines : []

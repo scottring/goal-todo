@@ -13,6 +13,7 @@ import GoalDetailPage from './pages/GoalDetailPage';
 import EditGoalPage from './pages/EditGoalPage';
 import Layout from './components/Layout';
 import { TestWeeklyPlanning } from './test/TestWeeklyPlanning';
+import { AcceptInvitePage } from './pages/AcceptInvitePage';
 
 const AppRoutes: React.FC = () => {
   return (
@@ -30,6 +31,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/tasks" element={<Layout><TasksPage /></Layout>} />
         <Route path="/weekly-planning" element={<Layout><WeeklyPlanningPage /></Layout>} />
         <Route path="/test" element={<Layout><TestWeeklyPlanning /></Layout>} />
+        <Route path="/accept-invite" element={<Layout><AcceptInvitePage /></Layout>} />
         <Route path="/" element={<Layout><AreasPage /></Layout>} /> {/* Default route */}
       </Routes>
     </BrowserRouter>
