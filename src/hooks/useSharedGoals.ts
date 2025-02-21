@@ -30,6 +30,8 @@ export const useSharedGoals = () => {
 
   const fetchSharedGoals = async () => {
     if (!user) {
+      setSharedGoals([]);
+      setUserGoals([]);
       setLoading(false);
       return;
     }
@@ -87,6 +89,10 @@ export const useSharedGoals = () => {
   useEffect(() => {
     if (user) {
       fetchSharedGoals();
+    } else {
+      setSharedGoals([]);
+      setUserGoals([]);
+      setLoading(false);
     }
   }, [user]);
 

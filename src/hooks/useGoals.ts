@@ -64,6 +64,7 @@ export const useGoals = () => {
       fetchGoals();
     } else {
       setGoals([]);
+      setLoading(false);
     }
   }, [currentUser]);
 
