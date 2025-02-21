@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { where, Timestamp } from 'firebase/firestore';
+import { where, Timestamp as FirebaseTimestamp } from 'firebase/firestore';
 import { useFirestore } from './useFirestore';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
@@ -11,7 +11,8 @@ import type {
   SharedGoal, 
   RoutineWithoutSystemFields,
   DayOfWeek,
-  DaySchedule
+  DaySchedule,
+  Timestamp
 } from '../types';
 
 export interface ScheduledTask extends Task {
@@ -19,6 +20,7 @@ export interface ScheduledTask extends Task {
     type: 'goal' | 'routine' | 'habit';
     goalName?: string;
     routineName?: string;
+    milestoneName?: string;
   };
   isRoutine?: boolean;
   routineCompletionDate?: Timestamp;
@@ -50,7 +52,7 @@ export const useScheduledTasks = () => {
   ): ScheduledTask[] => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const todayTimestamp = Timestamp.fromDate(today);
+    const todayTimestamp = FirebaseTimestamp.fromDate(today);
     
     // Get start and end of current week
     const weekStart = new Date(today);
@@ -63,13 +65,13 @@ export const useScheduledTasks = () => {
       if (!('id' in routine)) return [];
 
       // Skip if routine has an end date that's passed
-      if (routine.endDate && routine.endDate.toDate() < today) {
+      if (routine.endDate && (routine.endDate as FirebaseTimestamp).toDate() < today) {
         return [];
       }
 
       // Get completions for this week
       const completionsThisWeek = routine.completionDates.filter(date => {
-        const completionDate = date.toDate();
+        const completionDate = (date as FirebaseTimestamp).toDate();
         return completionDate >= weekStart && completionDate <= weekEnd;
       }).length;
 
@@ -110,7 +112,7 @@ export const useScheduledTasks = () => {
           } else {
             // Fallback: Schedule on 1st of month or if behind on monthly target
             const completionsThisMonth = routine.completionDates.filter(date => {
-              const completionDate = date.toDate();
+              const completionDate = (date as FirebaseTimestamp).toDate();
               return completionDate.getMonth() === month;
             }).length;
             if (dayOfMonth === 1 || completionsThisMonth < routine.targetCount) {
@@ -132,15 +134,15 @@ export const useScheduledTasks = () => {
 
       // Generate tasks for each scheduled day
       return scheduledDays.map(date => ({
-        id: `${routine.id}-${Timestamp.fromDate(date).seconds}`,
+        id: `${routine.id}-${FirebaseTimestamp.fromDate(date).seconds}`,
         title: routine.title,
         description: routine.description,
         completed: false,
         priority: 'medium',
         status: 'not_started',
         ownerId: routine.ownerId,
-        createdAt: Timestamp.fromDate(date),
-        updatedAt: Timestamp.fromDate(date),
+        createdAt: FirebaseTimestamp.fromDate(date),
+        updatedAt: FirebaseTimestamp.fromDate(date),
         source: {
           type: 'routine',
           goalName,
@@ -168,15 +170,33 @@ export const useScheduledTasks = () => {
 
       // Get tasks from regular goals
       goals.forEach(goal => {
-        // Add regular tasks
-        const goalTasks = goal.tasks.map(task => ({
-          ...task,
-          source: {
-            type: 'goal' as const,
-            goalName: goal.name
-          }
-        }));
-        allTasks.push(...goalTasks);
+        // Add tasks from milestones
+        goal.milestones.forEach(milestone => {
+          // Add milestone tasks
+          const milestoneTasks = goal.tasks
+            .filter(task => milestone.tasks.includes(task.id))
+            .map(task => ({
+              ...task,
+              source: {
+                type: 'goal' as const,
+                goalName: goal.name,
+                milestoneName: milestone.name
+              }
+            }));
+          allTasks.push(...milestoneTasks);
+        });
+
+        // Add independent tasks (not associated with any milestone)
+        const independentTasks = goal.tasks
+          .filter(task => !goal.milestones.some(m => m.tasks.includes(task.id)))
+          .map(task => ({
+            ...task,
+            source: {
+              type: 'goal' as const,
+              goalName: goal.name
+            }
+          }));
+        allTasks.push(...independentTasks);
 
         // Add routine-generated tasks
         const routineTasks = generateRoutineTasks(goal.routines, goal.name);
@@ -185,37 +205,37 @@ export const useScheduledTasks = () => {
 
       // Get tasks from shared goals (user instances)
       userGoals.forEach(userGoal => {
-        // Add regular tasks
-        const goalTasks = userGoal.tasks.map(task => ({
-          ...task,
-          source: {
-            type: 'goal' as const,
-            goalName: userGoal.name
-          }
-        }));
-        allTasks.push(...goalTasks);
+        // Add tasks from milestones
+        userGoal.milestones.forEach(milestone => {
+          // Add milestone tasks
+          const milestoneTasks = userGoal.tasks
+            .filter(task => milestone.tasks.includes(task.id))
+            .map(task => ({
+              ...task,
+              source: {
+                type: 'goal' as const,
+                goalName: userGoal.name,
+                milestoneName: milestone.name
+              }
+            }));
+          allTasks.push(...milestoneTasks);
+        });
+
+        // Add independent tasks (not associated with any milestone)
+        const independentTasks = userGoal.tasks
+          .filter(task => !userGoal.milestones.some(m => m.tasks.includes(task.id)))
+          .map(task => ({
+            ...task,
+            source: {
+              type: 'goal' as const,
+              goalName: userGoal.name
+            }
+          }));
+        allTasks.push(...independentTasks);
 
         // Add routine-generated tasks
         const routineTasks = generateRoutineTasks(userGoal.routines, userGoal.name);
         allTasks.push(...routineTasks);
-      });
-
-      // Filter tasks to show:
-      // 1. Incomplete tasks due today or overdue
-      // 2. Routine tasks for today
-      // 3. High priority tasks regardless of due date
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
-      const relevantTasks = allTasks.filter(task => {
-        if (task.completed) return false;
-        if (task.isRoutine) return true;
-        if (task.priority === 'high') return true;
-        if (!task.dueDate) return false;
-        
-        const dueDate = task.dueDate.toDate();
-        dueDate.setHours(0, 0, 0, 0);
-        return dueDate.getTime() <= today.getTime();
       });
 
       // Sort tasks by:
@@ -224,11 +244,11 @@ export const useScheduledTasks = () => {
       // 3. Due date
       // 4. Routines
       // 5. Creation date
-      relevantTasks.sort((a, b) => {
+      allTasks.sort((a, b) => {
         // Overdue tasks first
         const today = new Date();
-        const aOverdue = a.dueDate && a.dueDate.toDate() < today;
-        const bOverdue = b.dueDate && b.dueDate.toDate() < today;
+        const aOverdue = a.dueDate && (a.dueDate as FirebaseTimestamp).toDate() < today;
+        const bOverdue = b.dueDate && (b.dueDate as FirebaseTimestamp).toDate() < today;
         if (aOverdue && !bOverdue) return -1;
         if (!aOverdue && bOverdue) return 1;
 
@@ -253,12 +273,11 @@ export const useScheduledTasks = () => {
         return a.createdAt.seconds - b.createdAt.seconds;
       });
 
-      setScheduledTasks(relevantTasks);
+      setScheduledTasks(allTasks);
       setError(null);
     } catch (err) {
-      setError(err as Error);
-      setScheduledTasks([]);
       console.error('Error fetching scheduled tasks:', err);
+      setError(err as Error);
     } finally {
       setLoading(false);
     }
@@ -314,7 +333,7 @@ export const useScheduledTasks = () => {
         if (!goal) return;
 
         const updatedTasks = goal.tasks.map(t =>
-          t.id === taskId ? { ...t, completed: true, updatedAt: Timestamp.now() } : t
+          t.id === taskId ? { ...t, completed: true, updatedAt: FirebaseTimestamp.now() } : t
         );
 
         if ('parentGoalId' in goal) {

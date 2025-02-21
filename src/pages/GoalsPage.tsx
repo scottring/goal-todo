@@ -641,6 +641,14 @@ const GoalsPage: React.FC = () => {
     setIsShareModalOpen(true);
   };
 
+  const handleCardClick = (goalId: string, event: React.MouseEvent) => {
+    // Prevent navigation if clicking on action buttons
+    if ((event.target as HTMLElement).closest('.action-buttons')) {
+      return;
+    }
+    navigate(`/goals/${goalId}`);
+  };
+
   const renderAreaStep = () => (
     <Box>
       <Typography variant="h6" gutterBottom>
@@ -1371,47 +1379,115 @@ const GoalsPage: React.FC = () => {
       <Grid container spacing={3}>
         {goals.map(goal => (
           <Grid item xs={12} sm={6} lg={4} key={goal.id}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography variant="h6" gutterBottom>
-                      {goal.name}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" paragraph>
-                      {goal.specificAction}
-                    </Typography>
-                    {areas.find(a => a.id === goal.areaId)?.name && (
-                      <Chip
-                        label={areas.find(a => a.id === goal.areaId)?.name}
-                        size="small"
-                        sx={{ mr: 1 }}
-                      />
-                    )}
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+            <Card 
+              sx={{ 
+                height: '100%',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: '200px',
+                cursor: 'pointer',
+                transition: 'transform 0.2s, box-shadow 0.2s',
+                '&:hover': {
+                  transform: 'translateY(-4px)',
+                  boxShadow: (theme) => theme.shadows[4]
+                }
+              }}
+              onClick={(e) => handleCardClick(goal.id, e)}
+            >
+              <CardContent sx={{ 
+                flex: 1,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 1
+              }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'flex-start',
+                  mb: 2
+                }}>
+                  <Typography 
+                    variant="h6" 
+                    component="h3"
+                    sx={{
+                      fontWeight: 600,
+                      fontSize: '1.1rem',
+                      lineHeight: 1.3,
+                      mb: 1
+                    }}
+                  >
+                    {goal.name}
+                  </Typography>
+                  <Box 
+                    className="action-buttons"
+                    sx={{ 
+                      display: 'flex', 
+                      gap: 0.5,
+                      ml: 1,
+                      flexShrink: 0
+                    }}
+                  >
                     <IconButton
                       size="small"
-                      onClick={() => handleShareClick(goal)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleShareClick(goal);
+                      }}
                       sx={{ color: 'primary.main' }}
                     >
                       <ShareIcon fontSize="small" />
                     </IconButton>
                     <IconButton
                       size="small"
-                      onClick={() => handleEdit(goal)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(goal);
+                      }}
                       sx={{ color: 'action.active' }}
                     >
                       <EditIcon fontSize="small" />
                     </IconButton>
                     <IconButton
                       size="small"
-                      onClick={() => handleDelete(goal.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(goal.id);
+                      }}
                       sx={{ color: 'error.main' }}
                     >
                       <DeleteIcon fontSize="small" />
                     </IconButton>
                   </Box>
+                </Box>
+
+                <Typography 
+                  variant="body2" 
+                  color="text.secondary"
+                  sx={{
+                    mb: 2,
+                    overflow: 'hidden',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    minHeight: '4.5em'
+                  }}
+                >
+                  {goal.specificAction}
+                </Typography>
+
+                <Box sx={{ mt: 'auto' }}>
+                  {areas.find(a => a.id === goal.areaId)?.name && (
+                    <Chip
+                      label={areas.find(a => a.id === goal.areaId)?.name}
+                      size="small"
+                      sx={{ 
+                        backgroundColor: 'background.paper',
+                        border: '1px solid',
+                        borderColor: 'divider'
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  )}
                 </Box>
               </CardContent>
             </Card>

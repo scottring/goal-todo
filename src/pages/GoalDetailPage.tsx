@@ -5,16 +5,18 @@ import { useGoalsContext } from '../contexts/GoalsContext';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
 import { useAreasContext } from '../contexts/AreasContext';
 import { SharedReviewsProvider } from '../contexts/SharedReviewsContext';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp as FirebaseTimestamp } from 'firebase/firestore';
 import type { 
   DayOfWeek, 
   TimeOfDay, 
   RoutineSchedule, 
   RoutineWithoutSystemFields,
   MeasurableMetric,
-  ReviewCycle
+  ReviewCycle,
+  Timestamp
 } from '../types';
 import { ShareModal } from '../components/ShareModal';
+import { CircularProgress, Box } from '@mui/material';
 
 type TaskPriority = 'low' | 'medium' | 'high';
 type TaskStatus = 'not_started' | 'in_progress' | 'completed';
@@ -154,7 +156,7 @@ const GoalDetailPage: React.FC = () => {
         frequency: routineForm.frequency,
         schedule,
         targetCount: routineForm.targetCount,
-        endDate: routineForm.endDate ? Timestamp.fromDate(new Date(routineForm.endDate)) : undefined,
+        endDate: routineForm.endDate ? FirebaseTimestamp.fromDate(new Date(routineForm.endDate)) : undefined,
         completionDates: [],
         weeklyCompletionTracker: new Array(7).fill(false),
         areaId: displayGoal.areaId,
@@ -195,7 +197,7 @@ const GoalDetailPage: React.FC = () => {
       const newTask = {
         title: taskForm.title.trim(),
         description: taskForm.description?.trim() || '',
-        dueDate: taskForm.dueDate ? Timestamp.fromDate(new Date(taskForm.dueDate)) : undefined,
+        dueDate: taskForm.dueDate ? FirebaseTimestamp.fromDate(new Date(taskForm.dueDate)) : undefined,
         priority: taskForm.priority,
         status: taskForm.status,
         assignedTo: taskForm.assignedTo,
@@ -231,7 +233,7 @@ const GoalDetailPage: React.FC = () => {
     try {
       const newMilestone = {
         name: milestoneForm.name.trim(),
-        targetDate: milestoneForm.targetDate ? Timestamp.fromDate(new Date(milestoneForm.targetDate)) : undefined,
+        targetDate: milestoneForm.targetDate ? FirebaseTimestamp.fromDate(new Date(milestoneForm.targetDate)) : undefined,
         successCriteria: milestoneForm.successCriteria.trim(),
         status: milestoneForm.status,
         tasks: []
@@ -256,6 +258,19 @@ const GoalDetailPage: React.FC = () => {
     } catch (err) {
       console.error('Error adding milestone:', err);
     }
+  };
+
+  // Helper function to format Firebase Timestamp or our custom Timestamp
+  const formatDate = (timestamp: Timestamp | FirebaseTimestamp | undefined) => {
+    if (!timestamp) return '';
+    
+    // If it's a Firebase Timestamp (has toDate method)
+    if ('toDate' in timestamp) {
+      return timestamp.toDate().toLocaleDateString();
+    }
+    
+    // If it's our custom Timestamp
+    return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000).toLocaleDateString();
   };
 
   const renderRoutineForm = () => (
@@ -761,8 +776,30 @@ const GoalDetailPage: React.FC = () => {
 
   if (goalsLoading || sharedLoading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 animate-spin text-blue-600" />
+      <Box 
+        sx={{ 
+          display: 'flex', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '100vh' 
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  if (!goalId || (!goal && !sharedGoal)) {
+    return (
+      <div className="max-w-6xl mx-auto p-6">
+        <div className="text-center text-gray-500 py-12">
+          Goal not found. <button 
+            onClick={() => navigate('/goals')}
+            className="text-blue-600 hover:text-blue-700 underline"
+          >
+            Return to Goals
+          </button>
+        </div>
       </div>
     );
   }
@@ -771,7 +808,7 @@ const GoalDetailPage: React.FC = () => {
     return (
       <div className="max-w-6xl mx-auto p-6">
         <div className="text-center text-gray-500 py-12">
-          Goal not found
+          Unable to display goal details. Please try again later.
         </div>
       </div>
     );
@@ -872,7 +909,7 @@ const GoalDetailPage: React.FC = () => {
                       <div className="flex items-center gap-2 text-gray-600">
                         <Calendar className="w-4 h-4" />
                         <span>
-                          Deadline: {displayGoal.timeTracking.deadline.toDate().toLocaleDateString()}
+                          Deadline: {formatDate(displayGoal.timeTracking.deadline)}
                         </span>
                       </div>
                     )
@@ -885,7 +922,7 @@ const GoalDetailPage: React.FC = () => {
                         <div className="flex items-center gap-2 text-gray-600">
                           <Calendar className="w-4 h-4" />
                           <span>
-                            Next review: {displayGoal.timeTracking.nextReviewDate.toDate().toLocaleDateString()}
+                            Next review: {formatDate(displayGoal.timeTracking.nextReviewDate)}
                           </span>
                         </div>
                       )}
@@ -934,9 +971,7 @@ const GoalDetailPage: React.FC = () => {
                     {milestone.targetDate && (
                       <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
                         <Calendar className="w-4 h-4" />
-                        {milestone.targetDate instanceof Timestamp 
-                          ? milestone.targetDate.toDate().toLocaleDateString()
-                          : new Date(milestone.targetDate).toLocaleDateString()}
+                        {formatDate(milestone.targetDate)}
                       </div>
                     )}
                   </div>
@@ -999,9 +1034,7 @@ const GoalDetailPage: React.FC = () => {
                       )}
                       {routine.endDate && (
                         <p className="mt-1">
-                          Until: {routine.endDate instanceof Timestamp 
-                            ? routine.endDate.toDate().toLocaleDateString()
-                            : new Date(routine.endDate).toLocaleDateString()}
+                          Until: {formatDate(routine.endDate)}
                         </p>
                       )}
                     </div>
@@ -1039,9 +1072,7 @@ const GoalDetailPage: React.FC = () => {
                         <p className="text-gray-800">{task.title}</p>
                         {task.dueDate && (
                           <p className="text-sm text-gray-500">
-                            Due: {task.dueDate instanceof Timestamp 
-                              ? task.dueDate.toDate().toLocaleDateString()
-                              : new Date(task.dueDate).toLocaleDateString()}
+                            Due: {formatDate(task.dueDate)}
                           </p>
                         )}
                       </div>
