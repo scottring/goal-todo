@@ -37,6 +37,7 @@ import type { TaskPriority, TaskStatus } from '../types';
 import { timestampToDate, dateToTimestamp } from '../utils/date';
 import { fromFirebaseTimestamp, toFirebaseTimestamp } from '../utils/firebase-adapter';
 import { Timestamp } from '../types';
+import { useNavigate } from 'react-router-dom';
 
 interface TaskFormData {
   title: string;
@@ -67,6 +68,7 @@ const TasksPage: React.FC = () => {
     priority: 'medium',
     goalId: ''
   });
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleKeyPress = (event: KeyboardEvent) => {
@@ -214,9 +216,21 @@ const TasksPage: React.FC = () => {
           } else if (dueDate <= threeDaysFromNow) {
             sections[2].tasks.push(task);
           }
-        } else if (task.isRoutine) {
-          // Routines without specific dates go into Today
-          sections[1].tasks.push(task);
+        } else if (task.isRoutine && task.routineCompletionDate) {
+          // Only show routines that are scheduled for today
+          const routineDate = timestampToDate(task.routineCompletionDate);
+          routineDate.setHours(0, 0, 0, 0);
+          
+          if (routineDate.getTime() === today.getTime()) {
+            sections[1].tasks.push({
+              ...task,
+              source: {
+                ...task.source,
+                type: 'routine',
+                routineName: task.source.routineName || task.title
+              }
+            });
+          }
         }
       }
     });
@@ -225,102 +239,104 @@ const TasksPage: React.FC = () => {
     return sections.filter(section => section.tasks.length > 0);
   }, [scheduledTasks]);
 
-  const TaskCard: React.FC<{ task: ScheduledTask; index: number }> = ({ task, index }) => (
-    <Card
-      onClick={() => setSelectedTask(task)}
-      sx={{
-        cursor: 'pointer',
-        opacity: task.completed ? 0.5 : 1,
-        transition: 'all 0.2s',
-        '&:hover': {
-          boxShadow: 3
-        },
-        ...(index === selectedIndex && {
-          outline: '2px solid',
-          outlineColor: 'primary.main'
-        })
-      }}
-    >
-      <CardContent sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        gap: 2,
-        '&:last-child': { pb: 2 }
-      }}>
-        <IconButton
-          onClick={(e) => {
-            e.stopPropagation();
-            completeTask(task.id);
-          }}
-          sx={{
-            width: 32,
-            height: 32,
-            border: 2,
-            borderColor: task.completed ? 'success.main' : 'grey.300',
-            bgcolor: task.completed ? 'success.main' : 'transparent',
-            '&:hover': {
-              borderColor: 'success.main'
-            }
-          }}
-        >
-          {task.completed && (
-            <CheckCircle color="white" size={16} />
-          )}
-        </IconButton>
+  const TaskCard: React.FC<{ task: ScheduledTask; index: number }> = ({ task, index }) => {
+    return (
+      <Card
+        onClick={() => navigate(`/tasks/${task.id}`)}
+        sx={{
+          cursor: 'pointer',
+          opacity: task.completed ? 0.5 : 1,
+          transition: 'all 0.2s',
+          '&:hover': {
+            boxShadow: 3
+          },
+          ...(index === selectedIndex && {
+            outline: '2px solid',
+            outlineColor: 'primary.main'
+          })
+        }}
+      >
+        <CardContent sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 2,
+          '&:last-child': { pb: 2 }
+        }}>
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              completeTask(task.id);
+            }}
+            sx={{
+              width: 32,
+              height: 32,
+              border: 2,
+              borderColor: task.completed ? 'success.main' : 'grey.300',
+              bgcolor: task.completed ? 'success.main' : 'transparent',
+              '&:hover': {
+                borderColor: 'success.main'
+              }
+            }}
+          >
+            {task.completed && (
+              <CheckCircle color="white" size={16} />
+            )}
+          </IconButton>
 
-        <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography
-              variant="body1"
-              sx={{
-                textDecoration: task.completed ? 'line-through' : 'none',
-                color: task.dueDate && timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.primary',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap'
-              }}
-            >
-              {task.title}
-            </Typography>
-            {task.source.type === 'routine' && (
-              <Chip
-                label="Routine"
-                size="small"
-                color="primary"
-                sx={{ bgcolor: 'primary.light', color: 'primary.dark' }}
-              />
-            )}
-            {task.priority === 'high' && (
-              <Flag className="text-red-500" />
-            )}
-          </Box>
-          
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
-            {task.source.goalName && (
-              <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <ArrowRight className="w-3 h-3" />
-                {task.source.goalName}
-              </Typography>
-            )}
-            {task.dueDate && (
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography
-                variant="body2"
+                variant="body1"
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 0.5,
-                  color: timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.secondary'
+                  textDecoration: task.completed ? 'line-through' : 'none',
+                  color: task.dueDate && timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.primary',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap'
                 }}
               >
-                <Calendar className="w-3 h-3" />
-                {formatDueDate(task.dueDate)}
+                {task.title}
               </Typography>
-            )}
-          </Stack>
-        </Box>
-      </CardContent>
-    </Card>
-  );
+              {task.source.type === 'routine' && (
+                <Chip
+                  label="Routine"
+                  size="small"
+                  color="primary"
+                  sx={{ bgcolor: 'primary.light', color: 'primary.dark' }}
+                />
+              )}
+              {task.priority === 'high' && (
+                <Flag className="text-red-500" />
+              )}
+            </Box>
+            
+            <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
+              {task.source.goalName && (
+                <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <ArrowRight className="w-3 h-3" />
+                  {task.source.goalName}
+                </Typography>
+              )}
+              {task.dueDate && (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    color: timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.secondary'
+                  }}
+                >
+                  <Calendar className="w-3 h-3" />
+                  {formatDueDate(task.dueDate)}
+                </Typography>
+              )}
+            </Stack>
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  };
 
   if (loading) {
     return (

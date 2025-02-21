@@ -89,6 +89,10 @@ export interface Task extends BaseDocument {
       view: boolean;
     }
   };
+  notes?: {
+    content: string;
+    lastUpdated: Timestamp;
+  };
 }
 
 export interface Milestone {

@@ -4,6 +4,7 @@ import { useFirestore } from './useFirestore';
 import { useAuth } from '../contexts/AuthContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
+import { timestampToDate } from '../utils/date';
 import type { 
   Task, 
   Routine, 
@@ -36,6 +37,18 @@ const DAY_TO_NUMBER: Record<DayOfWeek, number> = {
   'saturday': 6
 };
 
+const getDateFromTimestamp = (timestamp: Timestamp | FirebaseTimestamp | undefined): Date | null => {
+  if (!timestamp) return null;
+  
+  // If it's a Firebase Timestamp (has toDate method)
+  if ('toDate' in timestamp) {
+    return timestamp.toDate();
+  }
+  
+  // If it's our custom Timestamp
+  return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000);
+};
+
 export const useScheduledTasks = () => {
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,14 +78,17 @@ export const useScheduledTasks = () => {
       if (!('id' in routine)) return [];
 
       // Skip if routine has an end date that's passed
-      if (routine.endDate && (routine.endDate as FirebaseTimestamp).toDate() < today) {
-        return [];
+      if (routine.endDate) {
+        const endDate = getDateFromTimestamp(routine.endDate);
+        if (endDate && endDate < today) {
+          return [];
+        }
       }
 
       // Get completions for this week
       const completionsThisWeek = routine.completionDates.filter(date => {
-        const completionDate = (date as FirebaseTimestamp).toDate();
-        return completionDate >= weekStart && completionDate <= weekEnd;
+        const completionDate = getDateFromTimestamp(date);
+        return completionDate && completionDate >= weekStart && completionDate <= weekEnd;
       }).length;
 
       // Check if routine should be scheduled based on frequency
@@ -112,8 +128,8 @@ export const useScheduledTasks = () => {
           } else {
             // Fallback: Schedule on 1st of month or if behind on monthly target
             const completionsThisMonth = routine.completionDates.filter(date => {
-              const completionDate = (date as FirebaseTimestamp).toDate();
-              return completionDate.getMonth() === month;
+              const completionDate = getDateFromTimestamp(date);
+              return completionDate && completionDate.getMonth() === month;
             }).length;
             if (dayOfMonth === 1 || completionsThisMonth < routine.targetCount) {
               scheduledDays.push(today);
@@ -247,8 +263,10 @@ export const useScheduledTasks = () => {
       allTasks.sort((a, b) => {
         // Overdue tasks first
         const today = new Date();
-        const aOverdue = a.dueDate && (a.dueDate as FirebaseTimestamp).toDate() < today;
-        const bOverdue = b.dueDate && (b.dueDate as FirebaseTimestamp).toDate() < today;
+        const aDate = getDateFromTimestamp(a.dueDate);
+        const bDate = getDateFromTimestamp(b.dueDate);
+        const aOverdue = aDate && aDate < today;
+        const bOverdue = bDate && bDate < today;
         if (aOverdue && !bOverdue) return -1;
         if (!aOverdue && bOverdue) return 1;
 
@@ -259,18 +277,20 @@ export const useScheduledTasks = () => {
         }
 
         // Due date
-        if (a.dueDate && b.dueDate) {
-          return a.dueDate.seconds - b.dueDate.seconds;
+        if (aDate && bDate) {
+          return aDate.getTime() - bDate.getTime();
         }
-        if (a.dueDate) return -1;
-        if (b.dueDate) return 1;
+        if (aDate) return -1;
+        if (bDate) return 1;
 
         // Routines after regular tasks
         if (a.isRoutine && !b.isRoutine) return 1;
         if (!a.isRoutine && b.isRoutine) return -1;
 
         // Finally, sort by creation date
-        return a.createdAt.seconds - b.createdAt.seconds;
+        const aCreatedDate = getDateFromTimestamp(a.createdAt);
+        const bCreatedDate = getDateFromTimestamp(b.createdAt);
+        return (aCreatedDate?.getTime() || 0) - (bCreatedDate?.getTime() || 0);
       });
 
       setScheduledTasks(allTasks);
@@ -297,48 +317,84 @@ export const useScheduledTasks = () => {
     if (!currentUser) throw new Error('User must be authenticated to complete a task');
 
     try {
+      console.log('Completing task:', taskId);
+      console.log('Found task:', scheduledTasks.find(t => t.id === taskId));
+      
       setLoading(true);
       const task = scheduledTasks.find(t => t.id === taskId);
-      if (!task) return;
+      if (!task) {
+        console.error('Task not found:', taskId);
+        return;
+      }
 
       if (task.isRoutine) {
+        console.log('Completing routine task');
         // For routines, update the completion dates array
         const goal = goals.find(g => g.routines.some(r => r.title === task.source.routineName)) ||
                     userGoals.find(g => g.routines.some(r => r.title === task.source.routineName));
         
-        if (!goal) return;
+        if (!goal) {
+          console.error('Goal not found for routine:', task.source.routineName);
+          return;
+        }
         
         const routine = goal.routines.find(r => r.title === task.source.routineName);
-        if (!routine) return;
+        if (!routine) {
+          console.error('Routine not found in goal:', task.source.routineName);
+          return;
+        }
 
+        console.log('Found routine:', routine);
+        console.log('Current completion dates:', routine.completionDates);
+        
         const updatedRoutine = {
           ...routine,
           completionDates: [...routine.completionDates, task.routineCompletionDate!]
         };
+
+        console.log('Updated completion dates:', updatedRoutine.completionDates);
 
         const updatedRoutines = goal.routines.map(r =>
           r.title === task.source.routineName ? updatedRoutine : r
         );
 
         if ('parentGoalId' in goal) {
+          console.log('Updating user goal routine');
           await updateDocument('user_goals', goal.id, { routines: updatedRoutines });
         } else {
+          console.log('Updating activity routine');
           await updateDocument('activities', goal.id, { routines: updatedRoutines });
         }
       } else {
+        console.log('Completing regular task');
         // For regular tasks, update the task's completed status
         const goal = goals.find(g => g.tasks.some(t => t.id === taskId)) ||
                     userGoals.find(g => g.tasks.some(t => t.id === taskId));
         
-        if (!goal) return;
+        if (!goal) {
+          console.error('Goal not found for task:', taskId);
+          return;
+        }
 
+        console.log('Found goal:', goal.name);
+        
+        // Find the existing task to preserve its notes
+        const existingTask = goal.tasks.find(t => t.id === taskId);
+        
         const updatedTasks = goal.tasks.map(t =>
-          t.id === taskId ? { ...t, completed: true, updatedAt: FirebaseTimestamp.now() } : t
+          t.id === taskId ? { 
+            ...t, 
+            completed: true, 
+            updatedAt: FirebaseTimestamp.now(),
+            notes: existingTask?.notes // Preserve the notes when completing the task
+          } : t
         );
 
         if ('parentGoalId' in goal) {
+          console.log('Updating user goal task');
           await updateDocument('user_goals', goal.id, { tasks: updatedTasks });
         } else {
+          console.log('Updating activity task');
           await updateDocument('activities', goal.id, { tasks: updatedTasks });
         }
       }

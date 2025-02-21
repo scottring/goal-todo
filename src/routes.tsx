@@ -14,6 +14,7 @@ import EditGoalPage from './pages/EditGoalPage';
 import Layout from './components/Layout';
 import { TestWeeklyPlanning } from './test/TestWeeklyPlanning';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
+import { TaskDetailsPage } from './pages/TaskDetailsPage';
 
 const AppRoutes: React.FC = () => {
   return (
@@ -29,6 +30,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/goals/:goalId" element={<Layout><GoalDetailPage /></Layout>} />
         <Route path="/goals/:goalId/edit" element={<Layout><EditGoalPage /></Layout>} />
         <Route path="/tasks" element={<Layout><TasksPage /></Layout>} />
+        <Route path="/tasks/:taskId" element={<Layout><TaskDetailsPage /></Layout>} />
         <Route path="/weekly-planning" element={<Layout><WeeklyPlanningPage /></Layout>} />
         <Route path="/test" element={<Layout><TestWeeklyPlanning /></Layout>} />
         <Route path="/accept-invite" element={<Layout><AcceptInvitePage /></Layout>} />

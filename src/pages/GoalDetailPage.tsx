@@ -199,13 +199,22 @@ const GoalDetailPage: React.FC = () => {
 
     try {
       const newTask = {
+        id: crypto.randomUUID(),
         title: taskForm.title.trim(),
         description: taskForm.description?.trim() || '',
         dueDate: taskForm.dueDate ? FirebaseTimestamp.fromDate(new Date(taskForm.dueDate)) : undefined,
         priority: taskForm.priority,
         status: taskForm.status,
         assignedTo: taskForm.assignedTo,
-        completed: false
+        completed: false,
+        ownerId: displayGoal.ownerId,
+        areaId: displayGoal.areaId,
+        createdAt: FirebaseTimestamp.now(),
+        updatedAt: FirebaseTimestamp.now(),
+        sharedWith: [],
+        permissions: {
+          [displayGoal.ownerId]: { edit: true, view: true }
+        }
       };
 
       const cleanedTask = cleanData(newTask);
