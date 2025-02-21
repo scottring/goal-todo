@@ -1315,17 +1315,79 @@ const GoalsPage: React.FC = () => {
                 renderEditForm()
               ) : (
                 <>
-                  <Stepper activeStep={currentStep} sx={{ mb: 4 }}>
-                    {wizardSteps.map((step, index) => (
-                      <Step key={index}>
-                        <StepLabel>{step.title.split(' ')[0]}</StepLabel>
-                      </Step>
-                    ))}
-                  </Stepper>
-
-                  <Box sx={{ mt: 4 }}>
-                    {wizardSteps[currentStep].component()}
+                  <Box sx={{ position: 'relative', mb: 6 }}>
+                    <Typography variant="h5" align="center" gutterBottom sx={{ mb: 3 }}>
+                      Create SMART Goal
+                    </Typography>
+                    <Stepper 
+                      activeStep={currentStep} 
+                      alternativeLabel
+                      sx={{
+                        '& .MuiStepLabel-root': {
+                          '& .MuiStepLabel-label': {
+                            display: 'none'
+                          },
+                          '& .MuiStepIcon-root': {
+                            width: '2rem',
+                            height: '2rem',
+                            color: 'grey.300',
+                            '&.Mui-active': {
+                              color: 'primary.main',
+                            },
+                            '&.Mui-completed': {
+                              color: 'success.main',
+                            }
+                          }
+                        },
+                        '& .MuiStepConnector-root': {
+                          top: '1rem',
+                          '& .MuiStepConnector-line': {
+                            borderColor: 'grey.300'
+                          },
+                          '&.Mui-active .MuiStepConnector-line': {
+                            borderColor: 'primary.main'
+                          },
+                          '&.Mui-completed .MuiStepConnector-line': {
+                            borderColor: 'success.main'
+                          }
+                        }
+                      }}
+                    >
+                      {wizardSteps.map((_, index) => (
+                        <Step key={index}>
+                          <StepLabel />
+                        </Step>
+                      ))}
+                    </Stepper>
+                    <Typography 
+                      variant="body2" 
+                      color="text.secondary" 
+                      align="center" 
+                      sx={{ mt: 2 }}
+                    >
+                      Step {currentStep + 1} of {wizardSteps.length}
+                    </Typography>
                   </Box>
+
+                  <Paper 
+                    elevation={2} 
+                    sx={{ 
+                      p: 4, 
+                      borderRadius: 2,
+                      backgroundColor: 'background.paper',
+                      transition: 'all 0.3s ease-in-out'
+                    }}
+                  >
+                    <Typography variant="h6" gutterBottom color="primary">
+                      {wizardSteps[currentStep].title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" paragraph>
+                      {wizardSteps[currentStep].subtitle}
+                    </Typography>
+                    <Box sx={{ mt: 3 }}>
+                      {wizardSteps[currentStep].component()}
+                    </Box>
+                  </Paper>
                 </>
               )}
             </Box>
