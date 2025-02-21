@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Timestamp } from 'firebase/firestore';
 import {
   Box,
@@ -466,6 +466,7 @@ const GoalsPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [sharingGoal, setSharingGoal] = useState<SourceActivity | null>(null);
+  const navigate = useNavigate();
 
   // Handle navigation state
   useEffect(() => {
@@ -588,65 +589,7 @@ const GoalsPage: React.FC = () => {
   };
 
   const handleEdit = (goal: SourceActivity) => {
-    setEditingGoal(goal.id);
-    setEditMode('edit');
-    setSmartGoal({
-      name: goal.name,
-      specificAction: goal.specificAction,
-      measurableMetric: goal.measurableMetric,
-      customMetric: goal.customMetric ?? undefined,
-      achievabilityCheck: goal.achievabilityCheck,
-      relevance: goal.relevance,
-      timeTracking: {
-        type: goal.timeTracking.type,
-        deadline: goal.timeTracking.deadline,
-        reviewCycle: goal.timeTracking.reviewCycle
-      },
-      areaId: goal.areaId,
-      milestones: Array.isArray(goal.milestones) ? goal.milestones.map(m => ({
-        id: m.id || uuidv4(),
-        name: m.name,
-        targetDate: m.targetDate instanceof Timestamp ? m.targetDate : Timestamp.fromDate(new Date()),
-        successCriteria: m.successCriteria,
-        status: m.status,
-        tasks: Array.isArray(m.tasks) ? m.tasks : []
-      })) : [],
-      tasks: Array.isArray(goal.tasks) ? goal.tasks.map(task => ({
-        id: task.id || uuidv4(),
-        title: task.title,
-        description: task.description,
-        dueDate: task.dueDate instanceof Timestamp ? task.dueDate : undefined,
-        priority: task.priority,
-        status: task.status,
-        completed: task.completed,
-        assignedTo: task.assignedTo
-      })) : [],
-      routines: Array.isArray(goal.routines) ? goal.routines.map(routine => {
-        const hasSystemFields = 'id' in routine;
-        return {
-          id: hasSystemFields ? (routine as Routine).id : uuidv4(),
-          title: routine.title,
-          description: routine.description || '',
-          frequency: routine.frequency,
-          schedule: {
-            type: routine.frequency,
-            targetCount: routine.targetCount || 1,
-            timeOfDay: routine.schedule?.timeOfDay || { hour: 9, minute: 0 },
-            daysOfWeek: routine.schedule?.daysOfWeek || [],
-            dayOfMonth: routine.schedule?.dayOfMonth,
-            monthsOfYear: routine.schedule?.monthsOfYear || []
-          },
-          targetCount: routine.targetCount || 1,
-          endDate: routine.endDate instanceof Timestamp ? routine.endDate : undefined,
-          completionDates: Array.isArray(routine.completionDates) 
-            ? routine.completionDates.map(date => 
-                date instanceof Timestamp ? date : Timestamp.fromDate(new Date(date))
-              )
-            : []
-        };
-      }) : []
-    });
-    setIsAdding(true);
+    navigate(`/goals/${goal.id}/edit`);
   };
 
   const handleDelete = async (goalId: string) => {

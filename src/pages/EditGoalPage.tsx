@@ -1,105 +1,214 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, X, Calendar } from 'lucide-react';
+import { ArrowLeft, Plus, X } from 'lucide-react';
 import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { Timestamp } from 'firebase/firestore';
-import type { SourceActivity, RoutineWithoutSystemFields } from '../types';
+import { DatePicker } from '@mui/x-date-pickers/DatePicker';
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import type { 
+  SourceActivity, 
+  MeasurableMetric, 
+  AchievabilityCheck, 
+  TaskStatus, 
+  TaskPriority, 
+  TimeTrackingType, 
+  ReviewCycle,
+  Milestone,
+  Task,
+  Routine,
+  ReviewStatus,
+  RoutineWithoutSystemFields
+} from '../types';
 
-interface HabitFormData {
-  title: string;
-  description?: string;
-  frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-  targetCount: number;
-  endDate?: string;
-}
+const MEASURABLE_METRIC_OPTIONS: { label: string; value: MeasurableMetric }[] = [
+  { label: 'Count occurrences', value: 'count_occurrences' },
+  { label: 'Track numeric value', value: 'track_numeric' },
+  { label: 'Track time spent', value: 'time_spent' },
+  { label: 'Track completion rate (%)', value: 'completion_rate' },
+  { label: 'Yes/No completion', value: 'binary_check' },
+  { label: 'Custom metric', value: 'custom' }
+];
+
+const ACHIEVABILITY_OPTIONS: { label: string; value: AchievabilityCheck }[] = [
+  { label: 'Yes, I can achieve this', value: 'yes' },
+  { label: 'No, this seems too difficult', value: 'no' },
+  { label: 'Need more resources', value: 'need_resources' }
+];
+
+const STATUS_OPTIONS: { label: string; value: TaskStatus }[] = [
+  { label: 'Not Started', value: 'not_started' },
+  { label: 'In Progress', value: 'in_progress' },
+  { label: 'Completed', value: 'completed' }
+];
+
+const REVIEW_CYCLE_OPTIONS: { label: string; value: ReviewCycle }[] = [
+  { label: 'Weekly', value: 'weekly' },
+  { label: 'Monthly', value: 'monthly' },
+  { label: 'Quarterly', value: 'quarterly' },
+  { label: 'Every 6 months', value: 'biannual' },
+  { label: 'Yearly', value: 'yearly' }
+];
 
 const EditGoalPage: React.FC = () => {
   const { goalId } = useParams<{ goalId: string }>();
   const navigate = useNavigate();
   const { areas } = useAreasContext();
-  const { goals, loading, updateGoal } = useGoalsContext();
+  const { goals, updateGoal } = useGoalsContext();
 
   const goal = goals.find(g => g.id === goalId);
+  const defaultTimestamp = Timestamp.fromDate(new Date());
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SourceActivity>({
+    id: '',
     name: '',
-    description: '',
+    specificAction: '',
+    measurableMetric: 'count_occurrences',
+    customMetric: '',
+    achievabilityCheck: 'yes',
+    relevance: '',
+    timeTracking: {
+      type: 'fixed_deadline',
+      deadline: defaultTimestamp,
+      reviewCycle: 'monthly',
+      nextReviewDate: defaultTimestamp,
+      reviewStatus: {
+        lastReviewDate: defaultTimestamp,
+        nextReviewDate: defaultTimestamp,
+        completedReviews: []
+      }
+    },
     areaId: '',
-    deadline: '',
-    milestones: [''],
-    habits: [] as HabitFormData[],
-    sharedWith: [] as string[]
+    milestones: [],
+    tasks: [],
+    routines: [],
+    sharedWith: [],
+    ownerId: '',
+    createdAt: defaultTimestamp,
+    updatedAt: defaultTimestamp
   });
 
   useEffect(() => {
     if (goal) {
-      let deadlineStr = '';
-      if (goal.deadline) {
-        deadlineStr = new Date(goal.deadline.seconds * 1000).toISOString().split('T')[0];
-      }
-
-      // Extract SMART components from description
-      const [specific, measurable, achievable, relevant] = goal.description?.split('\n') || [];
-
-      setFormData({
-        name: goal.name,
-        description: [
-          `Specific: ${specific?.replace('Specific: ', '') || ''}`,
-          `Measurable: ${measurable?.replace('Measurable: ', '') || ''}`,
-          `Achievable: ${achievable?.replace('Achievable: ', '') || ''}`,
-          `Relevant: ${relevant?.replace('Relevant: ', '') || ''}`
-        ].join('\n'),
-        areaId: goal.areaId,
-        deadline: deadlineStr,
-        milestones: goal.milestones?.length ? goal.milestones : [''],
-        habits: goal.routines?.map(routine => ({
-          title: routine.title,
-          description: routine.description,
-          frequency: routine.frequency,
-          targetCount: routine.targetCount,
-          endDate: routine.endDate ? new Date(routine.endDate.seconds * 1000).toISOString().split('T')[0] : undefined
-        })) || [],
-        sharedWith: goal.sharedWith || []
-      });
+      setFormData(goal);
     }
   }, [goal]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!goalId) return;
+    if (!goalId || !goal) return;
 
     try {
-      const updatedGoal: Partial<SourceActivity> = {
-        name: formData.name,
-        description: formData.description,
-        deadline: formData.deadline ? Timestamp.fromDate(new Date(formData.deadline)) : undefined,
-        areaId: formData.areaId,
-        milestones: formData.milestones.filter(m => m.trim() !== ''),
-        routines: formData.habits.map(habit => ({
-          title: habit.title,
-          description: habit.description,
-          frequency: habit.frequency,
-          targetCount: habit.targetCount,
-          endDate: habit.endDate ? Timestamp.fromDate(new Date(habit.endDate)) : undefined,
-          completionDates: [],
-          areaId: formData.areaId,
-          assignedTo: undefined
-        } satisfies RoutineWithoutSystemFields)),
-        sharedWith: formData.sharedWith
-      };
-
-      await updateGoal(goalId, updatedGoal);
-      navigate(-1);
-    } catch (err) {
-      console.error('Error updating goal:', err);
+      await updateGoal(goalId, formData);
+      navigate('/goals');
+    } catch (error) {
+      console.error('Error updating goal:', error);
     }
   };
 
-  if (loading || !goal) {
+  const addMilestone = () => {
+    const newMilestone: Milestone = {
+      id: crypto.randomUUID(),
+      name: '',
+      targetDate: defaultTimestamp,
+      successCriteria: '',
+      status: 'not_started',
+      tasks: []
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      milestones: [...prev.milestones, newMilestone]
+    }));
+  };
+
+  const addTask = () => {
+    const newTask: Task = {
+      id: crypto.randomUUID(),
+      title: '',
+      description: '',
+      priority: 'medium',
+      status: 'not_started',
+      completed: false,
+      sharedWith: [],
+      ownerId: formData.ownerId,
+      createdAt: defaultTimestamp,
+      updatedAt: defaultTimestamp,
+      permissions: {}
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      tasks: [...prev.tasks, newTask]
+    }));
+  };
+
+  const addRoutine = () => {
+    const newRoutine: Routine = {
+      id: crypto.randomUUID(),
+      title: '',
+      description: '',
+      frequency: 'daily',
+      schedule: {
+        type: 'daily',
+        targetCount: 1,
+        timeOfDay: { hour: 9, minute: 0 },
+        daysOfWeek: [],
+        monthsOfYear: []
+      },
+      targetCount: 1,
+      completionDates: [],
+      ownerId: formData.ownerId,
+      createdAt: defaultTimestamp,
+      updatedAt: defaultTimestamp,
+      review: {
+        reflectionFrequency: 'weekly',
+        reviewStatus: {
+          lastReviewDate: defaultTimestamp,
+          nextReviewDate: defaultTimestamp,
+          completedReviews: []
+        },
+        adherenceRate: 0,
+        streakData: {
+          currentStreak: 0,
+          longestStreak: 0,
+          lastCompletedDate: defaultTimestamp
+        }
+      }
+    };
+
+    setFormData(prev => ({
+      ...prev,
+      routines: [...prev.routines, newRoutine]
+    }));
+  };
+
+  // Helper function to safely get date from Firebase Timestamp
+  const getDateFromTimestamp = (timestamp: any): Date | null => {
+    if (!timestamp || typeof timestamp.toDate !== 'function') {
+      return null;
+    }
+    return timestamp.toDate();
+  };
+
+  // Helper function to create Firebase Timestamp
+  const createTimestamp = (date: Date | null): Timestamp => {
+    return date ? Timestamp.fromDate(date) : defaultTimestamp;
+  };
+
+  // Helper function to get routine ID safely
+  const getRoutineId = (routine: Routine | RoutineWithoutSystemFields): string => {
+    if ('id' in routine) {
+      return routine.id;
+    }
+    return crypto.randomUUID();
+  };
+
+  if (!goal) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="w-8 h-8 animate-spin text-blue-600" />
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="text-center text-gray-500">Goal not found</div>
       </div>
     );
   }
@@ -108,7 +217,7 @@ const EditGoalPage: React.FC = () => {
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center gap-4 mb-8">
         <button
-          onClick={() => navigate(-1)}
+          onClick={() => navigate('/goals')}
           className="text-gray-600 hover:text-gray-800"
         >
           <ArrowLeft className="w-6 h-6" />
@@ -150,70 +259,331 @@ const EditGoalPage: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Description (SMART Format)
+              Specific Action
             </label>
             <textarea
-              value={formData.description}
-              onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              value={formData.specificAction}
+              onChange={e => setFormData(prev => ({ ...prev, specificAction: e.target.value }))}
               className="w-full p-2 border rounded-md"
-              rows={6}
+              rows={4}
               required
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Deadline
+              How will you measure progress?
             </label>
-            <input
-              type="date"
-              value={formData.deadline}
-              onChange={e => setFormData(prev => ({ ...prev, deadline: e.target.value }))}
+            <select
+              value={formData.measurableMetric}
+              onChange={e => {
+                const value = e.target.value as MeasurableMetric;
+                setFormData(prev => ({
+                  ...prev,
+                  measurableMetric: value,
+                  customMetric: value === 'custom' ? prev.customMetric : undefined
+                }));
+              }}
               className="w-full p-2 border rounded-md"
+              required
+            >
+              {MEASURABLE_METRIC_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {formData.measurableMetric === 'custom' && (
+              <input
+                type="text"
+                value={formData.customMetric || ''}
+                onChange={e => setFormData(prev => ({ ...prev, customMetric: e.target.value }))}
+                className="w-full mt-2 p-2 border rounded-md"
+                placeholder="Define your custom metric"
+                required
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Is this goal achievable with your current resources?
+            </label>
+            <select
+              value={formData.achievabilityCheck}
+              onChange={e => setFormData(prev => ({ ...prev, achievabilityCheck: e.target.value as AchievabilityCheck }))}
+              className="w-full p-2 border rounded-md"
+              required
+            >
+              {ACHIEVABILITY_OPTIONS.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Why is this goal important to you?
+            </label>
+            <textarea
+              value={formData.relevance}
+              onChange={e => setFormData(prev => ({ ...prev, relevance: e.target.value }))}
+              className="w-full p-2 border rounded-md"
+              rows={3}
+              required
+              placeholder="How does this goal align with your values and long-term objectives?"
             />
+          </div>
+
+          <div className="space-y-4">
+            <label className="block text-sm font-medium text-gray-700">
+              Time Tracking
+            </label>
+            <div>
+              <select
+                value={formData.timeTracking?.type}
+                onChange={e => setFormData(prev => ({
+                  ...prev,
+                  timeTracking: {
+                    ...prev.timeTracking,
+                    type: e.target.value as TimeTrackingType
+                  }
+                }))}
+                className="w-full p-2 border rounded-md"
+                required
+              >
+                <option value="fixed_deadline">Fixed Deadline</option>
+                <option value="recurring_review">Recurring Review</option>
+              </select>
+            </div>
+
+            {formData.timeTracking?.type === 'fixed_deadline' ? (
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <DatePicker
+                  label="Deadline"
+                  value={getDateFromTimestamp(formData.timeTracking.deadline)}
+                  onChange={(date) => setFormData(prev => ({
+                    ...prev,
+                    timeTracking: {
+                      ...prev.timeTracking,
+                      deadline: createTimestamp(date)
+                    }
+                  }))}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true,
+                      className: "w-full p-2 border rounded-md"
+                    }
+                  }}
+                />
+              </LocalizationProvider>
+            ) : (
+              <select
+                value={formData.timeTracking?.reviewCycle || ''}
+                onChange={e => setFormData(prev => ({
+                  ...prev,
+                  timeTracking: {
+                    ...prev.timeTracking,
+                    reviewCycle: e.target.value as ReviewCycle
+                  }
+                }))}
+                className="w-full p-2 border rounded-md"
+                required
+              >
+                {REVIEW_CYCLE_OPTIONS.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Milestones
             </label>
-            <div className="space-y-2">
-              {formData.milestones.map((milestone, index) => (
-                <div key={index} className="flex gap-2">
+            <div className="space-y-4">
+              {formData.milestones?.map((milestone, index) => (
+                <div key={milestone.id} className="border rounded-lg p-4 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-medium">Milestone {index + 1}</h4>
+                    {index > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormData(prev => ({
+                            ...prev,
+                            milestones: prev.milestones?.filter((_, i) => i !== index)
+                          }));
+                        }}
+                        className="text-red-500 hover:text-red-700"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="text"
-                    value={milestone}
+                    value={milestone.name}
                     onChange={e => {
-                      const newMilestones = [...formData.milestones];
-                      newMilestones[index] = e.target.value;
-                      setFormData(prev => ({ ...prev, milestones: newMilestones }));
+                      setFormData(prev => {
+                        const newMilestones = [...(prev.milestones || [])];
+                        newMilestones[index] = { ...newMilestones[index], name: e.target.value };
+                        return { ...prev, milestones: newMilestones };
+                      });
                     }}
-                    className="flex-1 p-2 border rounded-md"
-                    placeholder={`Milestone ${index + 1}`}
+                    className="w-full p-2 border rounded-md"
+                    placeholder="Milestone name"
+                    required
                   />
-                  {index > 0 && (
+                  <LocalizationProvider dateAdapter={AdapterDateFns}>
+                    <DatePicker
+                      label="Target Date"
+                      value={getDateFromTimestamp(milestone.targetDate)}
+                      onChange={(date) => {
+                        setFormData(prev => {
+                          const newMilestones = [...(prev.milestones || [])];
+                          newMilestones[index] = {
+                            ...newMilestones[index],
+                            targetDate: createTimestamp(date)
+                          };
+                          return { ...prev, milestones: newMilestones };
+                        });
+                      }}
+                      slotProps={{
+                        textField: {
+                          fullWidth: true,
+                          className: "w-full p-2 border rounded-md"
+                        }
+                      }}
+                    />
+                  </LocalizationProvider>
+                  <select
+                    value={milestone.status}
+                    onChange={e => {
+                      setFormData(prev => {
+                        const newMilestones = [...(prev.milestones || [])];
+                        newMilestones[index] = {
+                          ...newMilestones[index],
+                          status: e.target.value as TaskStatus
+                        };
+                        return { ...prev, milestones: newMilestones };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    required
+                  >
+                    {STATUS_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addMilestone}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
+              >
+                <Plus className="w-4 h-4" />
+                Add Milestone
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tasks
+            </label>
+            <div className="space-y-4">
+              {formData.tasks?.map((task, index) => (
+                <div key={task.id} className="border rounded-lg p-4 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-medium">Task {index + 1}</h4>
                     <button
                       type="button"
                       onClick={() => {
-                        const newMilestones = formData.milestones.filter((_, i) => i !== index);
-                        setFormData(prev => ({ ...prev, milestones: newMilestones }));
+                        setFormData(prev => ({
+                          ...prev,
+                          tasks: prev.tasks?.filter((_, i) => i !== index)
+                        }));
                       }}
                       className="text-red-500 hover:text-red-700"
                     >
                       <X className="w-5 h-5" />
                     </button>
-                  )}
+                  </div>
+                  <input
+                    type="text"
+                    value={task.title}
+                    onChange={e => {
+                      setFormData(prev => {
+                        const newTasks = [...(prev.tasks || [])];
+                        newTasks[index] = { ...newTasks[index], title: e.target.value };
+                        return { ...prev, tasks: newTasks };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    placeholder="Task title"
+                    required
+                  />
+                  <LocalizationProvider dateAdapter={AdapterDateFns}>
+                    <DatePicker
+                      label="Due Date"
+                      value={getDateFromTimestamp(task.dueDate)}
+                      onChange={(date) => {
+                        setFormData(prev => {
+                          const newTasks = [...(prev.tasks || [])];
+                          newTasks[index] = {
+                            ...newTasks[index],
+                            dueDate: createTimestamp(date)
+                          };
+                          return { ...prev, tasks: newTasks };
+                        });
+                      }}
+                      slotProps={{
+                        textField: {
+                          fullWidth: true,
+                          className: "w-full p-2 border rounded-md"
+                        }
+                      }}
+                    />
+                  </LocalizationProvider>
+                  <select
+                    value={task.status}
+                    onChange={e => {
+                      setFormData(prev => {
+                        const newTasks = [...(prev.tasks || [])];
+                        newTasks[index] = {
+                          ...newTasks[index],
+                          status: e.target.value as TaskStatus,
+                          completed: e.target.value === 'completed'
+                        };
+                        return { ...prev, tasks: newTasks };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    required
+                  >
+                    {STATUS_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({
-                  ...prev,
-                  milestones: [...prev.milestones, '']
-                }))}
-                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                onClick={addTask}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
               >
-                + Add Milestone
+                <Plus className="w-4 h-4" />
+                Add Task
               </button>
             </div>
           </div>
@@ -223,142 +593,149 @@ const EditGoalPage: React.FC = () => {
               Habits & Routines
             </label>
             <div className="space-y-4">
-              {formData.habits.map((habit, index) => (
-                <div key={index} className="border rounded-md p-4 space-y-4">
-                  <div className="flex justify-between">
-                    <h4 className="font-medium">Habit/Routine {index + 1}</h4>
+              {formData.routines?.map((routine, index) => (
+                <div key={getRoutineId(routine)} className="border rounded-lg p-4 space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-medium">Routine {index + 1}</h4>
                     <button
                       type="button"
                       onClick={() => {
-                        const newHabits = formData.habits.filter((_, i) => i !== index);
-                        setFormData(prev => ({ ...prev, habits: newHabits }));
+                        setFormData(prev => ({
+                          ...prev,
+                          routines: prev.routines?.filter((_, i) => i !== index)
+                        }));
                       }}
                       className="text-red-500 hover:text-red-700"
                     >
                       <X className="w-5 h-5" />
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Title
-                      </label>
-                      <input
-                        type="text"
-                        value={habit.title}
-                        onChange={e => {
-                          const newHabits = [...formData.habits];
-                          newHabits[index] = { ...habit, title: e.target.value };
-                          setFormData(prev => ({ ...prev, habits: newHabits }));
-                        }}
-                        className="w-full p-2 border rounded-md"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Description
-                      </label>
-                      <input
-                        type="text"
-                        value={habit.description || ''}
-                        onChange={e => {
-                          const newHabits = [...formData.habits];
-                          newHabits[index] = { ...habit, description: e.target.value };
-                          setFormData(prev => ({ ...prev, habits: newHabits }));
-                        }}
-                        className="w-full p-2 border rounded-md"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Frequency
-                      </label>
-                      <select
-                        value={habit.frequency}
-                        onChange={e => {
-                          const newHabits = [...formData.habits];
-                          newHabits[index] = { ...habit, frequency: e.target.value as HabitFormData['frequency'] };
-                          setFormData(prev => ({ ...prev, habits: newHabits }));
-                        }}
-                        className="w-full p-2 border rounded-md"
-                        required
-                      >
-                        <option value="daily">Daily</option>
-                        <option value="weekly">Weekly</option>
-                        <option value="monthly">Monthly</option>
-                        <option value="quarterly">Quarterly</option>
-                        <option value="yearly">Yearly</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Target Count (times per {habit.frequency})
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={habit.targetCount}
-                        onChange={e => {
-                          const newHabits = [...formData.habits];
-                          newHabits[index] = { ...habit, targetCount: parseInt(e.target.value) };
-                          setFormData(prev => ({ ...prev, habits: newHabits }));
-                        }}
-                        className="w-full p-2 border rounded-md"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        End Date (optional)
-                      </label>
-                      <input
-                        type="date"
-                        value={habit.endDate || ''}
-                        onChange={e => {
-                          const newHabits = [...formData.habits];
-                          newHabits[index] = { ...habit, endDate: e.target.value };
-                          setFormData(prev => ({ ...prev, habits: newHabits }));
-                        }}
-                        className="w-full p-2 border rounded-md"
-                      />
-                    </div>
-                  </div>
+                  <input
+                    type="text"
+                    value={routine.title}
+                    onChange={e => {
+                      setFormData(prev => {
+                        const newRoutines = [...(prev.routines || [])];
+                        newRoutines[index] = { ...newRoutines[index], title: e.target.value };
+                        return { ...prev, routines: newRoutines };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    placeholder="Routine title"
+                    required
+                  />
+                  <textarea
+                    value={routine.description || ''}
+                    onChange={e => {
+                      setFormData(prev => {
+                        const newRoutines = [...(prev.routines || [])];
+                        newRoutines[index] = { ...newRoutines[index], description: e.target.value };
+                        return { ...prev, routines: newRoutines };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    placeholder="Routine description"
+                    rows={2}
+                  />
+                  <select
+                    value={routine.frequency}
+                    onChange={e => {
+                      const frequency = e.target.value as Routine['frequency'];
+                      setFormData(prev => {
+                        const newRoutines = [...(prev.routines || [])];
+                        newRoutines[index] = {
+                          ...newRoutines[index],
+                          frequency,
+                          schedule: {
+                            ...newRoutines[index].schedule,
+                            type: frequency
+                          }
+                        };
+                        return { ...prev, routines: newRoutines };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    required
+                  >
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                  </select>
+                  <input
+                    type="number"
+                    min="1"
+                    value={routine.targetCount}
+                    onChange={e => {
+                      const targetCount = parseInt(e.target.value) || 1;
+                      setFormData(prev => {
+                        const newRoutines = [...(prev.routines || [])];
+                        newRoutines[index] = {
+                          ...newRoutines[index],
+                          targetCount,
+                          schedule: {
+                            ...newRoutines[index].schedule,
+                            targetCount
+                          }
+                        };
+                        return { ...prev, routines: newRoutines };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    placeholder="Target count"
+                    required
+                  />
+                  <LocalizationProvider dateAdapter={AdapterDateFns}>
+                    <DatePicker
+                      label="End Date (Optional)"
+                      value={getDateFromTimestamp(routine.endDate)}
+                      onChange={(date) => {
+                        setFormData(prev => {
+                          const newRoutines = [...(prev.routines || [])];
+                          newRoutines[index] = {
+                            ...newRoutines[index],
+                            endDate: createTimestamp(date)
+                          };
+                          return { ...prev, routines: newRoutines };
+                        });
+                      }}
+                      slotProps={{
+                        textField: {
+                          fullWidth: true,
+                          className: "w-full p-2 border rounded-md"
+                        }
+                      }}
+                    />
+                  </LocalizationProvider>
                 </div>
               ))}
               <button
                 type="button"
-                onClick={() => setFormData(prev => ({
-                  ...prev,
-                  habits: [...prev.habits, {
-                    title: '',
-                    description: '',
-                    frequency: 'daily',
-                    targetCount: 1
-                  }]
-                }))}
-                className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                onClick={addRoutine}
+                className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
               >
-                + Add Habit/Routine
+                <Plus className="w-4 h-4" />
+                Add Routine
               </button>
             </div>
           </div>
-        </div>
 
-        <div className="flex justify-end gap-4">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="px-4 py-2 text-gray-600 hover:text-gray-700"
-          >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            Save Changes
-          </button>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => navigate('/goals')}
+              className="px-4 py-2 text-gray-600 hover:text-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              Save Changes
+            </button>
+          </div>
         </div>
       </form>
     </div>
