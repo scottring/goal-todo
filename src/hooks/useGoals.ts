@@ -15,6 +15,7 @@ export const useGoals = () => {
 
   const fetchGoals = async () => {
     if (!currentUser) {
+      setGoals([]);
       setLoading(false);
       return;
     }
