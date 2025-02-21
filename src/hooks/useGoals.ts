@@ -14,7 +14,10 @@ export const useGoals = () => {
   const { getCollection, addDocument, updateDocument, deleteDocument } = useFirestoreContext();
 
   const fetchGoals = async () => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);

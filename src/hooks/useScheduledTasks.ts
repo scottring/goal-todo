@@ -184,13 +184,14 @@ export const useScheduledTasks = () => {
       setLoading(true);
       const allTasks: ScheduledTask[] = [];
 
-      // Get tasks from regular goals
-      goals.forEach(goal => {
-        // Add tasks from milestones
+      // Process both regular goals and user goals
+      const allGoals = [...goals, ...userGoals];
+
+      allGoals.forEach(goal => {
+        // Process tasks from milestones first
         goal.milestones.forEach(milestone => {
-          // Add milestone tasks
           const milestoneTasks = goal.tasks
-            .filter(task => milestone.tasks.includes(task.id))
+            .filter(task => task.milestoneId === milestone.id)
             .map(task => ({
               ...task,
               source: {
@@ -202,9 +203,9 @@ export const useScheduledTasks = () => {
           allTasks.push(...milestoneTasks);
         });
 
-        // Add independent tasks (not associated with any milestone)
+        // Then add independent tasks (tasks not in any milestone)
         const independentTasks = goal.tasks
-          .filter(task => !goal.milestones.some(m => m.tasks.includes(task.id)))
+          .filter(task => !task.milestoneId)
           .map(task => ({
             ...task,
             source: {
@@ -216,41 +217,6 @@ export const useScheduledTasks = () => {
 
         // Add routine-generated tasks
         const routineTasks = generateRoutineTasks(goal.routines, goal.name);
-        allTasks.push(...routineTasks);
-      });
-
-      // Get tasks from shared goals (user instances)
-      userGoals.forEach(userGoal => {
-        // Add tasks from milestones
-        userGoal.milestones.forEach(milestone => {
-          // Add milestone tasks
-          const milestoneTasks = userGoal.tasks
-            .filter(task => milestone.tasks.includes(task.id))
-            .map(task => ({
-              ...task,
-              source: {
-                type: 'goal' as const,
-                goalName: userGoal.name,
-                milestoneName: milestone.name
-              }
-            }));
-          allTasks.push(...milestoneTasks);
-        });
-
-        // Add independent tasks (not associated with any milestone)
-        const independentTasks = userGoal.tasks
-          .filter(task => !userGoal.milestones.some(m => m.tasks.includes(task.id)))
-          .map(task => ({
-            ...task,
-            source: {
-              type: 'goal' as const,
-              goalName: userGoal.name
-            }
-          }));
-        allTasks.push(...independentTasks);
-
-        // Add routine-generated tasks
-        const routineTasks = generateRoutineTasks(userGoal.routines, userGoal.name);
         allTasks.push(...routineTasks);
       });
 

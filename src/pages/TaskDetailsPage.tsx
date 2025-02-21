@@ -20,11 +20,7 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions,
-  Tabs,
-  Tab,
-  Card,
-  CardContent
+  DialogActions
 } from '@mui/material';
 import {
   Calendar,
@@ -38,10 +34,7 @@ import {
   X,
   Target,
   MessageSquare,
-  Settings,
-  Info,
-  CalendarClock,
-  ListTodo
+  Settings
 } from 'lucide-react';
 import { useScheduledTasks } from '../hooks/useScheduledTasks';
 import { useGoalsContext } from '../contexts/GoalsContext';
@@ -98,7 +91,6 @@ export const TaskDetailsPage: React.FC = () => {
     error: null
   });
   const [debouncedContent, setDebouncedContent] = useState('');
-  const [activeTab, setActiveTab] = useState(0);
 
   useEffect(() => {
     if (taskId && scheduledTasks.length > 0) {
@@ -424,167 +416,60 @@ export const TaskDetailsPage: React.FC = () => {
       </Box>
 
       {/* Edit Task Dialog */}
-      <Dialog 
-        open={isEditingTask} 
-        onClose={() => setIsEditingTask(false)} 
-        maxWidth="md" 
-        fullWidth
-      >
-        <DialogTitle sx={{ pb: 0 }}>Edit Task</DialogTitle>
-        <Tabs
-          value={activeTab}
-          onChange={(_, newValue) => setActiveTab(newValue)}
-          sx={{ px: 3, borderBottom: 1, borderColor: 'divider' }}
-        >
-          <Tab 
-            label="Basic Info" 
-            icon={<Info size={18} />} 
-            iconPosition="start"
-          />
-          <Tab 
-            label="Details & Timing" 
-            icon={<CalendarClock size={18} />} 
-            iconPosition="start"
-          />
-          <Tab 
-            label="Status & Priority" 
-            icon={<ListTodo size={18} />} 
-            iconPosition="start"
-          />
-        </Tabs>
+      <Dialog open={isEditingTask} onClose={() => setIsEditingTask(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Edit Task</DialogTitle>
         <DialogContent>
-          <Box sx={{ py: 2 }}>
-            {/* Basic Info Tab */}
-            {activeTab === 0 && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <TextField
-                      label="Title"
-                      fullWidth
-                      value={editForm.title}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))}
-                    />
-                    
-                    <TextField
-                      label="Description"
-                      fullWidth
-                      multiline
-                      rows={4}
-                      value={editForm.description}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
-                      helperText="Provide a clear description of what needs to be done"
-                    />
-                  </Box>
-                </CardContent>
-              </Card>
-            )}
+          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <TextField
+              label="Title"
+              fullWidth
+              value={editForm.title}
+              onChange={(e) => setEditForm(prev => ({ ...prev, title: e.target.value }))}
+            />
+            
+            <TextField
+              label="Description"
+              fullWidth
+              multiline
+              rows={3}
+              value={editForm.description}
+              onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+            />
+            
+            <TextField
+              label="Due Date"
+              type="date"
+              fullWidth
+              value={editForm.dueDate}
+              onChange={(e) => setEditForm(prev => ({ ...prev, dueDate: e.target.value }))}
+              InputLabelProps={{ shrink: true }}
+            />
+            
+            <FormControl fullWidth>
+              <InputLabel>Priority</InputLabel>
+              <Select
+                value={editForm.priority}
+                label="Priority"
+                onChange={(e) => setEditForm(prev => ({ ...prev, priority: e.target.value as TaskPriority }))}
+              >
+                <MenuItem value="low">Low</MenuItem>
+                <MenuItem value="medium">Medium</MenuItem>
+                <MenuItem value="high">High</MenuItem>
+              </Select>
+            </FormControl>
 
-            {/* Details & Timing Tab */}
-            {activeTab === 1 && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <TextField
-                      label="Due Date"
-                      type="date"
-                      fullWidth
-                      value={editForm.dueDate}
-                      onChange={(e) => setEditForm(prev => ({ ...prev, dueDate: e.target.value }))}
-                      InputLabelProps={{ shrink: true }}
-                      helperText="When should this task be completed?"
-                    />
-                    
-                    <Box>
-                      <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                        Goal
-                      </Typography>
-                      <Typography>
-                        {task?.source.goalName}
-                      </Typography>
-                    </Box>
-
-                    {task?.source.type === 'routine' && (
-                      <Box>
-                        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-                          Routine
-                        </Typography>
-                        <Chip 
-                          label="Part of Routine"
-                          color="primary"
-                          size="small"
-                        />
-                      </Box>
-                    )}
-                  </Box>
-                </CardContent>
-              </Card>
-            )}
-
-            {/* Status & Priority Tab */}
-            {activeTab === 2 && (
-              <Card variant="outlined">
-                <CardContent>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                    <FormControl fullWidth>
-                      <InputLabel>Priority</InputLabel>
-                      <Select
-                        value={editForm.priority}
-                        label="Priority"
-                        onChange={(e) => setEditForm(prev => ({ ...prev, priority: e.target.value as TaskPriority }))}
-                      >
-                        <MenuItem value="low">
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Flag size={16} className="text-green-500" />
-                            Low Priority
-                          </Box>
-                        </MenuItem>
-                        <MenuItem value="medium">
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Flag size={16} className="text-yellow-500" />
-                            Medium Priority
-                          </Box>
-                        </MenuItem>
-                        <MenuItem value="high">
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Flag size={16} className="text-red-500" />
-                            High Priority
-                          </Box>
-                        </MenuItem>
-                      </Select>
-                    </FormControl>
-
-                    <FormControl fullWidth>
-                      <InputLabel>Status</InputLabel>
-                      <Select
-                        value={editForm.status}
-                        label="Status"
-                        onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value as TaskStatus }))}
-                      >
-                        <MenuItem value="not_started">
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Clock size={16} />
-                            Not Started
-                          </Box>
-                        </MenuItem>
-                        <MenuItem value="in_progress">
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Target size={16} className="text-blue-500" />
-                            In Progress
-                          </Box>
-                        </MenuItem>
-                        <MenuItem value="completed">
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <CheckCircle size={16} className="text-green-500" />
-                            Completed
-                          </Box>
-                        </MenuItem>
-                      </Select>
-                    </FormControl>
-                  </Box>
-                </CardContent>
-              </Card>
-            )}
+            <FormControl fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={editForm.status}
+                label="Status"
+                onChange={(e) => setEditForm(prev => ({ ...prev, status: e.target.value as TaskStatus }))}
+              >
+                <MenuItem value="not_started">Not Started</MenuItem>
+                <MenuItem value="in_progress">In Progress</MenuItem>
+                <MenuItem value="completed">Completed</MenuItem>
+              </Select>
+            </FormControl>
           </Box>
         </DialogContent>
         <DialogActions>

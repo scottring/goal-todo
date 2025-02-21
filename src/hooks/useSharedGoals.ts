@@ -29,7 +29,10 @@ export const useSharedGoals = () => {
   const { getCollection, addDocument, updateDocument, deleteDocument } = useFirestore();
 
   const fetchSharedGoals = async () => {
-    if (!user) return;
+    if (!user) {
+      setLoading(false);
+      return;
+    }
     
     try {
       setLoading(true);

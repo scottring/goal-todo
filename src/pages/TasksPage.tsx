@@ -68,6 +68,7 @@ const TasksPage: React.FC = () => {
     priority: 'medium',
     goalId: ''
   });
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -129,6 +130,19 @@ const TasksPage: React.FC = () => {
       const selectedGoal = [...goals, ...userGoals].find(g => g.id === formData.goalId);
       if (!selectedGoal) return;
 
+      // Check if this task title already exists in a milestone
+      const isTaskInMilestone = selectedGoal.milestones.some(milestone => 
+        milestone.tasks.some(taskId => {
+          const task = selectedGoal.tasks.find(t => t.id === taskId);
+          return task && task.title === formData.title.trim();
+        })
+      );
+
+      if (isTaskInMilestone) {
+        setError('A task with this name already exists in a milestone');
+        return;
+      }
+
       const newTask = {
         id: Math.random().toString(36).substr(2, 9),
         title: formData.title.trim(),
@@ -169,6 +183,7 @@ const TasksPage: React.FC = () => {
       setShowAddModal(false);
     } catch (err) {
       console.error('Error adding task:', err);
+      setError('Failed to add task');
     }
   };
 
@@ -427,17 +442,15 @@ const TasksPage: React.FC = () => {
       {/* Add Task Modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
-            <div className="p-6">
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">Add Task</h2>
-                <button
-                  onClick={() => setShowAddModal(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
+          <div className="bg-white rounded-lg p-6 max-w-md w-full">
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">Add New Task</h2>
+              
+              {error && (
+                <Alert severity="error" onClose={() => setError(null)}>
+                  {error}
+                </Alert>
+              )}
 
               <div className="space-y-4">
                 <div>

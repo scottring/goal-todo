@@ -163,6 +163,7 @@ interface SmartGoalForm {
     status: TaskStatus;
     completed: boolean;
     assignedTo?: string;
+    milestoneId?: string;
   }[];
   routines: {
     id: string;
@@ -241,7 +242,8 @@ const addTask = (smartGoal: SmartGoalForm) => ({
       status: 'not_started' as TaskStatus,
       completed: false,
       dueDate: undefined,
-      assignedTo: undefined
+      assignedTo: undefined,
+      milestoneId: undefined
     }
   ]
 });
@@ -287,6 +289,7 @@ const addMilestone = (smartGoal: SmartGoalForm) => ({
 });
 
 const addTaskToMilestone = (smartGoal: SmartGoalForm, milestoneIndex: number) => {
+  const milestone = smartGoal.milestones[milestoneIndex];
   const newTask = {
     id: uuidv4(),
     title: '',
@@ -295,7 +298,8 @@ const addTaskToMilestone = (smartGoal: SmartGoalForm, milestoneIndex: number) =>
     status: 'not_started' as TaskStatus,
     completed: false,
     dueDate: undefined,
-    assignedTo: undefined
+    assignedTo: undefined,
+    milestoneId: milestone.id
   };
 
   const newMilestones = [...smartGoal.milestones];
@@ -556,6 +560,9 @@ const GoalsPage: React.FC = () => {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [sharingGoal, setSharingGoal] = useState<SourceActivity | null>(null);
   const navigate = useNavigate();
+  const [taskTitleUpdates, setTaskTitleUpdates] = useState<{[key: string]: string}>({});
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
+  const [taskTitleError, setTaskTitleError] = useState<{[key: string]: string}>({});
 
   // Handle navigation state
   useEffect(() => {
@@ -1058,6 +1065,10 @@ const GoalsPage: React.FC = () => {
                               milestones: newMilestones,
                               tasks: prev.tasks.filter(t => t.id !== taskId)
                             }));
+                            setTaskTitleError(prev => {
+                              const { [taskId]: _, ...rest } = prev;
+                              return rest;
+                            });
                           }}
                           color="error"
                         >
@@ -1067,17 +1078,64 @@ const GoalsPage: React.FC = () => {
                       <Stack spacing={2}>
                         <TextField
                           label="Title"
-                          value={task.title}
+                          value={taskTitleUpdates[taskId] ?? task.title}
                           onChange={(e) => {
-                            setSmartGoal(prev => ({
+                            setTaskTitleUpdates(prev => ({
                               ...prev,
-                              tasks: prev.tasks.map(t => 
-                                t.id === taskId ? { ...t, title: e.target.value } : t
-                              )
+                              [taskId]: e.target.value
                             }));
+                            // Clear error when user starts typing
+                            setTaskTitleError(prev => {
+                              const { [taskId]: _, ...rest } = prev;
+                              return rest;
+                            });
                           }}
-                          fullWidth
-                          size="small"
+                          onBlur={() => {
+                            if (taskTitleUpdates[taskId] === undefined) return;
+                            setUpdatingTaskId(taskId);
+                            const newTitle = taskTitleUpdates[taskId];
+                            
+                            // Check if this title already exists in any milestone's tasks
+                            const titleExists = smartGoal.milestones.some(m => 
+                              m.tasks.some(tid => {
+                                const t = smartGoal.tasks.find(task => task.id === tid);
+                                return t && t.id !== taskId && t.title === newTitle;
+                              })
+                            );
+
+                            if (titleExists) {
+                              // If title exists, don't update and show error
+                              setTaskTitleError(prev => ({
+                                ...prev,
+                                [taskId]: 'A task with this name already exists in a milestone'
+                              }));
+                              setTaskTitleUpdates(prev => {
+                                const { [taskId]: _, ...rest } = prev;
+                                return rest;
+                              });
+                            } else {
+                              // If title doesn't exist, proceed with the update
+                              setSmartGoal(prev => ({
+                                ...prev,
+                                tasks: prev.tasks.map(t => 
+                                  t.id === taskId ? { ...t, title: newTitle } : t
+                                )
+                              }));
+                              setTaskTitleUpdates(prev => {
+                                const { [taskId]: _, ...rest } = prev;
+                                return rest;
+                              });
+                              setTaskTitleError(prev => {
+                                const { [taskId]: _, ...rest } = prev;
+                                return rest;
+                              });
+                            }
+                            setUpdatingTaskId(null);
+                          }}
+                          sx={{ width: '100%' }}
+                          disabled={updatingTaskId === taskId}
+                          error={!!taskTitleError[taskId]}
+                          helperText={taskTitleError[taskId]}
                         />
                         <LocalizationProvider dateAdapter={AdapterDateFns}>
                           <DatePicker
@@ -1218,56 +1276,61 @@ const GoalsPage: React.FC = () => {
     </Stack>
   );
 
-  const renderTasksStep = (): JSX.Element => (
-    <Stack spacing={3}>
-      {smartGoal.tasks.map((task, index) => (
-        <Box key={index}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="subtitle1">
-              Task {index + 1}
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => {
-                const newTasks = smartGoal.tasks.filter((_, i) => i !== index);
-                setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
-              }}
-              color="error"
-            >
-              <CloseIcon />
-            </IconButton>
-          </Stack>
-          <Stack spacing={2}>
-            <TextField
-              label="Title"
-              value={task.title}
-              onChange={(e) => handleTaskChange(index, 'title', e.target.value)}
-              fullWidth
-            />
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                label="Due Date"
-                value={task.dueDate?.toDate() || null}
-                onChange={(date) => handleTaskChange(index, 'dueDate', date ? Timestamp.fromDate(date) : undefined)}
-                slotProps={{
-                  textField: {
-                    fullWidth: true
-                  }
+  const renderTasksStep = () => {
+    // Filter tasks to only show those not in milestones
+    const independentTasks = smartGoal.tasks.filter(task => !task.milestoneId);
+
+    return (
+      <Stack spacing={3}>
+        {independentTasks.map((task, index) => (
+          <Box key={index}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
+              <Typography variant="subtitle1">
+                Task {index + 1}
+              </Typography>
+              <IconButton
+                size="small"
+                onClick={() => {
+                  const newTasks = smartGoal.tasks.filter(t => t.id !== task.id);
+                  setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
                 }}
+                color="error"
+              >
+                <CloseIcon />
+              </IconButton>
+            </Stack>
+            <Stack spacing={2}>
+              <TextField
+                label="Title"
+                value={task.title}
+                onChange={(e) => handleTaskChange(index, 'title', e.target.value)}
+                fullWidth
               />
-            </LocalizationProvider>
-          </Stack>
-        </Box>
-      ))}
-      <Button
-        variant="outlined"
-        startIcon={<AddIcon />}
-        onClick={() => setSmartGoal(prev => addTask(prev))}
-      >
-        Add Task
-      </Button>
-    </Stack>
-  );
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <DatePicker
+                  label="Due Date"
+                  value={task.dueDate?.toDate() || null}
+                  onChange={(date) => handleTaskChange(index, 'dueDate', date ? Timestamp.fromDate(date) : undefined)}
+                  slotProps={{
+                    textField: {
+                      fullWidth: true
+                    }
+                  }}
+                />
+              </LocalizationProvider>
+            </Stack>
+          </Box>
+        ))}
+        <Button
+          variant="outlined"
+          startIcon={<AddIcon />}
+          onClick={() => setSmartGoal(prev => addTask(prev))}
+        >
+          Add Task
+        </Button>
+      </Stack>
+    );
+  };
 
   const renderRoutinesStep = () => (
     <Stack spacing={3}>
