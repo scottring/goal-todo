@@ -104,6 +104,34 @@ const timestampToDateString = (timestamp: Timestamp | undefined): string => {
   }
 };
 
+interface Milestone {
+  id: string;
+  name: string;
+  targetDate?: Timestamp;
+  successCriteria: string;
+  status: TaskStatus;
+  tasks: {
+    id: string;
+    title: string;
+    description?: string;
+    dueDate?: Timestamp;
+    priority: TaskPriority;
+    status: TaskStatus;
+    completed: boolean;
+    assignedTo?: string;
+  }[];
+  routines: {
+    id: string;
+    title: string;
+    description?: string;
+    frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+    schedule: RoutineSchedule;
+    targetCount: number;
+    endDate?: Timestamp;
+    completionDates: Timestamp[];
+  }[];
+}
+
 interface SmartGoalForm {
   name: string;
   specificAction: string;
@@ -124,6 +152,7 @@ interface SmartGoalForm {
     successCriteria: string;
     status: TaskStatus;
     tasks: string[];
+    routines: string[];
   }[];
   tasks: {
     id: string;
@@ -193,7 +222,8 @@ const initialSmartGoal: SmartGoalForm = {
     targetDate: Timestamp.fromDate(new Date()),
     successCriteria: '',
     status: 'not_started',
-    tasks: []
+    tasks: [],
+    routines: []
   }],
   tasks: [],
   routines: []
@@ -250,10 +280,68 @@ const addMilestone = (smartGoal: SmartGoalForm) => ({
       targetDate: Timestamp.fromDate(new Date()),
       successCriteria: '',
       status: 'not_started' as TaskStatus,
-      tasks: []
+      tasks: [],
+      routines: []
     }
   ]
 });
+
+const addTaskToMilestone = (smartGoal: SmartGoalForm, milestoneIndex: number) => {
+  const newTask = {
+    id: uuidv4(),
+    title: '',
+    description: '',
+    priority: 'medium' as TaskPriority,
+    status: 'not_started' as TaskStatus,
+    completed: false,
+    dueDate: undefined,
+    assignedTo: undefined
+  };
+
+  const newMilestones = [...smartGoal.milestones];
+  newMilestones[milestoneIndex] = {
+    ...newMilestones[milestoneIndex],
+    tasks: [...newMilestones[milestoneIndex].tasks, newTask.id]
+  };
+
+  return {
+    ...smartGoal,
+    milestones: newMilestones,
+    tasks: [...smartGoal.tasks, newTask]
+  };
+};
+
+const addRoutineToMilestone = (smartGoal: SmartGoalForm, milestoneIndex: number) => {
+  const newRoutine = {
+    id: uuidv4(),
+    title: '',
+    description: '',
+    frequency: 'daily' as const,
+    schedule: {
+      type: 'daily' as const,
+      targetCount: 1,
+      timeOfDay: { hour: 9, minute: 0 },
+      daysOfWeek: [],
+      dayOfMonth: undefined,
+      monthsOfYear: []
+    },
+    targetCount: 1,
+    completionDates: [],
+    endDate: undefined
+  };
+
+  const newMilestones = [...smartGoal.milestones];
+  newMilestones[milestoneIndex] = {
+    ...newMilestones[milestoneIndex],
+    routines: [...newMilestones[milestoneIndex].routines, newRoutine.id]
+  };
+
+  return {
+    ...smartGoal,
+    milestones: newMilestones,
+    routines: [...smartGoal.routines, newRoutine]
+  };
+};
 
 interface CleanableObject {
   [key: string]: unknown;
@@ -524,7 +612,8 @@ const GoalsPage: React.FC = () => {
           targetDate: m.targetDate || Timestamp.fromDate(new Date()),
           successCriteria: m.successCriteria.trim(),
           status: m.status,
-          tasks: m.tasks || []
+          tasks: m.tasks || [],
+          routines: m.routines || []
         })),
         areaId: smartGoal.areaId,
         sharedWith: [],
@@ -882,7 +971,7 @@ const GoalsPage: React.FC = () => {
   const renderMilestonesStep = (): JSX.Element => (
     <Stack spacing={3}>
       {smartGoal.milestones.map((milestone, index) => (
-        <Box key={index} sx={{ position: 'relative' }}>
+        <Paper key={index} sx={{ p: 3, position: 'relative' }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="subtitle1" gutterBottom>
               Milestone {index + 1}
@@ -919,8 +1008,205 @@ const GoalsPage: React.FC = () => {
                 }}
               />
             </LocalizationProvider>
+            <TextField
+              label="Success Criteria"
+              value={milestone.successCriteria}
+              onChange={(e) => handleMilestoneChange(index, 'successCriteria', e.target.value)}
+              fullWidth
+              multiline
+              rows={2}
+            />
+            <FormControl fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={milestone.status}
+                onChange={(e) => handleMilestoneChange(index, 'status', e.target.value)}
+                label="Status"
+              >
+                {STATUS_OPTIONS.map(option => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            {/* Tasks Section */}
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Tasks
+              </Typography>
+              <Stack spacing={2}>
+                {milestone.tasks.map((taskId) => {
+                  const task = smartGoal.tasks.find(t => t.id === taskId);
+                  if (!task) return null;
+
+                  return (
+                    <Box key={taskId} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                        <Typography variant="body2">Task</Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const newMilestones = [...smartGoal.milestones];
+                            newMilestones[index] = {
+                              ...newMilestones[index],
+                              tasks: milestone.tasks.filter(id => id !== taskId)
+                            };
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              milestones: newMilestones,
+                              tasks: prev.tasks.filter(t => t.id !== taskId)
+                            }));
+                          }}
+                          color="error"
+                        >
+                          <CloseIcon fontSize="small" />
+                        </IconButton>
+                      </Stack>
+                      <Stack spacing={2}>
+                        <TextField
+                          label="Title"
+                          value={task.title}
+                          onChange={(e) => {
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              tasks: prev.tasks.map(t => 
+                                t.id === taskId ? { ...t, title: e.target.value } : t
+                              )
+                            }));
+                          }}
+                          fullWidth
+                          size="small"
+                        />
+                        <LocalizationProvider dateAdapter={AdapterDateFns}>
+                          <DatePicker
+                            label="Due Date"
+                            value={task.dueDate?.toDate() || null}
+                            onChange={(date) => {
+                              setSmartGoal(prev => ({
+                                ...prev,
+                                tasks: prev.tasks.map(t => 
+                                  t.id === taskId ? { ...t, dueDate: date ? Timestamp.fromDate(date) : undefined } : t
+                                )
+                              }));
+                            }}
+                            slotProps={{
+                              textField: {
+                                fullWidth: true,
+                                size: "small"
+                              }
+                            }}
+                          />
+                        </LocalizationProvider>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => setSmartGoal(prev => addTaskToMilestone(prev, index))}
+                >
+                  Add Task
+                </Button>
+              </Stack>
+            </Box>
+
+            {/* Routines Section */}
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Routines
+              </Typography>
+              <Stack spacing={2}>
+                {milestone.routines.map((routineId) => {
+                  const routine = smartGoal.routines.find(r => r.id === routineId);
+                  if (!routine) return null;
+
+                  return (
+                    <Box key={routineId} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                        <Typography variant="body2">Routine</Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            const newMilestones = [...smartGoal.milestones];
+                            newMilestones[index] = {
+                              ...newMilestones[index],
+                              routines: milestone.routines.filter(id => id !== routineId)
+                            };
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              milestones: newMilestones,
+                              routines: prev.routines.filter(r => r.id !== routineId)
+                            }));
+                          }}
+                          color="error"
+                        >
+                          <CloseIcon fontSize="small" />
+                        </IconButton>
+                      </Stack>
+                      <Stack spacing={2}>
+                        <TextField
+                          label="Title"
+                          value={routine.title}
+                          onChange={(e) => {
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              routines: prev.routines.map(r => 
+                                r.id === routineId ? { ...r, title: e.target.value } : r
+                              )
+                            }));
+                          }}
+                          fullWidth
+                          size="small"
+                        />
+                        <FormControl fullWidth size="small">
+                          <InputLabel>Frequency</InputLabel>
+                          <Select
+                            value={routine.frequency}
+                            onChange={(e) => {
+                              const frequency = e.target.value as typeof routine.frequency;
+                              setSmartGoal(prev => ({
+                                ...prev,
+                                routines: prev.routines.map(r => 
+                                  r.id === routineId ? {
+                                    ...r,
+                                    frequency,
+                                    schedule: {
+                                      ...r.schedule,
+                                      type: frequency
+                                    }
+                                  } : r
+                                )
+                              }));
+                            }}
+                            label="Frequency"
+                          >
+                            <MenuItem value="daily">Daily</MenuItem>
+                            <MenuItem value="weekly">Weekly</MenuItem>
+                            <MenuItem value="monthly">Monthly</MenuItem>
+                            <MenuItem value="quarterly">Quarterly</MenuItem>
+                            <MenuItem value="yearly">Yearly</MenuItem>
+                          </Select>
+                        </FormControl>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => setSmartGoal(prev => addRoutineToMilestone(prev, index))}
+                >
+                  Add Routine
+                </Button>
+              </Stack>
+            </Box>
           </Stack>
-        </Box>
+        </Paper>
       ))}
       <Button
         variant="outlined"

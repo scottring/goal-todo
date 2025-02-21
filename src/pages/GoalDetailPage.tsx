@@ -17,6 +17,7 @@ import type {
 } from '../types';
 import { ShareModal } from '../components/ShareModal';
 import { CircularProgress, Box } from '@mui/material';
+import { HouseholdMemberSelect } from '../components/HouseholdMemberSelect';
 
 type TaskPriority = 'low' | 'medium' | 'high';
 type TaskStatus = 'not_started' | 'in_progress' | 'completed';
@@ -29,6 +30,9 @@ interface RoutineFormData {
     daysOfWeek: {
       day: DayOfWeek;
       time: TimeOfDay;
+      specificDate?: Timestamp;
+      assignedTo?: string;
+      assignedToEmail?: string;
     }[];
     dayOfMonth?: number;
     monthsOfYear: number[];
@@ -352,7 +356,10 @@ const GoalDetailPage: React.FC = () => {
                                 ? prev.schedule.daysOfWeek.filter(d => d.day !== day)
                                 : [...prev.schedule.daysOfWeek, {
                                     day,
-                                    time: { hour: 9, minute: 0 }
+                                    time: { hour: 9, minute: 0 },
+                                    specificDate: undefined,
+                                    assignedTo: undefined,
+                                    assignedToEmail: undefined
                                   }];
                               
                               return {
@@ -374,60 +381,116 @@ const GoalDetailPage: React.FC = () => {
                         </button>
                         
                         {daySchedule && (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              max="23"
-                              value={daySchedule.time.hour}
-                              onChange={e => {
-                                setRoutineForm(prev => ({
-                                  ...prev,
-                                  schedule: {
-                                    ...prev.schedule,
-                                    daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                      d.day === day
-                                        ? {
-                                            ...d,
-                                            time: {
-                                              ...d.time,
-                                              hour: parseInt(e.target.value)
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                min="0"
+                                max="23"
+                                value={daySchedule.time.hour}
+                                onChange={e => {
+                                  setRoutineForm(prev => ({
+                                    ...prev,
+                                    schedule: {
+                                      ...prev.schedule,
+                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
+                                        d.day === day
+                                          ? {
+                                              ...d,
+                                              time: {
+                                                ...d.time,
+                                                hour: parseInt(e.target.value)
+                                              }
                                             }
-                                          }
-                                        : d
-                                    )
-                                  }
-                                }));
-                              }}
-                              className="w-20 p-2 border rounded-md"
-                            />
-                            <span className="self-center">:</span>
-                            <input
-                              type="number"
-                              min="0"
-                              max="59"
-                              value={daySchedule.time.minute}
-                              onChange={e => {
-                                setRoutineForm(prev => ({
-                                  ...prev,
-                                  schedule: {
-                                    ...prev.schedule,
-                                    daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                      d.day === day
-                                        ? {
-                                            ...d,
-                                            time: {
-                                              ...d.time,
-                                              minute: parseInt(e.target.value)
+                                          : d
+                                      )
+                                    }
+                                  }));
+                                }}
+                                className="w-20 p-2 border rounded-md"
+                              />
+                              <span className="self-center">:</span>
+                              <input
+                                type="number"
+                                min="0"
+                                max="59"
+                                value={daySchedule.time.minute}
+                                onChange={e => {
+                                  setRoutineForm(prev => ({
+                                    ...prev,
+                                    schedule: {
+                                      ...prev.schedule,
+                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
+                                        d.day === day
+                                          ? {
+                                              ...d,
+                                              time: {
+                                                ...d.time,
+                                                minute: parseInt(e.target.value)
+                                              }
                                             }
-                                          }
-                                        : d
-                                    )
-                                  }
-                                }));
-                              }}
-                              className="w-20 p-2 border rounded-md"
-                            />
+                                          : d
+                                      )
+                                    }
+                                  }));
+                                }}
+                                className="w-20 p-2 border rounded-md"
+                              />
+                            </div>
+
+                            {/* Specific Date Override */}
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm text-gray-600">Specific Date:</label>
+                              <input
+                                type="date"
+                                value={daySchedule.specificDate ? formatDate(daySchedule.specificDate).split('T')[0] : ''}
+                                onChange={e => {
+                                  setRoutineForm(prev => ({
+                                    ...prev,
+                                    schedule: {
+                                      ...prev.schedule,
+                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
+                                        d.day === day
+                                          ? {
+                                              ...d,
+                                              specificDate: e.target.value 
+                                                ? FirebaseTimestamp.fromDate(new Date(e.target.value))
+                                                : undefined
+                                            }
+                                          : d
+                                      )
+                                    }
+                                  }));
+                                }}
+                                className="w-40 p-2 border rounded-md"
+                              />
+                            </div>
+
+                            {/* Assign To */}
+                            <div className="flex items-center gap-2">
+                              <label className="text-sm text-gray-600">Assign to:</label>
+                              <HouseholdMemberSelect
+                                value={daySchedule.assignedTo || ''}
+                                onChange={(value) => {
+                                  setRoutineForm(prev => ({
+                                    ...prev,
+                                    schedule: {
+                                      ...prev.schedule,
+                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
+                                        d.day === day
+                                          ? {
+                                              ...d,
+                                              assignedTo: value,
+                                              assignedToEmail: value // You would typically get this from the selected member
+                                            }
+                                          : d
+                                      )
+                                    }
+                                  }));
+                                }}
+                                className="w-48 p-2 border rounded-md"
+                              />
+                            </div>
                           </div>
                         )}
                       </div>
