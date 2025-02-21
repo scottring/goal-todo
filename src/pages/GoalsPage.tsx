@@ -55,10 +55,11 @@ import type {
   ReviewCycle,
   RoutineSchedule,
   Routine,
-  TaskReviewItem as TaskReviewItemType
+  TaskReviewItem as TaskReviewItemType,
+  ReviewFrequency
 } from '../types';
 import { toast } from 'react-hot-toast';
-import GoalSharingModal from '../components/GoalSharingModal';
+import AreaSharingModal from '../components/AreaSharingModal';
 import { v4 as uuidv4 } from 'uuid';
 import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
 import { TaskReviewList } from '../components/TaskReviewList';
@@ -174,6 +175,21 @@ interface SmartGoalForm {
     targetCount: number;
     endDate?: Timestamp;
     completionDates: Timestamp[];
+    permissions: {};
+    review: {
+      reflectionFrequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+      reviewStatus: {
+        lastReviewDate: Timestamp;
+        nextReviewDate: Timestamp;
+        completedReviews: string[];
+      };
+      adherenceRate: number;
+      streakData: {
+        currentStreak: number;
+        longestStreak: number;
+        lastCompletedDate: Timestamp;
+      };
+    };
   }[];
 }
 
@@ -248,7 +264,7 @@ const addTask = (smartGoal: SmartGoalForm) => ({
   ]
 });
 
-const addRoutine = (smartGoal: SmartGoalForm) => ({
+const addRoutine = (smartGoal: SmartGoalForm): SmartGoalForm => ({
   ...smartGoal,
   routines: [
     ...smartGoal.routines,
@@ -262,12 +278,25 @@ const addRoutine = (smartGoal: SmartGoalForm) => ({
         targetCount: 1,
         timeOfDay: { hour: 9, minute: 0 },
         daysOfWeek: [],
-        dayOfMonth: undefined,
         monthsOfYear: []
-      },
+      } as RoutineSchedule,
       targetCount: 1,
       completionDates: [],
-      endDate: undefined
+      permissions: {},
+      review: {
+        reflectionFrequency: 'weekly' as const,
+        reviewStatus: {
+          lastReviewDate: Timestamp.now(),
+          nextReviewDate: Timestamp.now(),
+          completedReviews: []
+        },
+        adherenceRate: 0,
+        streakData: {
+          currentStreak: 0,
+          longestStreak: 0,
+          lastCompletedDate: Timestamp.now()
+        }
+      }
     }
   ]
 });
@@ -1907,14 +1936,14 @@ const GoalsPage: React.FC = () => {
       </Grid>
 
       {isShareModalOpen && sharingGoal && (
-        <GoalSharingModal
+        <AreaSharingModal
           isOpen={isShareModalOpen}
           onClose={() => {
             setIsShareModalOpen(false);
             setSharingGoal(null);
           }}
-          goalId={sharingGoal.id}
-          initialTitle={sharingGoal.name}
+          areaId={sharingGoal.areaId}
+          areaName={areas.find(a => a.id === sharingGoal.areaId)?.name || 'Area'}
         />
       )}
     </Container>

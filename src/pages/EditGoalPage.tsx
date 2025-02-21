@@ -4,7 +4,7 @@ import { ArrowLeft, Plus, X, Users } from 'lucide-react';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
+import { Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, CircularProgress, Alert } from '@mui/material';
 import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,7 +32,7 @@ import {
 } from '../constants';
 import { db } from '../lib/firebase';
 import { onSnapshot, doc } from 'firebase/firestore';
-import GoalSharingModal from '../components/GoalSharingModal';
+import AreaSharingModal from '../components/AreaSharingModal';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -65,9 +65,9 @@ interface OptionType {
 const EditGoalPage: React.FC = () => {
   const { goalId } = useParams<{ goalId: string }>();
   const navigate = useNavigate();
-  const { areas } = useAreasContext();
-  const { goals, updateGoal } = useGoalsContext();
-  const { currentUser } = useAuth();
+  const { areas, loading: areasLoading, error: areasError } = useAreasContext();
+  const { goals, loading: goalsLoading, error: goalsError, updateGoal } = useGoalsContext();
+  const { currentUser, loading: authLoading } = useAuth();
   const userService = getUserService();
   const defaultTimestamp = Timestamp.fromDate(new Date());
 
@@ -77,7 +77,64 @@ const EditGoalPage: React.FC = () => {
   const [isLoadingParticipants, setIsLoadingParticipants] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
+  // If not authenticated, redirect to sign in
+  useEffect(() => {
+    if (!authLoading && !currentUser) {
+      navigate('/signin');
+    }
+  }, [authLoading, currentUser, navigate]);
+
+  // Show loading state while authentication is being checked
+  if (authLoading) {
+    return (
+      <Box display="flex" alignItems="center" justifyContent="center" height="100vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Show loading state while data is being fetched
+  if (areasLoading || goalsLoading) {
+    return (
+      <Box display="flex" alignItems="center" justifyContent="center" height="100vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Show error state if there are any errors
+  if (areasError || goalsError) {
+    return (
+      <Box p={3}>
+        <Alert severity="error">
+          {areasError?.message || goalsError?.message || 'An error occurred while loading the page'}
+        </Alert>
+      </Box>
+    );
+  }
+
+  // Show error if goal ID is missing
+  if (!goalId) {
+    return (
+      <Box p={3}>
+        <Alert severity="error">
+          No goal ID provided
+        </Alert>
+      </Box>
+    );
+  }
+
+  // Show error if goal is not found
   const goal = goals.find(g => g.id === goalId);
+  if (!goal) {
+    return (
+      <Box p={3}>
+        <Alert severity="error">
+          Goal not found
+        </Alert>
+      </Box>
+    );
+  }
 
   useEffect(() => {
     const loadParticipants = async () => {
@@ -293,14 +350,6 @@ const EditGoalPage: React.FC = () => {
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setCurrentTab(newValue);
   };
-
-  if (!goal) {
-    return (
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="text-center text-gray-500">Goal not found</div>
-      </div>
-    );
-  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
@@ -1409,13 +1458,12 @@ const EditGoalPage: React.FC = () => {
         </>
       )}
 
-      {/* Add GoalSharingModal */}
-      <GoalSharingModal
+      {/* Add AreaSharingModal */}
+      <AreaSharingModal
         isOpen={isShareModalOpen}
         onClose={() => setIsShareModalOpen(false)}
-        goalId={goalId}
-        initialTitle={formData.name}
         areaId={formData.areaId}
+        areaName={areas.find(a => a.id === formData.areaId)?.name || 'Area'}
       />
     </div>
   );

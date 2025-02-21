@@ -9,39 +9,35 @@ import { onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
   UserProfile, 
-  HierarchicalPermissions, 
   PermissionLevel
 } from '../types';
 
-interface GoalSharingModalProps {
+interface AreaSharingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  goalId?: string;
-  initialTitle?: string;
-  areaId?: string;
+  areaId: string;
+  areaName: string;
 }
 
-const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
+const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
   isOpen,
   onClose,
-  goalId,
-  initialTitle = '',
-  areaId
+  areaId,
+  areaName
 }) => {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [participants, setParticipants] = useState<UserProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [inheritToSubItems, setInheritToSubItems] = useState(true);
 
   const { currentUser } = useAuth();
-  const { updateDocument, addDocument } = useFirestore();
+  const { updateDocument } = useFirestore();
   const userService = getUserService();
 
   useEffect(() => {
-    if (!goalId || !isOpen) return;
+    if (!areaId || !isOpen) return;
 
-    const unsubscribe = onSnapshot(doc(db, 'shared_goals', goalId), 
+    const unsubscribe = onSnapshot(doc(db, 'areas', areaId), 
       (doc) => {
         if (doc.exists()) {
           const data = doc.data();
@@ -52,13 +48,13 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
         }
       },
       (error) => {
-        console.error('Error listening to goal updates:', error);
+        console.error('Error listening to area updates:', error);
         setError('Failed to get real-time updates');
       }
     );
 
     return () => unsubscribe();
-  }, [goalId, isOpen]);
+  }, [areaId, isOpen]);
 
   const addCollaborator = async () => {
     if (!email) return;
@@ -80,14 +76,6 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
         return;
       }
 
-      const newPermissions: HierarchicalPermissions = {
-        level: 'editor',
-        specificOverrides: {
-          canEditTasks: true,
-          canEditRoutines: true
-        }
-      };
-
       // Add user to participants
       setParticipants(prev => [...prev, user]);
       setEmail('');
@@ -97,9 +85,9 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
         await getEmailService().sendShareInvite(
           email,
           currentUser.email || 'unknown',
-          initialTitle,
-          goalId || '',
-          newPermissions
+          areaName,
+          areaId,
+          { level: 'editor' }
         );
         toast.success('Invitation sent successfully');
       }
@@ -123,27 +111,20 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
       const sharedWith = participants.map(p => p.id);
       const permissions = Object.fromEntries(
         participants.map(p => [p.id, {
-          level: 'editor' as PermissionLevel,
-          specificOverrides: {
-            canEditTasks: true,
-            canEditRoutines: true
-          }
+          level: 'editor' as PermissionLevel
         }])
       );
 
-      if (goalId) {
-        await updateDocument('shared_goals', goalId, {
-          sharedWith,
-          permissions,
-          inheritToSubItems
-        });
-      }
+      await updateDocument('areas', areaId, {
+        sharedWith,
+        permissions
+      });
 
-      toast.success('Sharing settings saved');
+      toast.success('Area sharing updated');
       onClose();
     } catch (error) {
       console.error('Error saving sharing settings:', error);
-      toast.error('Failed to save sharing settings');
+      toast.error('Failed to update sharing settings');
     } finally {
       setIsSubmitting(false);
     }
@@ -152,10 +133,10 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-[60]">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold">Share Goal</h2>
+          <h2 className="text-xl font-semibold">Share Area: {areaName}</h2>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
             <X size={24} />
           </button>
@@ -186,15 +167,9 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
           </div>
 
           <div>
-            <label className="flex items-center space-x-2 text-sm text-gray-700">
-              <input
-                type="checkbox"
-                checked={inheritToSubItems}
-                onChange={(e) => setInheritToSubItems(e.target.checked)}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-              />
-              <span>Apply these permissions to all tasks and routines</span>
-            </label>
+            <p className="text-sm text-gray-600 mb-2">
+              Collaborators will have access to all goals, tasks, and routines in this area.
+            </p>
           </div>
 
           <div>
@@ -240,4 +215,4 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
   );
 };
 
-export default GoalSharingModal; 
+export default AreaSharingModal; 
