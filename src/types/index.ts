@@ -45,17 +45,38 @@ export interface BaseDocument {
   updatedAt: Timestamp;
 }
 
+export type PermissionLevel = 'owner' | 'admin' | 'editor' | 'viewer';
+
+export interface HierarchicalPermissions {
+  level: PermissionLevel;
+  inheritedFrom?: {
+    type: 'area' | 'goal' | 'milestone';
+    id: string;
+  };
+  specificOverrides?: {
+    canEditTasks?: boolean;
+    canEditRoutines?: boolean;
+    canInviteUsers?: boolean;
+    canModifyPermissions?: boolean;
+  };
+}
+
+export interface PermissionInheritanceSettings {
+  propagateToGoals: boolean;
+  propagateToMilestones: boolean;
+  propagateToTasks: boolean;
+  propagateToRoutines: boolean;
+}
+
 export interface Area extends BaseDocument {
   name: string;
   description?: string;
   color?: string;
   sharedWith: string[]; // Array of user IDs
   permissions: {
-    [userId: string]: {
-      edit: boolean;
-      view: boolean;
-    }
+    [userId: string]: HierarchicalPermissions;
   };
+  permissionInheritance: PermissionInheritanceSettings;
 }
 
 export type TaskPriority = 'high' | 'medium' | 'low';
@@ -82,12 +103,9 @@ export interface Task extends BaseDocument {
   assignedTo?: string;
   priority: TaskPriority;
   status: TaskStatus;
-  sharedWith: string[]; // Users this task is shared with
+  sharedWith: string[];
   permissions: {
-    [userId: string]: {
-      edit: boolean;
-      view: boolean;
-    }
+    [userId: string]: HierarchicalPermissions;
   };
   notes?: {
     content: string;
@@ -145,6 +163,9 @@ export interface Routine extends BaseDocument {
   endDate?: Timestamp;
   areaId?: string;
   assignedTo?: string;
+  permissions: {
+    [userId: string]: HierarchicalPermissions;
+  };
   completionDates: Timestamp[];
   weeklyCompletionTracker?: boolean[];
   missedReason?: MissedReason;
@@ -189,6 +210,10 @@ export interface SharedGoal extends BaseDocument {
   sharedWith: string[];
   deadline?: Timestamp;
   status: 'active' | 'completed' | 'abandoned';
+  permissions: {
+    [userId: string]: HierarchicalPermissions;
+  };
+  permissionInheritance: PermissionInheritanceSettings;
   participants: {
     [userId: string]: {
       joinedAt: Timestamp;

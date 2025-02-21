@@ -7,9 +7,32 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { Tabs, Tab, Dialog, DialogTitle, DialogContent, DialogActions, Button } from '@mui/material';
 import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
-import { SourceActivity, Milestone, TaskStatus, Routine, ReviewCycle, TimeTrackingType, MeasurableMetric, AchievabilityCheck, Task, RoutineWithoutSystemFields, DayOfWeek } from '../types';
+import { useAuth } from '../contexts/AuthContext';
+import { getUserService } from '../services/UserService';
+import { 
+  SourceActivity, 
+  Milestone, 
+  TaskStatus, 
+  Routine, 
+  ReviewCycle, 
+  TimeTrackingType, 
+  MeasurableMetric, 
+  AchievabilityCheck, 
+  Task, 
+  RoutineWithoutSystemFields, 
+  DayOfWeek,
+  UserProfile
+} from '../types';
 import { Timestamp } from 'firebase/firestore';
-import { MEASURABLE_METRIC_OPTIONS, ACHIEVABILITY_OPTIONS, STATUS_OPTIONS, REVIEW_CYCLE_OPTIONS } from '../constants';
+import { 
+  MEASURABLE_METRIC_OPTIONS,
+  ACHIEVABILITY_OPTIONS,
+  STATUS_OPTIONS,
+  REVIEW_CYCLE_OPTIONS 
+} from '../constants';
+import { db } from '../lib/firebase';
+import { onSnapshot, doc } from 'firebase/firestore';
+import GoalSharingModal from '../components/GoalSharingModal';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -44,12 +67,81 @@ const EditGoalPage: React.FC = () => {
   const navigate = useNavigate();
   const { areas } = useAreasContext();
   const { goals, updateGoal } = useGoalsContext();
+  const { currentUser } = useAuth();
+  const userService = getUserService();
   const defaultTimestamp = Timestamp.fromDate(new Date());
 
   const [currentTab, setCurrentTab] = useState(0);
   const [openModal, setOpenModal] = useState<string | null>(null);
+  const [participants, setParticipants] = useState<UserProfile[]>([]);
+  const [isLoadingParticipants, setIsLoadingParticipants] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   const goal = goals.find(g => g.id === goalId);
+
+  useEffect(() => {
+    const loadParticipants = async () => {
+      if (!goal) return;
+
+      setIsLoadingParticipants(true);
+      try {
+        // Get all users who have access to this goal
+        const sharedUserIds = new Set([
+          goal.ownerId,
+          ...goal.sharedWith,
+          // Include users with task-specific access
+          ...goal.tasks?.flatMap(task => task.sharedWith || []) || [],
+          // Include users with routine-specific access
+          ...goal.routines?.map(routine => routine.assignedTo).filter((id): id is string => !!id) || []
+        ]);
+
+        // Add the current user if not already included
+        if (currentUser) {
+          sharedUserIds.add(currentUser.uid);
+        }
+
+        // Fetch user profiles
+        const users = await userService.findUsersByIds(Array.from(sharedUserIds));
+        setParticipants(users);
+      } catch (error) {
+        console.error('Error loading participants:', error);
+      } finally {
+        setIsLoadingParticipants(false);
+      }
+    };
+
+    loadParticipants();
+  }, [goal, currentUser]);
+
+  useEffect(() => {
+    if (!goalId) return;
+
+    // Subscribe to real-time updates for the goal's sharing settings
+    const unsubscribe = onSnapshot(doc(db, 'shared_goals', goalId), 
+      async (doc) => {
+        if (doc.exists()) {
+          const data = doc.data();
+          // Update participants when sharing changes
+          const sharedUserIds = new Set([
+            data.ownerId,
+            ...(data.sharedWith || [])
+          ]);
+          
+          if (currentUser) {
+            sharedUserIds.add(currentUser.uid);
+          }
+
+          const users = await userService.findUsersByIds(Array.from(sharedUserIds));
+          setParticipants(users);
+        }
+      },
+      (error) => {
+        console.error('Error listening to goal updates:', error);
+      }
+    );
+
+    return () => unsubscribe();
+  }, [goalId, currentUser]);
 
   const [formData, setFormData] = useState<SourceActivity>({
     id: '',
@@ -154,6 +246,7 @@ const EditGoalPage: React.FC = () => {
       ownerId: formData.ownerId,
       createdAt: defaultTimestamp,
       updatedAt: defaultTimestamp,
+      permissions: {},
       review: {
         reflectionFrequency: 'weekly',
         reviewStatus: {
@@ -680,547 +773,650 @@ const EditGoalPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* Milestone Tasks & Routines Modal */}
-      {formData.milestones?.map((milestone, index) => (
-        <Dialog
-          key={milestone.id}
-          open={openModal === `milestone-${index}`}
-          onClose={() => setOpenModal(null)}
-          maxWidth="md"
-          fullWidth
-        >
-          <DialogTitle>Edit Milestone Tasks & Routines</DialogTitle>
-          <DialogContent>
-            <div className="space-y-6 py-4">
-              {/* Tasks Section */}
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium">Tasks</h3>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newTask: Task = {
-                        id: crypto.randomUUID(),
-                        title: '',
-                        description: '',
-                        priority: 'medium',
-                        status: 'not_started',
-                        completed: false,
-                        sharedWith: [],
-                        ownerId: formData.ownerId,
-                        createdAt: defaultTimestamp,
-                        updatedAt: defaultTimestamp,
-                        permissions: {}
-                      };
-
-                      setFormData(prev => {
-                        const newMilestones = [...prev.milestones];
-                        newMilestones[index] = {
-                          ...newMilestones[index],
-                          tasks: [...(newMilestones[index].tasks || []), newTask.id]
-                        };
-                        return {
-                          ...prev,
-                          milestones: newMilestones,
-                          tasks: [...prev.tasks, newTask]
-                        };
-                      });
-                    }}
-                    className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Task
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  {milestone.tasks.map((taskId, taskIndex) => {
-                    const task = formData.tasks.find(t => t.id === taskId);
-                    if (!task) return null;
-
-                    return (
-                      <div key={taskId} className="border rounded-lg p-4 space-y-4">
-                        <div className="flex justify-between items-center">
-                          <input
-                            type="text"
-                            value={task.title}
-                            onChange={e => {
-                              setFormData(prev => {
-                                const newTasks = [...prev.tasks];
-                                const taskIndex = newTasks.findIndex(t => t.id === taskId);
-                                if (taskIndex === -1) return prev;
-                                
-                                newTasks[taskIndex] = {
-                                  ...newTasks[taskIndex],
-                                  title: e.target.value
-                                };
-                                return { ...prev, tasks: newTasks };
-                              });
-                            }}
-                            className="flex-1 p-2 border rounded-md"
-                            placeholder="Task title"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFormData(prev => {
-                                const newMilestones = [...prev.milestones];
-                                newMilestones[index] = {
-                                  ...newMilestones[index],
-                                  tasks: newMilestones[index].tasks.filter(id => id !== taskId)
-                                };
-                                return {
-                                  ...prev,
-                                  milestones: newMilestones,
-                                  tasks: prev.tasks.filter(t => t.id !== taskId)
-                                };
-                              });
-                            }}
-                            className="ml-2 text-red-500 hover:text-red-700"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <LocalizationProvider dateAdapter={AdapterDateFns}>
-                          <DatePicker
-                            label="Due Date"
-                            value={getDateFromTimestamp(task.dueDate)}
-                            onChange={(date) => {
-                              setFormData(prev => {
-                                const newTasks = [...prev.tasks];
-                                const taskIndex = newTasks.findIndex(t => t.id === taskId);
-                                if (taskIndex === -1) return prev;
-                                
-                                newTasks[taskIndex] = {
-                                  ...newTasks[taskIndex],
-                                  dueDate: createTimestamp(date)
-                                };
-                                return { ...prev, tasks: newTasks };
-                              });
-                            }}
-                            slotProps={{
-                              textField: {
-                                fullWidth: true,
-                                className: "w-full p-2 border rounded-md"
-                              }
-                            }}
-                          />
-                        </LocalizationProvider>
-                        <select
-                          value={task.status}
-                          onChange={e => {
-                            setFormData(prev => {
-                              const newTasks = [...prev.tasks];
-                              const taskIndex = newTasks.findIndex(t => t.id === taskId);
-                              if (taskIndex === -1) return prev;
-                              
-                              newTasks[taskIndex] = {
-                                ...newTasks[taskIndex],
-                                status: e.target.value as TaskStatus,
-                                completed: e.target.value === 'completed'
-                              };
-                              return { ...prev, tasks: newTasks };
-                            });
-                          }}
-                          className="w-full p-2 border rounded-md"
-                        >
-                          {STATUS_OPTIONS.map((option: OptionType) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Routines Section */}
-              <div>
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-lg font-medium">Routines</h3>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const newRoutine: Routine = {
-                        id: crypto.randomUUID(),
-                        title: '',
-                        description: '',
-                        frequency: 'daily',
-                        schedule: {
-                          type: 'daily',
-                          targetCount: 1,
-                          timeOfDay: { hour: 9, minute: 0 },
-                          daysOfWeek: [],
-                          monthsOfYear: []
-                        },
-                        targetCount: 1,
-                        completionDates: [],
-                        ownerId: formData.ownerId,
-                        createdAt: defaultTimestamp,
-                        updatedAt: defaultTimestamp,
-                        review: {
-                          reflectionFrequency: 'weekly',
-                          reviewStatus: {
-                            lastReviewDate: defaultTimestamp,
-                            nextReviewDate: defaultTimestamp,
-                            completedReviews: []
-                          },
-                          adherenceRate: 0,
-                          streakData: {
-                            currentStreak: 0,
-                            longestStreak: 0,
-                            lastCompletedDate: defaultTimestamp
-                          }
-                        }
-                      };
-
-                      setFormData(prev => {
-                        const newMilestones = [...prev.milestones];
-                        newMilestones[index] = {
-                          ...newMilestones[index],
-                          routines: [...(newMilestones[index].routines || []), newRoutine.id]
-                        };
-                        return {
-                          ...prev,
-                          milestones: newMilestones,
-                          routines: [...prev.routines, newRoutine]
-                        };
-                      });
-                    }}
-                    className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Routine
-                  </button>
-                </div>
-                <div className="space-y-4">
-                  {(milestone.routines || [])?.map((routineId, routineIndex) => {
-                    const routine = formData.routines.find(r => getRoutineId(r) === routineId);
-                    if (!routine) return null;
-
-                    return (
-                      <div key={routineId} className="border rounded-lg p-4 space-y-4">
-                        <div className="flex justify-between items-center">
-                          <input
-                            type="text"
-                            value={routine.title}
-                            onChange={e => {
-                              setFormData(prev => {
-                                const newRoutines = [...prev.routines];
-                                const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === routineId);
-                                if (routineIndex === -1) return prev;
-                                
-                                newRoutines[routineIndex] = {
-                                  ...newRoutines[routineIndex],
-                                  title: e.target.value
-                                };
-                                return { ...prev, routines: newRoutines };
-                              });
-                            }}
-                            className="flex-1 p-2 border rounded-md"
-                            placeholder="Routine title"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFormData(prev => {
-                                const newMilestones = [...prev.milestones];
-                                newMilestones[index] = {
-                                  ...newMilestones[index],
-                                  routines: newMilestones[index].routines?.filter(id => id !== routineId) || []
-                                };
-                                return {
-                                  ...prev,
-                                  milestones: newMilestones,
-                                  routines: prev.routines.filter(r => getRoutineId(r) !== routineId)
-                                };
-                              });
-                            }}
-                            className="ml-2 text-red-500 hover:text-red-700"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                        <textarea
-                          value={routine.description || ''}
-                          onChange={e => {
-                            setFormData(prev => {
-                              const newRoutines = [...prev.routines];
-                              const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === routineId);
-                              if (routineIndex === -1) return prev;
-                              
-                              newRoutines[routineIndex] = {
-                                ...newRoutines[routineIndex],
-                                description: e.target.value
-                              };
-                              return { ...prev, routines: newRoutines };
-                            });
-                          }}
-                          className="w-full p-2 border rounded-md"
-                          placeholder="Routine description"
-                          rows={2}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setOpenModal(`milestone-${index}-routine-${routineIndex}`)}
-                          className="text-blue-600 hover:text-blue-800 text-sm"
-                        >
-                          Edit Schedule & Details
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenModal(null)}>Close</Button>
-          </DialogActions>
-        </Dialog>
-      ))}
-
-      {/* Routine Details Modal */}
-      {formData.routines?.map((routine, index) => (
-        <Dialog
-          key={getRoutineId(routine)}
-          open={openModal === `routine-${index}`}
-          onClose={() => setOpenModal(null)}
-          maxWidth="md"
-          fullWidth
-        >
-          <DialogTitle>Edit Routine Details</DialogTitle>
-          <DialogContent>
-            <div className="space-y-6 py-4">
-              <textarea
-                value={routine.description || ''}
-                onChange={e => {
-                  setFormData(prev => {
-                    const newRoutines = [...prev.routines];
-                    const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                    if (routineIndex === -1) return prev;
-                    
-                    newRoutines[routineIndex] = {
-                      ...newRoutines[routineIndex],
-                      description: e.target.value
-                    };
-                    return { ...prev, routines: newRoutines };
-                  });
-                }}
-                className="w-full p-2 border rounded-md"
-                placeholder="Routine description"
-                rows={2}
-              />
-              {/* Existing routine frequency and schedule management */}
-            </div>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setOpenModal(null)}>Close</Button>
-          </DialogActions>
-        </Dialog>
-      ))}
-
-      {/* Routine Schedule & Details Modal */}
-      {formData.milestones?.map((milestone, milestoneIndex) => (
-        milestone.routines?.map((routineId, routineIndex) => {
-          const routine = formData.routines.find(r => getRoutineId(r) === routineId);
-          if (!routine) return null;
-
-          return (
+      {isLoadingParticipants ? (
+        <div className="flex items-center justify-center p-4">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+        </div>
+      ) : (
+        <>
+          {/* Milestone Tasks & Routines Modal */}
+          {formData.milestones?.map((milestone, index) => (
             <Dialog
-              key={`${milestone.id}-${routineId}`}
-              open={openModal === `milestone-${milestoneIndex}-routine-${routineIndex}`}
+              key={milestone.id}
+              open={openModal === `milestone-${index}`}
               onClose={() => setOpenModal(null)}
               maxWidth="md"
               fullWidth
             >
-              <DialogTitle>Edit Routine Schedule & Details</DialogTitle>
+              <DialogTitle>Edit Milestone Tasks & Routines</DialogTitle>
               <DialogContent>
                 <div className="space-y-6 py-4">
+                  {/* Tasks Section */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Frequency
-                    </label>
-                    <select
-                      value={routine.frequency}
-                      onChange={e => {
-                        const frequency = e.target.value as Routine['frequency'];
-                        setFormData(prev => {
-                          const newRoutines = [...prev.routines];
-                          const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                          if (routineIndex === -1) return prev;
-                          
-                          newRoutines[routineIndex] = {
-                            ...newRoutines[routineIndex],
-                            frequency,
-                            schedule: {
-                              ...newRoutines[routineIndex].schedule,
-                              type: frequency,
-                              daysOfWeek: [],
-                              timeOfDay: { hour: 9, minute: 0 }
-                            }
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-medium">Tasks</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newTask: Task = {
+                            id: crypto.randomUUID(),
+                            title: '',
+                            description: '',
+                            priority: 'medium',
+                            status: 'not_started',
+                            completed: false,
+                            sharedWith: [],
+                            ownerId: formData.ownerId,
+                            createdAt: defaultTimestamp,
+                            updatedAt: defaultTimestamp,
+                            permissions: {}
                           };
-                          return { ...prev, routines: newRoutines };
-                        });
-                      }}
-                      className="w-full p-2 border rounded-md"
-                    >
-                      <option value="daily">Daily</option>
-                      <option value="weekly">Weekly</option>
-                      <option value="monthly">Monthly</option>
-                      <option value="quarterly">Quarterly</option>
-                      <option value="yearly">Yearly</option>
-                    </select>
-                  </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Times per {routine.frequency}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={routine.targetCount}
-                      onChange={e => {
-                        const targetCount = Math.max(1, parseInt(e.target.value) || 1);
-                        setFormData(prev => {
-                          const newRoutines = [...prev.routines];
-                          const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                          if (routineIndex === -1) return prev;
-                          
-                          newRoutines[routineIndex] = {
-                            ...newRoutines[routineIndex],
-                            targetCount,
-                            schedule: {
-                              ...newRoutines[routineIndex].schedule,
-                              targetCount
-                            }
-                          };
-                          return { ...prev, routines: newRoutines };
-                        });
-                      }}
-                      className="w-full p-2 border rounded-md"
-                    />
-                  </div>
-
-                  {routine.frequency === 'weekly' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Schedule {routine.targetCount} occurrences per week
-                      </label>
-                      <div className="space-y-4">
-                        {[...Array(routine.targetCount)].map((_, occurrenceIndex) => (
-                          <div key={occurrenceIndex} className="flex gap-4 items-center">
-                            <select
-                              value={routine.schedule.daysOfWeek?.[occurrenceIndex]?.day || 'monday'}
-                              onChange={e => {
-                                setFormData(prev => {
-                                  const newRoutines = [...prev.routines];
-                                  const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                                  if (routineIndex === -1) return prev;
-                                  
-                                  const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
-                                  newDaysOfWeek[occurrenceIndex] = {
-                                    ...(newDaysOfWeek[occurrenceIndex] || {}),
-                                    day: e.target.value as DayOfWeek,
-                                    time: newDaysOfWeek[occurrenceIndex]?.time || { hour: 9, minute: 0 }
-                                  };
-                                  
-                                  newRoutines[routineIndex] = {
-                                    ...newRoutines[routineIndex],
-                                    schedule: {
-                                      ...newRoutines[routineIndex].schedule,
-                                      daysOfWeek: newDaysOfWeek
-                                    }
-                                  };
-                                  return { ...prev, routines: newRoutines };
-                                });
-                              }}
-                              className="flex-1 p-2 border rounded-md"
-                            >
-                              <option value="monday">Monday</option>
-                              <option value="tuesday">Tuesday</option>
-                              <option value="wednesday">Wednesday</option>
-                              <option value="thursday">Thursday</option>
-                              <option value="friday">Friday</option>
-                              <option value="saturday">Saturday</option>
-                              <option value="sunday">Sunday</option>
-                            </select>
-                            <input
-                              type="time"
-                              value={`${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.minute || 0).padStart(2, '0')}`}
-                              onChange={e => {
-                                const [hours, minutes] = e.target.value.split(':').map(Number);
-                                setFormData(prev => {
-                                  const newRoutines = [...prev.routines];
-                                  const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                                  if (routineIndex === -1) return prev;
-                                  
-                                  const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
-                                  newDaysOfWeek[occurrenceIndex] = {
-                                    ...(newDaysOfWeek[occurrenceIndex] || { day: 'monday' }),
-                                    time: { hour: hours, minute: minutes }
-                                  };
-                                  
-                                  newRoutines[routineIndex] = {
-                                    ...newRoutines[routineIndex],
-                                    schedule: {
-                                      ...newRoutines[routineIndex].schedule,
-                                      daysOfWeek: newDaysOfWeek
-                                    }
-                                  };
-                                  return { ...prev, routines: newRoutines };
-                                });
-                              }}
-                              className="w-32 p-2 border rounded-md"
-                            />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {routine.frequency === 'monthly' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Day of Month
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={routine.schedule.dayOfMonth || 1}
-                        onChange={e => {
-                          const dayOfMonth = parseInt(e.target.value) || 1;
                           setFormData(prev => {
-                            const newRoutines = [...prev.routines];
-                            const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
-                            if (routineIndex === -1) return prev;
-                            
-                            newRoutines[routineIndex] = {
-                              ...newRoutines[routineIndex],
-                              schedule: {
-                                ...newRoutines[routineIndex].schedule,
-                                dayOfMonth
-                              }
+                            const newMilestones = [...prev.milestones];
+                            newMilestones[index] = {
+                              ...newMilestones[index],
+                              tasks: [...(newMilestones[index].tasks || []), newTask.id]
                             };
-                            return { ...prev, routines: newRoutines };
+                            return {
+                              ...prev,
+                              milestones: newMilestones,
+                              tasks: [...prev.tasks, newTask]
+                            };
                           });
                         }}
-                        className="w-full p-2 border rounded-md"
-                      />
+                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Task
+                      </button>
                     </div>
-                  )}
+                    <div className="space-y-4">
+                      {milestone.tasks.map((taskId, taskIndex) => {
+                        const task = formData.tasks.find(t => t.id === taskId);
+                        if (!task) return null;
+
+                        return (
+                          <div key={taskId} className="border rounded-lg p-4 space-y-4">
+                            <div className="flex justify-between items-center">
+                              <input
+                                type="text"
+                                value={task.title}
+                                onChange={e => {
+                                  setFormData(prev => {
+                                    const newTasks = [...prev.tasks];
+                                    const taskIndex = newTasks.findIndex(t => t.id === taskId);
+                                    if (taskIndex === -1) return prev;
+                                    
+                                    newTasks[taskIndex] = {
+                                      ...newTasks[taskIndex],
+                                      title: e.target.value
+                                    };
+                                    return { ...prev, tasks: newTasks };
+                                  });
+                                }}
+                                className="flex-1 p-2 border rounded-md"
+                                placeholder="Task title"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => {
+                                    const newMilestones = [...prev.milestones];
+                                    newMilestones[index] = {
+                                      ...newMilestones[index],
+                                      tasks: newMilestones[index].tasks.filter(id => id !== taskId)
+                                    };
+                                    return {
+                                      ...prev,
+                                      milestones: newMilestones,
+                                      tasks: prev.tasks.filter(t => t.id !== taskId)
+                                    };
+                                  });
+                                }}
+                                className="ml-2 text-red-500 hover:text-red-700"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <LocalizationProvider dateAdapter={AdapterDateFns}>
+                              <DatePicker
+                                label="Due Date"
+                                value={getDateFromTimestamp(task.dueDate)}
+                                onChange={(date) => {
+                                  setFormData(prev => {
+                                    const newTasks = [...prev.tasks];
+                                    const taskIndex = newTasks.findIndex(t => t.id === taskId);
+                                    if (taskIndex === -1) return prev;
+                                    
+                                    newTasks[taskIndex] = {
+                                      ...newTasks[taskIndex],
+                                      dueDate: createTimestamp(date)
+                                    };
+                                    return { ...prev, tasks: newTasks };
+                                  });
+                                }}
+                                slotProps={{
+                                  textField: {
+                                    fullWidth: true,
+                                    className: "w-full p-2 border rounded-md"
+                                  }
+                                }}
+                              />
+                            </LocalizationProvider>
+                            <select
+                              value={task.status}
+                              onChange={e => {
+                                setFormData(prev => {
+                                  const newTasks = [...prev.tasks];
+                                  const taskIndex = newTasks.findIndex(t => t.id === taskId);
+                                  if (taskIndex === -1) return prev;
+                                  
+                                  newTasks[taskIndex] = {
+                                    ...newTasks[taskIndex],
+                                    status: e.target.value as TaskStatus,
+                                    completed: e.target.value === 'completed'
+                                  };
+                                  return { ...prev, tasks: newTasks };
+                                });
+                              }}
+                              className="w-full p-2 border rounded-md"
+                            >
+                              {STATUS_OPTIONS.map((option: OptionType) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Routines Section */}
+                  <div>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-lg font-medium">Routines</h3>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newRoutine: Routine = {
+                            id: crypto.randomUUID(),
+                            title: '',
+                            description: '',
+                            frequency: 'daily',
+                            schedule: {
+                              type: 'daily',
+                              targetCount: 1,
+                              timeOfDay: { hour: 9, minute: 0 },
+                              daysOfWeek: [],
+                              monthsOfYear: []
+                            },
+                            targetCount: 1,
+                            completionDates: [],
+                            ownerId: formData.ownerId,
+                            createdAt: defaultTimestamp,
+                            updatedAt: defaultTimestamp,
+                            permissions: {},
+                            review: {
+                              reflectionFrequency: 'weekly',
+                              reviewStatus: {
+                                lastReviewDate: defaultTimestamp,
+                                nextReviewDate: defaultTimestamp,
+                                completedReviews: []
+                              },
+                              adherenceRate: 0,
+                              streakData: {
+                                currentStreak: 0,
+                                longestStreak: 0,
+                                lastCompletedDate: defaultTimestamp
+                              }
+                            }
+                          };
+
+                          setFormData(prev => {
+                            const newMilestones = [...prev.milestones];
+                            newMilestones[index] = {
+                              ...newMilestones[index],
+                              routines: [...(newMilestones[index].routines || []), newRoutine.id]
+                            };
+                            return {
+                              ...prev,
+                              milestones: newMilestones,
+                              routines: [...prev.routines, newRoutine]
+                            };
+                          });
+                        }}
+                        className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                      >
+                        <Plus className="w-4 h-4" />
+                        Add Routine
+                      </button>
+                    </div>
+                    <div className="space-y-4">
+                      {(milestone.routines || [])?.map((routineId, routineIndex) => {
+                        const routine = formData.routines.find(r => getRoutineId(r) === routineId);
+                        if (!routine) return null;
+
+                        return (
+                          <div key={routineId} className="border rounded-lg p-4 space-y-4">
+                            <div className="flex justify-between items-center">
+                              <input
+                                type="text"
+                                value={routine.title}
+                                onChange={e => {
+                                  setFormData(prev => {
+                                    const newRoutines = [...prev.routines];
+                                    const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === routineId);
+                                    if (routineIndex === -1) return prev;
+                                    
+                                    newRoutines[routineIndex] = {
+                                      ...newRoutines[routineIndex],
+                                      title: e.target.value
+                                    };
+                                    return { ...prev, routines: newRoutines };
+                                  });
+                                }}
+                                className="flex-1 p-2 border rounded-md"
+                                placeholder="Routine title"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => {
+                                    const newMilestones = [...prev.milestones];
+                                    newMilestones[index] = {
+                                      ...newMilestones[index],
+                                      routines: newMilestones[index].routines?.filter(id => id !== routineId) || []
+                                    };
+                                    return {
+                                      ...prev,
+                                      milestones: newMilestones,
+                                      routines: prev.routines.filter(r => getRoutineId(r) !== routineId)
+                                    };
+                                  });
+                                }}
+                                className="ml-2 text-red-500 hover:text-red-700"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <textarea
+                              value={routine.description || ''}
+                              onChange={e => {
+                                setFormData(prev => {
+                                  const newRoutines = [...prev.routines];
+                                  const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === routineId);
+                                  if (routineIndex === -1) return prev;
+                                  
+                                  newRoutines[routineIndex] = {
+                                    ...newRoutines[routineIndex],
+                                    description: e.target.value
+                                  };
+                                  return { ...prev, routines: newRoutines };
+                                });
+                              }}
+                              className="w-full p-2 border rounded-md"
+                              placeholder="Routine description"
+                              rows={2}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setOpenModal(`milestone-${index}-routine-${routineIndex}`)}
+                              className="text-blue-600 hover:text-blue-800 text-sm"
+                            >
+                              Edit Schedule & Details
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </DialogContent>
               <DialogActions>
                 <Button onClick={() => setOpenModal(null)}>Close</Button>
               </DialogActions>
             </Dialog>
-          );
-        })
-      ))}
+          ))}
+
+          {/* Routine Details Modal */}
+          {formData.routines?.map((routine, index) => (
+            <Dialog
+              key={getRoutineId(routine)}
+              open={openModal === `routine-${index}`}
+              onClose={() => setOpenModal(null)}
+              maxWidth="md"
+              fullWidth
+            >
+              <DialogTitle>Edit Routine Details</DialogTitle>
+              <DialogContent>
+                <div className="space-y-6 py-4">
+                  <textarea
+                    value={routine.description || ''}
+                    onChange={e => {
+                      setFormData(prev => {
+                        const newRoutines = [...prev.routines];
+                        const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                        if (routineIndex === -1) return prev;
+                        
+                        newRoutines[routineIndex] = {
+                          ...newRoutines[routineIndex],
+                          description: e.target.value
+                        };
+                        return { ...prev, routines: newRoutines };
+                      });
+                    }}
+                    className="w-full p-2 border rounded-md"
+                    placeholder="Routine description"
+                    rows={2}
+                  />
+                  {/* Existing routine frequency and schedule management */}
+                </div>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setOpenModal(null)}>Close</Button>
+              </DialogActions>
+            </Dialog>
+          ))}
+
+          {/* Routine Schedule & Details Modal */}
+          {formData.milestones?.map((milestone, milestoneIndex) => (
+            milestone.routines?.map((routineId, routineIndex) => {
+              const routine = formData.routines.find(r => getRoutineId(r) === routineId);
+              if (!routine) return null;
+
+              return (
+                <Dialog
+                  key={`${milestone.id}-${routineId}`}
+                  open={openModal === `milestone-${milestoneIndex}-routine-${routineIndex}`}
+                  onClose={() => setOpenModal(null)}
+                  maxWidth="md"
+                  fullWidth
+                >
+                  <DialogTitle>Edit Routine Schedule & Details</DialogTitle>
+                  <DialogContent>
+                    <div className="space-y-6 py-4">
+                      <div>
+                        <div className="flex justify-between items-center">
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Assigned To
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setOpenModal(null);
+                              setIsShareModalOpen(true);
+                            }}
+                            className="text-blue-600 hover:text-blue-800 text-sm flex items-center gap-1"
+                          >
+                            <Users className="w-4 h-4" />
+                            Invite Users
+                          </button>
+                        </div>
+                        <select
+                          value={routine.assignedTo || ''}
+                          onChange={e => {
+                            setFormData(prev => {
+                              const newRoutines = [...prev.routines];
+                              const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                              if (routineIndex === -1) return prev;
+                              
+                              newRoutines[routineIndex] = {
+                                ...newRoutines[routineIndex],
+                                assignedTo: e.target.value || undefined
+                              };
+                              return { ...prev, routines: newRoutines };
+                            });
+                          }}
+                          className="w-full p-2 border rounded-md mb-6"
+                        >
+                          <option value="">Select user</option>
+                          {participants.map(user => (
+                            <option key={user.id} value={user.id}>
+                              {user.email || user.displayName}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Frequency
+                        </label>
+                        <select
+                          value={routine.frequency}
+                          onChange={e => {
+                            const frequency = e.target.value as Routine['frequency'];
+                            setFormData(prev => {
+                              const newRoutines = [...prev.routines];
+                              const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                              if (routineIndex === -1) return prev;
+                              
+                              newRoutines[routineIndex] = {
+                                ...newRoutines[routineIndex],
+                                frequency,
+                                schedule: {
+                                  ...newRoutines[routineIndex].schedule,
+                                  type: frequency,
+                                  daysOfWeek: [],
+                                  timeOfDay: { hour: 9, minute: 0 }
+                                }
+                              };
+                              return { ...prev, routines: newRoutines };
+                            });
+                          }}
+                          className="w-full p-2 border rounded-md"
+                        >
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                          <option value="yearly">Yearly</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Times per {routine.frequency}
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={routine.targetCount}
+                          onChange={e => {
+                            const targetCount = Math.max(1, parseInt(e.target.value) || 1);
+                            setFormData(prev => {
+                              const newRoutines = [...prev.routines];
+                              const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                              if (routineIndex === -1) return prev;
+                              
+                              newRoutines[routineIndex] = {
+                                ...newRoutines[routineIndex],
+                                targetCount,
+                                schedule: {
+                                  ...newRoutines[routineIndex].schedule,
+                                  targetCount
+                                }
+                              };
+                              return { ...prev, routines: newRoutines };
+                            });
+                          }}
+                          className="w-full p-2 border rounded-md"
+                        />
+                      </div>
+
+                      {routine.frequency === 'weekly' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Schedule {routine.targetCount} occurrences per week
+                          </label>
+                          <div className="space-y-4">
+                            {[...Array(routine.targetCount)].map((_, occurrenceIndex) => (
+                              <div key={occurrenceIndex} className="space-y-2">
+                                <div className="flex gap-4 items-center">
+                                  <select
+                                    value={routine.schedule.daysOfWeek?.[occurrenceIndex]?.day || 'monday'}
+                                    onChange={e => {
+                                      setFormData(prev => {
+                                        const newRoutines = [...prev.routines];
+                                        const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                        if (routineIndex === -1) return prev;
+                                        
+                                        const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                        newDaysOfWeek[occurrenceIndex] = {
+                                          ...(newDaysOfWeek[occurrenceIndex] || {}),
+                                          day: e.target.value as DayOfWeek,
+                                          time: newDaysOfWeek[occurrenceIndex]?.time || { hour: 9, minute: 0 }
+                                        };
+                                        
+                                        newRoutines[routineIndex] = {
+                                          ...newRoutines[routineIndex],
+                                          schedule: {
+                                            ...newRoutines[routineIndex].schedule,
+                                            daysOfWeek: newDaysOfWeek
+                                          }
+                                        };
+                                        return { ...prev, routines: newRoutines };
+                                      });
+                                    }}
+                                    className="flex-1 p-2 border rounded-md"
+                                  >
+                                    <option value="monday">Monday</option>
+                                    <option value="tuesday">Tuesday</option>
+                                    <option value="wednesday">Wednesday</option>
+                                    <option value="thursday">Thursday</option>
+                                    <option value="friday">Friday</option>
+                                    <option value="saturday">Saturday</option>
+                                    <option value="sunday">Sunday</option>
+                                  </select>
+                                  <input
+                                    type="time"
+                                    value={`${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.minute || 0).padStart(2, '0')}`}
+                                    onChange={e => {
+                                      const [hours, minutes] = e.target.value.split(':').map(Number);
+                                      setFormData(prev => {
+                                        const newRoutines = [...prev.routines];
+                                        const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                        if (routineIndex === -1) return prev;
+                                        
+                                        const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                        newDaysOfWeek[occurrenceIndex] = {
+                                          ...(newDaysOfWeek[occurrenceIndex] || { day: 'monday' }),
+                                          time: { hour: hours, minute: minutes }
+                                        };
+                                        
+                                        newRoutines[routineIndex] = {
+                                          ...newRoutines[routineIndex],
+                                          schedule: {
+                                            ...newRoutines[routineIndex].schedule,
+                                            daysOfWeek: newDaysOfWeek
+                                          }
+                                        };
+                                        return { ...prev, routines: newRoutines };
+                                      });
+                                    }}
+                                    className="w-32 p-2 border rounded-md"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Assigned To This Occurrence
+                                  </label>
+                                  <select
+                                    value={routine.schedule.daysOfWeek?.[occurrenceIndex]?.assignedTo || ''}
+                                    onChange={e => {
+                                      setFormData(prev => {
+                                        const newRoutines = [...prev.routines];
+                                        const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                        if (routineIndex === -1) return prev;
+                                        
+                                        const newDaysOfWeek = [...(newRoutines[routineIndex].schedule.daysOfWeek || [])];
+                                        const user = participants.find(u => u.id === e.target.value);
+                                        newDaysOfWeek[occurrenceIndex] = {
+                                          ...(newDaysOfWeek[occurrenceIndex] || { day: 'monday', time: { hour: 9, minute: 0 } }),
+                                          assignedTo: e.target.value || undefined,
+                                          assignedToEmail: user?.email
+                                        };
+                                        
+                                        newRoutines[routineIndex] = {
+                                          ...newRoutines[routineIndex],
+                                          schedule: {
+                                            ...newRoutines[routineIndex].schedule,
+                                            daysOfWeek: newDaysOfWeek
+                                          }
+                                        };
+                                        return { ...prev, routines: newRoutines };
+                                      });
+                                    }}
+                                    className="w-full p-2 border rounded-md"
+                                  >
+                                    <option value="">Select user for this occurrence</option>
+                                    {participants.map(user => (
+                                      <option key={user.id} value={user.id}>
+                                        {user.email || user.displayName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {routine.frequency === 'monthly' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Day of Month
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="31"
+                            value={routine.schedule.dayOfMonth || 1}
+                            onChange={e => {
+                              const dayOfMonth = parseInt(e.target.value) || 1;
+                              setFormData(prev => {
+                                const newRoutines = [...prev.routines];
+                                const routineIndex = newRoutines.findIndex(r => getRoutineId(r) === getRoutineId(routine));
+                                if (routineIndex === -1) return prev;
+                                
+                                newRoutines[routineIndex] = {
+                                  ...newRoutines[routineIndex],
+                                  schedule: {
+                                    ...newRoutines[routineIndex].schedule,
+                                    dayOfMonth
+                                  }
+                                };
+                                return { ...prev, routines: newRoutines };
+                              });
+                            }}
+                            className="w-full p-2 border rounded-md"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </DialogContent>
+                  <DialogActions>
+                    <Button onClick={() => setOpenModal(null)}>Close</Button>
+                  </DialogActions>
+                </Dialog>
+              );
+            })
+          ))}
+        </>
+      )}
+
+      {/* Add GoalSharingModal */}
+      <GoalSharingModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        goalId={goalId}
+        initialTitle={formData.name}
+        areaId={formData.areaId}
+      />
     </div>
   );
 };
