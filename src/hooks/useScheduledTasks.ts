@@ -13,18 +13,36 @@ import type {
   RoutineWithoutSystemFields,
   DayOfWeek,
   DaySchedule,
-  Timestamp
+  Timestamp,
+  TaskDependency
 } from '../types';
 
 export interface ScheduledTask extends Task {
   source: {
-    type: 'goal' | 'routine' | 'habit';
+    type: 'goal' | 'routine' | 'habit' | 'milestone';
     goalName?: string;
     routineName?: string;
     milestoneName?: string;
   };
   isRoutine?: boolean;
   routineCompletionDate?: Timestamp;
+  dependencies?: TaskDependency[];
+  dependentTasks?: string[];
+  complexity?: { level: 'high' | 'medium' | 'low' };
+  recurrence?: {
+    pattern: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+    interval: number;
+    daysOfWeek?: DaySchedule[];
+    dayOfMonth?: number;
+    skipDates?: Timestamp[];
+    lastCompleted?: Timestamp;
+    nextDue?: Timestamp;
+  };
+  progress?: {
+    percentComplete: number;
+    lastUpdated: Timestamp;
+    status: 'not_started' | 'in_progress' | 'completed';
+  };
 }
 
 const DAY_TO_NUMBER: Record<DayOfWeek, number> = {
@@ -61,7 +79,8 @@ export const useScheduledTasks = () => {
 
   const generateRoutineTasks = (
     routines: (Routine | RoutineWithoutSystemFields)[],
-    goalName: string
+    goalName: string,
+    milestoneName?: string
   ): ScheduledTask[] => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -71,7 +90,7 @@ export const useScheduledTasks = () => {
     const weekStart = new Date(today);
     weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
     const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6); // End of week (Saturday)
+    weekEnd.setDate(weekStart.getDate() + 6);
     
     return routines.flatMap(routine => {
       // Skip routines without system fields
@@ -97,52 +116,83 @@ export const useScheduledTasks = () => {
       const dayOfMonth = today.getDate();
       const month = today.getMonth();
 
+      // Handle skipped dates
+      const isDateSkipped = (date: Date) => {
+        return routine.skipDates?.some(skipDate => {
+          const skippedDate = getDateFromTimestamp(skipDate);
+          return skippedDate && 
+            skippedDate.getDate() === date.getDate() &&
+            skippedDate.getMonth() === date.getMonth() &&
+            skippedDate.getFullYear() === date.getFullYear();
+        });
+      };
+
+      // Get the next due date based on pattern
+      const getNextDueDate = (): Date | null => {
+        if (!routine.recurrence) return null;
+
+        const lastCompleted = routine.recurrence.lastCompleted ? 
+          getDateFromTimestamp(routine.recurrence.lastCompleted) : null;
+
+        switch (routine.recurrence.pattern) {
+          case 'daily':
+            return today;
+          case 'weekly':
+            if (routine.schedule?.daysOfWeek && routine.schedule.daysOfWeek.length > 0) {
+              // Find the next scheduled day that hasn't been completed
+              const nextDay = routine.schedule.daysOfWeek.find(ds => 
+                DAY_TO_NUMBER[ds.day] >= dayOfWeek &&
+                (!lastCompleted || lastCompleted < today)
+              );
+              if (nextDay) {
+                const nextDate = new Date(today);
+                nextDate.setDate(today.getDate() + (DAY_TO_NUMBER[nextDay.day] - dayOfWeek));
+                return nextDate;
+              }
+            }
+            return null;
+          case 'monthly':
+            if (routine.schedule?.dayOfMonth) {
+              const nextDate = new Date(today);
+              if (dayOfMonth <= routine.schedule.dayOfMonth) {
+                nextDate.setDate(routine.schedule.dayOfMonth);
+              } else {
+                nextDate.setMonth(nextDate.getMonth() + 1);
+                nextDate.setDate(routine.schedule.dayOfMonth);
+              }
+              return nextDate;
+            }
+            return null;
+          default:
+            return null;
+        }
+      };
+
+      // Determine scheduled days based on frequency and pattern
       switch (routine.frequency) {
         case 'daily':
-          scheduledDays.push(today);
+          if (!isDateSkipped(today)) {
+            scheduledDays.push(today);
+          }
           break;
         case 'weekly':
-          // Check schedule.daysOfWeek if it exists
-          const daysOfWeek = routine.schedule?.daysOfWeek;
-          if (daysOfWeek && daysOfWeek.length > 0) {
-            // Check if today matches any of the scheduled days
-            const isScheduledToday = daysOfWeek.some(ds => DAY_TO_NUMBER[ds.day] === dayOfWeek);
-            
-            // If today is one of the scheduled days and we haven't met the target count
-            if (isScheduledToday && completionsThisWeek < routine.targetCount) {
-              scheduledDays.push(today);
-            }
-          } else {
-            // Fallback: Schedule if behind on weekly target
-            if (completionsThisWeek < routine.targetCount) {
-              scheduledDays.push(today);
-            }
+          const nextDue = getNextDueDate();
+          if (nextDue && !isDateSkipped(nextDue)) {
+            scheduledDays.push(nextDue);
           }
           break;
         case 'monthly':
-          // Check if specific day of month is scheduled
-          if (routine.schedule?.dayOfMonth) {
-            if (dayOfMonth === routine.schedule.dayOfMonth) {
-              scheduledDays.push(today);
-            }
-          } else {
-            // Fallback: Schedule on 1st of month or if behind on monthly target
-            const completionsThisMonth = routine.completionDates.filter(date => {
-              const completionDate = getDateFromTimestamp(date);
-              return completionDate && completionDate.getMonth() === month;
-            }).length;
-            if (dayOfMonth === 1 || completionsThisMonth < routine.targetCount) {
-              scheduledDays.push(today);
-            }
+          if (routine.schedule?.dayOfMonth === dayOfMonth && !isDateSkipped(today)) {
+            scheduledDays.push(today);
           }
           break;
         case 'quarterly':
-          if (routine.schedule?.monthsOfYear?.includes(month + 1) && dayOfMonth === 1) {
+          if (routine.schedule?.monthsOfYear?.includes(month + 1) && dayOfMonth === 1 && !isDateSkipped(today)) {
             scheduledDays.push(today);
           }
           break;
         case 'yearly':
-          if ((routine.schedule?.monthsOfYear?.[0] === month + 1 || month === 0) && dayOfMonth === 1) {
+          if ((routine.schedule?.monthsOfYear?.[0] === month + 1 || month === 0) && dayOfMonth === 1 && !isDateSkipped(today)) {
             scheduledDays.push(today);
           }
           break;
@@ -160,12 +210,28 @@ export const useScheduledTasks = () => {
         createdAt: FirebaseTimestamp.fromDate(date),
         updatedAt: FirebaseTimestamp.fromDate(date),
         source: {
-          type: 'routine',
+          type: milestoneName ? 'milestone' : 'routine',
           goalName,
-          routineName: routine.title
+          routineName: routine.title,
+          milestoneName
         },
         isRoutine: true,
         routineCompletionDate: todayTimestamp,
+        complexity: routine.complexity,
+        recurrence: {
+          pattern: routine.frequency,
+          interval: routine.targetCount,
+          daysOfWeek: routine.schedule?.daysOfWeek,
+          dayOfMonth: routine.schedule?.dayOfMonth,
+          skipDates: routine.skipDates,
+          lastCompleted: routine.completionDates[routine.completionDates.length - 1],
+          nextDue: routine.recurrence?.nextDue
+        },
+        progress: {
+          percentComplete: 0,
+          lastUpdated: todayTimestamp,
+          status: 'not_started'
+        },
         sharedWith: [],
         permissions: {}
       }));
@@ -187,26 +253,33 @@ export const useScheduledTasks = () => {
       // Process both regular goals and user goals
       const allGoals = [...goals, ...userGoals];
 
-      allGoals.forEach(goal => {
+      allGoals.forEach((goal) => {
         // Process tasks from milestones first
-        goal.milestones.forEach(milestone => {
+        goal.milestones.forEach((milestone: { id: string; name: string; routines?: Routine[] }) => {
+          // Add milestone tasks
           const milestoneTasks = goal.tasks
-            .filter(task => task.milestoneId === milestone.id)
-            .map(task => ({
+            .filter((task: Task) => task.milestoneId === milestone.id)
+            .map((task: Task) => ({
               ...task,
               source: {
-                type: 'goal' as const,
+                type: 'milestone' as const,
                 goalName: goal.name,
                 milestoneName: milestone.name
               }
             }));
           allTasks.push(...milestoneTasks);
+
+          // Add milestone routines if they exist
+          if (milestone.routines) {
+            const milestoneRoutineTasks = generateRoutineTasks(milestone.routines, goal.name, milestone.name);
+            allTasks.push(...milestoneRoutineTasks);
+          }
         });
 
-        // Then add independent tasks (tasks not in any milestone)
+        // Add independent tasks
         const independentTasks = goal.tasks
-          .filter(task => !task.milestoneId)
-          .map(task => ({
+          .filter((task: Task) => !task.milestoneId)
+          .map((task: Task) => ({
             ...task,
             source: {
               type: 'goal' as const,
@@ -220,13 +293,38 @@ export const useScheduledTasks = () => {
         allTasks.push(...routineTasks);
       });
 
+      // Process dependencies
+      allTasks.forEach((task: ScheduledTask) => {
+        if (task.dependencies) {
+          // Find all tasks that depend on this task
+          const dependentTasks = allTasks
+            .filter((t: ScheduledTask) => t.dependencies?.some((d: TaskDependency) => d.taskId === t.id))
+            .map(t => t.id);
+          task.dependentTasks = dependentTasks;
+        }
+      });
+
       // Sort tasks by:
-      // 1. Overdue tasks first
-      // 2. High priority tasks
-      // 3. Due date
-      // 4. Routines
-      // 5. Creation date
-      allTasks.sort((a, b) => {
+      // 1. Dependencies (blocked tasks move down)
+      // 2. Overdue tasks
+      // 3. High priority tasks
+      // 4. Due date
+      // 5. Complexity
+      // 6. Routines
+      // 7. Creation date
+      allTasks.sort((a: ScheduledTask, b: ScheduledTask) => {
+        // Check if either task is blocked
+        const aBlocked = a.dependencies?.some((d: TaskDependency) => {
+          const depTask = allTasks.find(t => t.id === d.taskId);
+          return depTask && !depTask.completed;
+        }) ?? false;
+        const bBlocked = b.dependencies?.some((d: TaskDependency) => {
+          const depTask = allTasks.find(t => t.id === d.taskId);
+          return depTask && !depTask.completed;
+        }) ?? false;
+        if (aBlocked && !bBlocked) return 1;
+        if (!aBlocked && bBlocked) return -1;
+
         // Overdue tasks first
         const today = new Date();
         const aDate = getDateFromTimestamp(a.dueDate);
@@ -248,6 +346,14 @@ export const useScheduledTasks = () => {
         }
         if (aDate) return -1;
         if (bDate) return 1;
+
+        // Complexity
+        const complexityOrder = { high: 0, medium: 1, low: 2 };
+        const aComplexity = a.complexity?.level || 'medium';
+        const bComplexity = b.complexity?.level || 'medium';
+        if (aComplexity !== bComplexity) {
+          return complexityOrder[aComplexity] - complexityOrder[bComplexity];
+        }
 
         // Routines after regular tasks
         if (a.isRoutine && !b.isRoutine) return 1;
@@ -296,15 +402,15 @@ export const useScheduledTasks = () => {
       if (task.isRoutine) {
         console.log('Completing routine task');
         // For routines, update the completion dates array
-        const goal = goals.find(g => g.routines.some(r => r.title === task.source.routineName)) ||
-                    userGoals.find(g => g.routines.some(r => r.title === task.source.routineName));
+        const goal = goals.find(g => g.routines.some((r: Routine) => r.title === task.source.routineName)) ||
+                    userGoals.find(g => g.routines.some((r: Routine) => r.title === task.source.routineName));
         
         if (!goal) {
           console.error('Goal not found for routine:', task.source.routineName);
           return;
         }
         
-        const routine = goal.routines.find(r => r.title === task.source.routineName);
+        const routine = goal.routines.find((r: Routine) => r.title === task.source.routineName);
         if (!routine) {
           console.error('Routine not found in goal:', task.source.routineName);
           return;
@@ -320,7 +426,7 @@ export const useScheduledTasks = () => {
 
         console.log('Updated completion dates:', updatedRoutine.completionDates);
 
-        const updatedRoutines = goal.routines.map(r =>
+        const updatedRoutines = goal.routines.map((r: Routine) =>
           r.title === task.source.routineName ? updatedRoutine : r
         );
 
@@ -334,8 +440,8 @@ export const useScheduledTasks = () => {
       } else {
         console.log('Completing regular task');
         // For regular tasks, update the task's completed status
-        const goal = goals.find(g => g.tasks.some(t => t.id === taskId)) ||
-                    userGoals.find(g => g.tasks.some(t => t.id === taskId));
+        const goal = goals.find(g => g.tasks.some((t: Task) => t.id === taskId)) ||
+                    userGoals.find(g => g.tasks.some((t: Task) => t.id === taskId));
         
         if (!goal) {
           console.error('Goal not found for task:', taskId);
@@ -345,14 +451,14 @@ export const useScheduledTasks = () => {
         console.log('Found goal:', goal.name);
         
         // Find the existing task to preserve its notes
-        const existingTask = goal.tasks.find(t => t.id === taskId);
+        const existingTask = goal.tasks.find((t: Task) => t.id === taskId);
         
-        const updatedTasks = goal.tasks.map(t =>
+        const updatedTasks = goal.tasks.map((t: Task) =>
           t.id === taskId ? { 
             ...t, 
             completed: true, 
             updatedAt: FirebaseTimestamp.now(),
-            notes: existingTask?.notes // Preserve the notes when completing the task
+            notes: existingTask?.notes
           } : t
         );
 

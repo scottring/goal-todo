@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import React from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import {
   AppBar,
   Toolbar,
@@ -22,7 +22,6 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
-  const navigate = useNavigate();
   const { currentUser } = useAuth();
 
   const isActive = (path: string) => location.pathname === path;
@@ -37,29 +36,12 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   // Public routes that don't require authentication
   const isPublicPage = ['/signin', '/signup', '/forgot-password', '/accept-invite'].includes(location.pathname);
 
-  console.log('Layout rendering:', {
-    pathname: location.pathname,
-    search: location.search,
-    isPublicPage,
-    currentUser: !!currentUser
-  });
-
-  useEffect(() => {
-    if (!isPublicPage && !currentUser) {
-      console.log('No user found, redirecting to signin');
-      navigate('/signin', { state: { from: location.pathname } });
-    } else if (currentUser && location.pathname === '/') {
-      console.log('User authenticated, redirecting to areas');
-      navigate('/areas');
-    }
-  }, [currentUser, isPublicPage, location.pathname, navigate]);
-
   // Return just the children for public pages
   if (isPublicPage) {
     return <Box sx={{ minHeight: '100vh', p: 0 }}>{children}</Box>;
   }
 
-  // Show loading or nothing while checking auth
+  // Show nothing while checking auth
   if (!currentUser) {
     return null;
   }

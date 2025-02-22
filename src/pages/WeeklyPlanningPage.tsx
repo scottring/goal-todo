@@ -28,7 +28,7 @@ import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
 import { WeeklyPlanSummary } from '../components/WeeklyPlanSummary';
-import { format, addDays, isSameDay, startOfWeek } from 'date-fns';
+import { format, addDays, isSameDay, startOfWeek, isSunday, nextSunday, previousSunday, isAfter, isBefore, startOfDay } from 'date-fns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -72,6 +72,44 @@ interface WeeklyPlanningContextType {
 
 const steps = ['Start Session', 'Weekly Review', 'Weekly Planning', 'Finalize'];
 
+const getWeekBoundaries = (currentDate: Date = new Date()): { weekStart: Date; weekEnd: Date } => {
+  const today = startOfDay(currentDate);
+  const nextSundayDate = nextSunday(today);
+  const prevSundayDate = previousSunday(today);
+  
+  // If today is Sunday, use today as start and next Sunday as end
+  if (isSunday(today)) {
+    return {
+      weekStart: today,
+      weekEnd: nextSundayDate
+    };
+  }
+  
+  // If we're within 3 days after the previous Sunday
+  const threeDaysAfterPrevSunday = addDays(prevSundayDate, 3);
+  if (isBefore(today, threeDaysAfterPrevSunday)) {
+    return {
+      weekStart: prevSundayDate,
+      weekEnd: nextSundayDate
+    };
+  }
+  
+  // If we're within 3 days before next Sunday
+  const threeDaysBeforeNextSunday = addDays(nextSundayDate, -3);
+  if (isAfter(today, threeDaysBeforeNextSunday)) {
+    return {
+      weekStart: today,
+      weekEnd: nextSundayDate
+    };
+  }
+  
+  // For days in the middle of the week, start from today
+  return {
+    weekStart: today,
+    weekEnd: nextSundayDate
+  };
+};
+
 export const WeeklyPlanningPage: React.FC = () => {
   const {
     currentSession,
@@ -95,6 +133,7 @@ export const WeeklyPlanningPage: React.FC = () => {
   } = useWeeklyPlanning();
 
   const [activeStep, setActiveStep] = useState(0);
+  const [weekDays, setWeekDays] = useState<Date[]>([]);
 
   const handleNext = async () => {
     switch (activeStep) {
@@ -133,10 +172,26 @@ export const WeeklyPlanningPage: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    // Initialize week days based on current date
+    const { weekStart, weekEnd } = getWeekBoundaries();
+    const days: Date[] = [];
+    let currentDay = weekStart;
+    
+    while (currentDay <= weekEnd) {
+      days.push(currentDay);
+      currentDay = addDays(currentDay, 1);
+    }
+    
+    setWeekDays(days);
+  }, []);
+
   if (isLoading) {
     return (
       <Container>
-        <Typography>Loading...</Typography>
+        <Box sx={{ textAlign: 'center', mt: 4 }}>
+          <Typography>Loading weekly planning...</Typography>
+        </Box>
       </Container>
     );
   }
@@ -145,6 +200,25 @@ export const WeeklyPlanningPage: React.FC = () => {
     return (
       <Container>
         <Typography color="error">{error}</Typography>
+      </Container>
+    );
+  }
+
+  if (!currentSession) {
+    return (
+      <Container>
+        <Box sx={{ textAlign: 'center', mt: 4 }}>
+          <Typography variant="h5" gutterBottom>
+            No active weekly planning session
+          </Typography>
+          <Button 
+            variant="contained" 
+            onClick={() => startNewSession()}
+            sx={{ mt: 2 }}
+          >
+            Start New Session
+          </Button>
+        </Box>
       </Container>
     );
   }
@@ -714,8 +788,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
         <Box sx={{ flex: 1, overflow: 'auto' }}>
           <Grid container spacing={2}>
-            {Array.from({ length: 7 }, (_, index) => {
-              const day = addDays(startOfWeek(new Date()), index);
+            {weekDays.map((day, index) => {
               return (
                 <Grid item xs key={`day-grid-${index}`}>
                   <DayCard 

@@ -1,4 +1,5 @@
 import { Timestamp } from '../types';
+import { Timestamp as FirebaseTimestamp } from 'firebase/firestore';
 
 export function dateToTimestamp(date: Date): Timestamp {
   return {
@@ -13,4 +14,17 @@ export function timestampToDate(timestamp: Timestamp): Date {
 
 export function now(): Timestamp {
   return dateToTimestamp(new Date());
-} 
+}
+
+// Helper function to format Firebase Timestamp or our custom Timestamp
+export const formatDate = (timestamp: Timestamp | FirebaseTimestamp | undefined) => {
+  if (!timestamp) return '';
+  
+  // If it's a Firebase Timestamp (has toDate method)
+  if ('toDate' in timestamp) {
+    return timestamp.toDate().toLocaleDateString();
+  }
+  
+  // If it's our custom Timestamp
+  return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000).toLocaleDateString();
+}; 

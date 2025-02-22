@@ -1,4 +1,4 @@
-import { MeasurableMetric, AchievabilityCheck, TaskStatus, ReviewCycle } from './types';
+import { MeasurableMetric, AchievabilityCheck, TaskStatus, ReviewCycle, DayOfWeek } from './types';
 
 export const MEASURABLE_METRIC_OPTIONS: { label: string; value: MeasurableMetric }[] = [
   { label: 'Count occurrences', value: 'count_occurrences' },
@@ -27,4 +27,11 @@ export const REVIEW_CYCLE_OPTIONS: { label: string; value: ReviewCycle }[] = [
   { label: 'Quarterly', value: 'quarterly' },
   { label: 'Every 6 months', value: 'biannual' },
   { label: 'Yearly', value: 'yearly' }
+];
+
+export const DAYS_OF_WEEK: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+
+export const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
 ]; 

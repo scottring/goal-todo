@@ -13,7 +13,18 @@ import {
 } from '../types';
 import { useAuth } from './AuthContext';
 import { useGoalsContext } from './GoalsContext';
-import { startOfWeek, endOfWeek, addDays, isSameWeek } from 'date-fns';
+import { 
+  startOfWeek, 
+  endOfWeek, 
+  addDays, 
+  isSameWeek, 
+  isSunday,
+  nextSunday,
+  previousSunday,
+  isAfter,
+  isBefore,
+  startOfDay
+} from 'date-fns';
 import { dateToTimestamp, timestampToDate, now } from '../utils/date';
 import { toFirebaseTimestamp, fromFirebaseTimestamp, convertToFirebaseTimestamp, convertFromFirebaseTimestamp } from '../utils/firebase-adapter';
 import { updateDocument } from '../utils/firestore';
@@ -68,6 +79,44 @@ const removeUndefinedFields = (obj: any): any => {
   return cleanObj;
 };
 
+const getWeekBoundaries = (currentDate: Date = new Date()): { weekStart: Date; weekEnd: Date } => {
+  const today = startOfDay(currentDate);
+  const nextSundayDate = nextSunday(today);
+  const prevSundayDate = previousSunday(today);
+  
+  // If today is Sunday, use today as start and next Sunday as end
+  if (isSunday(today)) {
+    return {
+      weekStart: today,
+      weekEnd: nextSundayDate
+    };
+  }
+  
+  // If we're within 3 days after the previous Sunday
+  const threeDaysAfterPrevSunday = addDays(prevSundayDate, 3);
+  if (isBefore(today, threeDaysAfterPrevSunday)) {
+    return {
+      weekStart: prevSundayDate,
+      weekEnd: nextSundayDate
+    };
+  }
+  
+  // If we're within 3 days before next Sunday
+  const threeDaysBeforeNextSunday = addDays(nextSundayDate, -3);
+  if (isAfter(today, threeDaysBeforeNextSunday)) {
+    return {
+      weekStart: today,
+      weekEnd: nextSundayDate
+    };
+  }
+  
+  // For days in the middle of the week, start from today
+  return {
+    weekStart: today,
+    weekEnd: nextSundayDate
+  };
+};
+
 export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentSession, setCurrentSession] = useState<WeeklyPlanningSession | null>(null);
   const [unscheduledItems, setUnscheduledItems] = useState<UnscheduledItem[]>([]);
@@ -116,9 +165,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
 
     try {
       setIsLoading(true);
-      const now = new Date();
-      const weekStart = startOfWeek(now);
-      const weekEnd = endOfWeek(now);
+      const { weekStart, weekEnd } = getWeekBoundaries();
 
       // Get all tasks from goals
       const tasksToReview: TaskReviewItem[] = goals.flatMap(goal => 

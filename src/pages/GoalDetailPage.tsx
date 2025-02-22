@@ -19,10 +19,11 @@ import { ShareModal } from '../components/ShareModal';
 import { CircularProgress, Box } from '@mui/material';
 import { HouseholdMemberSelect } from '../components/HouseholdMemberSelect';
 import { useAuth } from '../contexts/AuthContext';
-import { getUserService } from '../services/UserService';
-
-type TaskPriority = 'low' | 'medium' | 'high';
-type TaskStatus = 'not_started' | 'in_progress' | 'completed';
+import { formatDate } from '../utils/date';
+import { cleanData } from '../utils/data';
+import { useFirestore } from '../hooks/useFirestore';
+import { DAYS_OF_WEEK, MONTHS } from '../constants';
+import { TaskPriority, TaskStatus } from '../types';
 
 interface RoutineFormData {
   title: string;
@@ -44,12 +45,6 @@ interface RoutineFormData {
   endDate?: string;
 }
 
-const DAYS_OF_WEEK: DayOfWeek[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-const MONTHS = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
-
 const MEASURABLE_METRIC_LABELS: Record<MeasurableMetric, string> = {
   count_occurrences: 'Count occurrences',
   track_numeric: 'Track numeric value',
@@ -67,20 +62,6 @@ const REVIEW_CYCLE_LABELS: Record<ReviewCycle, string> = {
   yearly: 'Yearly'
 };
 
-// Cleaning function to remove undefined values recursively
-const cleanData = (data: any): any => {
-  if (data === undefined) return undefined;
-  if (Array.isArray(data)) return data.map(item => cleanData(item));
-  if (data && typeof data === 'object') {
-    return Object.fromEntries(
-      Object.entries(data)
-        .filter(([_, value]) => value !== undefined)
-        .map(([key, value]) => [key, cleanData(value)])
-    );
-  }
-  return data;
-};
-
 const GoalDetailPage: React.FC = () => {
   const { goalId } = useParams<{ goalId: string }>();
   const navigate = useNavigate();
@@ -88,7 +69,6 @@ const GoalDetailPage: React.FC = () => {
   const { sharedGoals, userGoals, loading: sharedLoading, updateUserGoal } = useSharedGoalsContext();
   const { areas } = useAreasContext();
   const { currentUser } = useAuth();
-  const userService = getUserService();
 
   // Add detailed logging for goal search
   useEffect(() => {
@@ -310,17 +290,28 @@ const GoalDetailPage: React.FC = () => {
     }
   };
 
-  // Helper function to format Firebase Timestamp or our custom Timestamp
-  const formatDate = (timestamp: Timestamp | FirebaseTimestamp | undefined) => {
-    if (!timestamp) return '';
-    
-    // If it's a Firebase Timestamp (has toDate method)
-    if ('toDate' in timestamp) {
-      return timestamp.toDate().toLocaleDateString();
+  const handleTaskCompletion = async (taskId: string, currentStatus: boolean) => {
+    if (!displayGoal) return;
+
+    try {
+      const updatedTasks = displayGoal.tasks.map(task =>
+        task.id === taskId
+          ? {
+              ...task,
+              completed: !currentStatus,
+              updatedAt: FirebaseTimestamp.now()
+            }
+          : task
+      );
+
+      if ('parentGoalId' in displayGoal) {
+        await updateUserGoal(displayGoal.id, { tasks: updatedTasks });
+      } else {
+        await updateGoal(displayGoal.id, { tasks: updatedTasks });
+      }
+    } catch (err) {
+      console.error('Error updating task completion:', err);
     }
-    
-    // If it's our custom Timestamp
-    return new Date(timestamp.seconds * 1000 + timestamp.nanoseconds / 1000000).toLocaleDateString();
   };
 
   const renderRoutineForm = () => (
@@ -337,7 +328,9 @@ const GoalDetailPage: React.FC = () => {
             </button>
           </div>
 
+          {/* Form fields */}
           <div className="space-y-6">
+            {/* Title */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Title
@@ -351,6 +344,7 @@ const GoalDetailPage: React.FC = () => {
               />
             </div>
 
+            {/* Description */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Description (optional)
@@ -363,14 +357,15 @@ const GoalDetailPage: React.FC = () => {
               />
             </div>
 
+            {/* Frequency */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Frequency
               </label>
               <select
                 value={routineForm.frequency}
-                onChange={e => setRoutineForm(prev => ({ 
-                  ...prev, 
+                onChange={e => setRoutineForm(prev => ({
+                  ...prev,
                   frequency: e.target.value as RoutineFormData['frequency']
                 }))}
                 className="w-full p-2 border rounded-md"
@@ -383,15 +378,15 @@ const GoalDetailPage: React.FC = () => {
               </select>
             </div>
 
+            {/* Schedule fields based on frequency */}
             {routineForm.frequency === 'weekly' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Days and Times
                 </label>
                 <div className="space-y-4">
-                  {DAYS_OF_WEEK.map(day => {
+                  {DAYS_OF_WEEK.map((day: DayOfWeek) => {
                     const daySchedule = routineForm.schedule.daysOfWeek.find(d => d.day === day);
-                    
                     return (
                       <div key={day} className="flex items-center gap-4">
                         <button
@@ -402,12 +397,8 @@ const GoalDetailPage: React.FC = () => {
                                 ? prev.schedule.daysOfWeek.filter(d => d.day !== day)
                                 : [...prev.schedule.daysOfWeek, {
                                     day,
-                                    time: { hour: 9, minute: 0 },
-                                    specificDate: undefined,
-                                    assignedTo: undefined,
-                                    assignedToEmail: undefined
+                                    time: { hour: 9, minute: 0 }
                                   }];
-                              
                               return {
                                 ...prev,
                                 schedule: {
@@ -427,116 +418,60 @@ const GoalDetailPage: React.FC = () => {
                         </button>
                         
                         {daySchedule && (
-                          <div className="flex items-center gap-4">
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min="0"
-                                max="23"
-                                value={daySchedule.time.hour}
-                                onChange={e => {
-                                  setRoutineForm(prev => ({
-                                    ...prev,
-                                    schedule: {
-                                      ...prev.schedule,
-                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                        d.day === day
-                                          ? {
-                                              ...d,
-                                              time: {
-                                                ...d.time,
-                                                hour: parseInt(e.target.value)
-                                              }
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max="23"
+                              value={daySchedule.time.hour}
+                              onChange={e => {
+                                setRoutineForm(prev => ({
+                                  ...prev,
+                                  schedule: {
+                                    ...prev.schedule,
+                                    daysOfWeek: prev.schedule.daysOfWeek.map(d =>
+                                      d.day === day
+                                        ? {
+                                            ...d,
+                                            time: {
+                                              ...d.time,
+                                              hour: parseInt(e.target.value)
                                             }
-                                          : d
-                                      )
-                                    }
-                                  }));
-                                }}
-                                className="w-20 p-2 border rounded-md"
-                              />
-                              <span className="self-center">:</span>
-                              <input
-                                type="number"
-                                min="0"
-                                max="59"
-                                value={daySchedule.time.minute}
-                                onChange={e => {
-                                  setRoutineForm(prev => ({
-                                    ...prev,
-                                    schedule: {
-                                      ...prev.schedule,
-                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                        d.day === day
-                                          ? {
-                                              ...d,
-                                              time: {
-                                                ...d.time,
-                                                minute: parseInt(e.target.value)
-                                              }
+                                          }
+                                        : d
+                                    )
+                                  }
+                                }));
+                              }}
+                              className="w-20 p-2 border rounded-md"
+                            />
+                            <span>:</span>
+                            <input
+                              type="number"
+                              min="0"
+                              max="59"
+                              value={daySchedule.time.minute}
+                              onChange={e => {
+                                setRoutineForm(prev => ({
+                                  ...prev,
+                                  schedule: {
+                                    ...prev.schedule,
+                                    daysOfWeek: prev.schedule.daysOfWeek.map(d =>
+                                      d.day === day
+                                        ? {
+                                            ...d,
+                                            time: {
+                                              ...d.time,
+                                              minute: parseInt(e.target.value)
                                             }
-                                          : d
-                                      )
-                                    }
-                                  }));
-                                }}
-                                className="w-20 p-2 border rounded-md"
-                              />
-                            </div>
-
-                            {/* Specific Date Override */}
-                            <div className="flex items-center gap-2">
-                              <label className="text-sm text-gray-600">Specific Date:</label>
-                              <input
-                                type="date"
-                                value={daySchedule.specificDate ? formatDate(daySchedule.specificDate).split('T')[0] : ''}
-                                onChange={e => {
-                                  setRoutineForm(prev => ({
-                                    ...prev,
-                                    schedule: {
-                                      ...prev.schedule,
-                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                        d.day === day
-                                          ? {
-                                              ...d,
-                                              specificDate: e.target.value 
-                                                ? FirebaseTimestamp.fromDate(new Date(e.target.value))
-                                                : undefined
-                                            }
-                                          : d
-                                      )
-                                    }
-                                  }));
-                                }}
-                                className="w-40 p-2 border rounded-md"
-                              />
-                            </div>
-
-                            {/* Assign To */}
-                            <div className="flex items-center gap-2">
-                              <label className="text-sm text-gray-600">Assign to:</label>
-                              <HouseholdMemberSelect
-                                value={daySchedule.assignedTo || ''}
-                                onChange={(value) => {
-                                  setRoutineForm(prev => ({
-                                    ...prev,
-                                    schedule: {
-                                      ...prev.schedule,
-                                      daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                        d.day === day
-                                          ? {
-                                              ...d,
-                                              assignedTo: value,
-                                              assignedToEmail: value // You would typically get this from the selected member
-                                            }
-                                          : d
-                                      )
-                                    }
-                                  }));
-                                }}
-                                className="w-48 p-2 border rounded-md"
-                              />
-                            </div>
+                                          }
+                                        : d
+                                    )
+                                  }
+                                }));
+                              }}
+                              className="w-20 p-2 border rounded-md"
+                            />
                           </div>
                         )}
                       </div>
@@ -546,6 +481,7 @@ const GoalDetailPage: React.FC = () => {
               </div>
             )}
 
+            {/* Monthly schedule */}
             {routineForm.frequency === 'monthly' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -568,13 +504,14 @@ const GoalDetailPage: React.FC = () => {
               </div>
             )}
 
+            {/* Quarterly/Yearly schedule */}
             {['quarterly', 'yearly'].includes(routineForm.frequency) && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Months
                 </label>
                 <div className="flex flex-wrap gap-2">
-                  {MONTHS.map((month, index) => (
+                  {MONTHS.map((month: string, index: number) => (
                     <button
                       key={month}
                       type="button"
@@ -602,6 +539,7 @@ const GoalDetailPage: React.FC = () => {
               </div>
             )}
 
+            {/* Time of Day */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Time of Day
@@ -645,6 +583,7 @@ const GoalDetailPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Target Count */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Target Count (times per {routineForm.frequency})
@@ -658,6 +597,7 @@ const GoalDetailPage: React.FC = () => {
               />
             </div>
 
+            {/* End Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 End Date (optional)
@@ -671,6 +611,7 @@ const GoalDetailPage: React.FC = () => {
             </div>
           </div>
 
+          {/* Form Actions */}
           <div className="mt-6 flex justify-end gap-3">
             <button
               onClick={() => setShowRoutineForm(false)}
@@ -1188,13 +1129,18 @@ const GoalDetailPage: React.FC = () => {
                     className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
                   >
                     <div className="flex items-center gap-3">
-                      <CheckCircle 
-                        className={`w-5 h-5 ${
-                          task.completed ? 'text-green-500' : 'text-gray-300'
-                        }`} 
-                      />
+                      <button
+                        onClick={() => handleTaskCompletion(task.id, task.completed)}
+                        className="focus:outline-none"
+                      >
+                        <CheckCircle 
+                          className={`w-5 h-5 cursor-pointer ${
+                            task.completed ? 'text-green-500' : 'text-gray-300'
+                          } hover:${task.completed ? 'text-green-600' : 'text-gray-400'}`} 
+                        />
+                      </button>
                       <div>
-                        <p className="text-gray-800">{task.title}</p>
+                        <p className={`text-gray-800 ${task.completed ? 'line-through' : ''}`}>{task.title}</p>
                         {task.dueDate && (
                           <p className="text-sm text-gray-500">
                             Due: {formatDate(task.dueDate)}

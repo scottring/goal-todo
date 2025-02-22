@@ -44,16 +44,18 @@ interface PlannedTask {
 interface NextWeekTaskPlannerProps {
   tasks: PlannedTask[];
   onAddTask: (task: Omit<PlannedTask, 'id'>) => void;
-  onUpdateTask: (taskId: string, updates: Partial<PlannedTask>) => void;
   onDeleteTask: (taskId: string) => void;
+  onUpdatePriority: (taskId: string, priority: TaskPriority) => void;
+  onUpdateDueDate: (taskId: string, dueDate: Date) => void;
   onReorderTasks: (startIndex: number, endIndex: number) => void;
 }
 
 export const NextWeekTaskPlanner: React.FC<NextWeekTaskPlannerProps> = ({
   tasks,
   onAddTask,
-  onUpdateTask,
   onDeleteTask,
+  onUpdatePriority,
+  onUpdateDueDate,
   onReorderTasks
 }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');

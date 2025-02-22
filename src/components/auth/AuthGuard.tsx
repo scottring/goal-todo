@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
-import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../contexts/AuthContext';
 import {
   Box,
   CircularProgress,
@@ -14,16 +14,19 @@ interface AuthGuardProps {
   children: React.ReactNode;
 }
 
-export default function AuthGuard({ children }: AuthGuardProps) {
-  const { user, loading, error, syncError } = useAuth();
+const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
+  const { currentUser, loading, error } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (!loading && !user) {
-      navigate('/signin', { state: { from: location.pathname } });
+    if (!loading && !currentUser) {
+      navigate('/signin', { 
+        replace: true,
+        state: { from: location.pathname + location.search }
+      });
     }
-  }, [user, loading, navigate, location]);
+  }, [currentUser, loading, navigate, location]);
 
   if (loading) {
     return (
@@ -39,7 +42,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
           <Box sx={{ textAlign: 'center' }}>
             <CircularProgress />
             <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              Initializing...
+              Checking authentication...
             </Typography>
           </Box>
         </Box>
@@ -47,8 +50,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  if (error || syncError) {
-    const errorMessage = error?.message || syncError?.message;
+  if (error) {
     return (
       <Container>
         <Box
@@ -74,7 +76,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
             >
               <Typography variant="subtitle2">Authentication Error</Typography>
               <Typography variant="body2">
-                {errorMessage || 'An error occurred during authentication. Please try again.'}
+                {error.message || 'An error occurred during authentication. Please try again.'}
               </Typography>
             </Alert>
           </Box>
@@ -83,9 +85,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     );
   }
 
-  if (!user) {
-    return null;
-  }
+  return currentUser ? <>{children}</> : null;
+};
 
-  return <>{children}</>;
-}
+export default AuthGuard;

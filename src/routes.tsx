@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import AreasPage from './pages/AreasPage';
 import AreaDetailsPage from './pages/AreaDetailsPage';
 import GoalsPage from './pages/GoalsPage';
@@ -15,26 +15,35 @@ import Layout from './components/Layout';
 import { TestWeeklyPlanning } from './test/TestWeeklyPlanning';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { TaskDetailsPage } from './pages/TaskDetailsPage';
+import AuthGuard from './components/auth/AuthGuard';
+
+// Define public routes that don't require authentication
+const publicRoutes = ['/signin', '/signup', '/forgot-password', '/accept-invite'];
 
 const AppRoutes: React.FC = () => {
   return (
     <BrowserRouter>
       <Routes>
+        {/* Public Routes */}
         <Route path="/signin" element={<Layout><SignIn /></Layout>} />
         <Route path="/signup" element={<Layout><SignUp /></Layout>} />
         <Route path="/forgot-password" element={<Layout><ForgotPassword /></Layout>} />
-        <Route path="/admin" element={<Layout><AdminPage /></Layout>} />
-        <Route path="/areas" element={<Layout><AreasPage /></Layout>} />
-        <Route path="/areas/:areaId" element={<Layout><AreaDetailsPage /></Layout>} />
-        <Route path="/goals" element={<Layout><GoalsPage /></Layout>} />
-        <Route path="/goals/:goalId" element={<Layout><GoalDetailPage /></Layout>} />
-        <Route path="/goals/:goalId/edit" element={<Layout><EditGoalPage /></Layout>} />
-        <Route path="/tasks" element={<Layout><TasksPage /></Layout>} />
-        <Route path="/tasks/:taskId" element={<Layout><TaskDetailsPage /></Layout>} />
-        <Route path="/weekly-planning" element={<Layout><WeeklyPlanningPage /></Layout>} />
-        <Route path="/test" element={<Layout><TestWeeklyPlanning /></Layout>} />
         <Route path="/accept-invite" element={<Layout><AcceptInvitePage /></Layout>} />
-        <Route path="/" element={<Layout><AreasPage /></Layout>} /> {/* Default route */}
+
+        {/* Protected Routes */}
+        <Route path="/admin" element={<AuthGuard><Layout><AdminPage /></Layout></AuthGuard>} />
+        <Route path="/areas" element={<AuthGuard><Layout><AreasPage /></Layout></AuthGuard>} />
+        <Route path="/areas/:areaId" element={<AuthGuard><Layout><AreaDetailsPage /></Layout></AuthGuard>} />
+        <Route path="/goals" element={<AuthGuard><Layout><GoalsPage /></Layout></AuthGuard>} />
+        <Route path="/goals/:goalId" element={<AuthGuard><Layout><GoalDetailPage /></Layout></AuthGuard>} />
+        <Route path="/goals/:goalId/edit" element={<AuthGuard><Layout><EditGoalPage /></Layout></AuthGuard>} />
+        <Route path="/tasks" element={<AuthGuard><Layout><TasksPage /></Layout></AuthGuard>} />
+        <Route path="/tasks/:taskId" element={<AuthGuard><Layout><TaskDetailsPage /></Layout></AuthGuard>} />
+        <Route path="/weekly-planning" element={<AuthGuard><Layout><WeeklyPlanningPage /></Layout></AuthGuard>} />
+        <Route path="/test" element={<AuthGuard><Layout><TestWeeklyPlanning /></Layout></AuthGuard>} />
+        
+        {/* Default route */}
+        <Route path="/" element={<AuthGuard><Layout><AreasPage /></Layout></AuthGuard>} />
       </Routes>
     </BrowserRouter>
   );

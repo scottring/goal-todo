@@ -26,7 +26,7 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
-  Chip
+  Alert
 } from '@mui/material';
 import { UserProfile } from '../types';
 

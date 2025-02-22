@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
 import {
   Container,
   Box,
@@ -9,34 +8,30 @@ import {
   Button,
   Divider,
   Alert,
-  Paper,
-  Link as MuiLink,
   CircularProgress
 } from '@mui/material';
-import GoogleIcon from '@mui/icons-material/Google';
+import { useAuth } from '../../contexts/AuthContext';
 
-interface LocationState {
-  from?: string;
-}
-
-export default function SignIn() {
+const SignIn: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { signIn, signInWithGoogle } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const { signIn, signInWithGoogle, error } = useAuth();
-  const from = (location.state as LocationState)?.from || '/';
 
-  const handleEmailSignIn = async (e: React.FormEvent) => {
+  const from = location.state?.from || '/areas';
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!email.trim() || !password.trim()) return;
-
     try {
+      setError('');
       setLoading(true);
       await signIn(email, password);
       navigate(from, { replace: true });
     } catch (err) {
+      setError('Failed to sign in. Please check your credentials.');
       console.error('Sign in error:', err);
     } finally {
       setLoading(false);
@@ -45,10 +40,12 @@ export default function SignIn() {
 
   const handleGoogleSignIn = async () => {
     try {
+      setError('');
       setLoading(true);
       await signInWithGoogle();
       navigate(from, { replace: true });
     } catch (err) {
+      setError('Failed to sign in with Google.');
       console.error('Google sign in error:', err);
     } finally {
       setLoading(false);
@@ -57,83 +54,78 @@ export default function SignIn() {
 
   return (
     <Container maxWidth="sm">
-      <Box sx={{ mt: 8, mb: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Typography variant="h4" component="h1" align="center" gutterBottom>
-            Sign In
-          </Typography>
+      <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <Typography component="h1" variant="h5">
+          Sign In
+        </Typography>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {error.message}
-            </Alert>
-          )}
+        {error && (
+          <Alert severity="error" sx={{ mt: 2, width: '100%' }}>
+            {error}
+          </Alert>
+        )}
 
-          <form onSubmit={handleEmailSignIn}>
-            <TextField
-              label="Email"
-              type="email"
-              fullWidth
-              margin="normal"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              disabled={loading}
-            />
-            <TextField
-              label="Password"
-              type="password"
-              fullWidth
-              margin="normal"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-            />
+        <Box component="form" onSubmit={handleSubmit} sx={{ mt: 3, width: '100%' }}>
+          <TextField
+            margin="normal"
+            required
+            fullWidth
+            id="email"
+            label="Email Address"
+            name="email"
+            autoComplete="email"
+            autoFocus
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={loading}
+          />
+          <TextField
+            margin="normal"
+            required
+            fullWidth
+            name="password"
+            label="Password"
+            type="password"
+            id="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={loading}
+          />
+          <Button
+            type="submit"
+            fullWidth
+            variant="contained"
+            sx={{ mt: 3, mb: 2 }}
+            disabled={loading}
+          >
+            {loading ? <CircularProgress size={24} /> : 'Sign In'}
+          </Button>
 
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              size="large"
-              disabled={loading}
-              sx={{ mt: 3, mb: 2 }}
-            >
-              {loading ? <CircularProgress size={24} /> : 'Sign In'}
-            </Button>
-          </form>
-
-          <Divider sx={{ my: 3 }}>or</Divider>
+          <Divider sx={{ my: 2 }}>or</Divider>
 
           <Button
             fullWidth
             variant="outlined"
-            size="large"
-            startIcon={<GoogleIcon />}
             onClick={handleGoogleSignIn}
             disabled={loading}
+            sx={{ mb: 2 }}
           >
             Sign in with Google
           </Button>
 
-          <Box sx={{ mt: 3, textAlign: 'center' }}>
-            <MuiLink
-              component={Link}
-              to="/forgot-password"
-              variant="body2"
-              sx={{ display: 'block', mb: 1 }}
-            >
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
+            <Link to="/forgot-password">
               Forgot Password?
-            </MuiLink>
-            <Typography variant="body2">
-              Don't have an account?{' '}
-              <MuiLink component={Link} to="/signup">
-                Sign Up
-              </MuiLink>
-            </Typography>
+            </Link>
+            <Link to="/signup">
+              Need an account? Sign Up
+            </Link>
           </Box>
-        </Paper>
+        </Box>
       </Box>
     </Container>
   );
-}
+};
+
+export default SignIn;
