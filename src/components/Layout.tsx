@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   AppBar,
@@ -44,14 +44,23 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     currentUser: !!currentUser
   });
 
+  useEffect(() => {
+    if (!isPublicPage && !currentUser) {
+      console.log('No user found, redirecting to signin');
+      navigate('/signin', { state: { from: location.pathname } });
+    } else if (currentUser && location.pathname === '/') {
+      console.log('User authenticated, redirecting to areas');
+      navigate('/areas');
+    }
+  }, [currentUser, isPublicPage, location.pathname, navigate]);
+
   // Return just the children for public pages
   if (isPublicPage) {
     return <Box sx={{ minHeight: '100vh', p: 0 }}>{children}</Box>;
   }
 
-  // Redirect to sign in if not authenticated (only for protected pages)
+  // Show loading or nothing while checking auth
   if (!currentUser) {
-    navigate('/signin', { state: { from: location.pathname } });
     return null;
   }
 

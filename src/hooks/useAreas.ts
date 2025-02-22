@@ -1,20 +1,33 @@
 import { useState, useEffect, useCallback } from 'react';
-import { where, Timestamp } from 'firebase/firestore';
+import { where, query, collection, getDocs, or, Timestamp } from 'firebase/firestore';
 import { useFirestoreContext } from '../contexts/FirestoreContext';
 import { useAuth } from '../contexts/AuthContext';
+import { db } from '../lib/firebase';
 import type { Area } from '../types';
 
-type CreateAreaData = Pick<Area, 'name' | 'description' | 'color' | 'sharedWith'>;
+type CreateAreaData = {
+  name: string;
+  description?: string;
+  color?: string;
+  sharedWith: string[];
+  permissions: {
+    [userId: string]: {
+      edit: boolean;
+      view: boolean;
+    }
+  };
+};
 
 export const useAreas = () => {
   const [areas, setAreas] = useState<Area[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const { currentUser } = useAuth();
-  const { getCollection, addDocument, updateDocument, deleteDocument, getDocument } = useFirestoreContext();
+  const { addDocument, updateDocument, deleteDocument, getDocument } = useFirestoreContext();
 
-  const fetchAreas = async () => {
+  const fetchAreas = useCallback(async () => {
     if (!currentUser) {
+      console.log('No current user, skipping area fetch');
       setAreas([]);
       setLoading(false);
       return;
@@ -22,9 +35,38 @@ export const useAreas = () => {
 
     try {
       setLoading(true);
-      const fetchedAreas = await getCollection<Area>('areas', [
-        where('ownerId', '==', currentUser.uid)
-      ]);
+      console.log('Starting area fetch for user:', currentUser.uid);
+      
+      // Create a query that matches either:
+      // 1. Areas where the user is the owner
+      // 2. Areas where the user is in the sharedWith array
+      const areasQuery = query(
+        collection(db, 'areas'),
+        or(
+          where('ownerId', '==', currentUser.uid),
+          where('sharedWith', 'array-contains', currentUser.uid)
+        )
+      );
+
+      console.log('Executing areas query...');
+      const querySnapshot = await getDocs(areasQuery);
+      console.log('Query complete. Number of results:', querySnapshot.size);
+      
+      const fetchedAreas = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('Processing area:', {
+          id: doc.id,
+          ownerId: data.ownerId,
+          name: data.name,
+          sharedWith: data.sharedWith
+        });
+        return {
+          id: doc.id,
+          ...data
+        };
+      }) as Area[];
+
+      console.log('Areas processing complete. Total areas:', fetchedAreas.length);
       setAreas(fetchedAreas);
       setError(null);
     } catch (err) {
@@ -34,30 +76,42 @@ export const useAreas = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentUser]);
 
   useEffect(() => {
+    console.log('useAreas effect triggered, currentUser:', currentUser?.uid);
+    
     if (currentUser) {
+      console.log('Initiating area fetch for user:', currentUser.uid);
       fetchAreas();
     } else {
+      console.log('No current user, clearing areas');
       setAreas([]);
       setLoading(false);
       setError(null);
     }
-  }, [currentUser]);
+  }, [currentUser?.uid, fetchAreas]);
 
   const createArea = async (data: CreateAreaData) => {
     if (!currentUser) throw new Error('User must be authenticated to create an area');
 
     try {
       setLoading(true);
-      await addDocument<Area>('areas', {
+      console.log('Creating area with data:', {
         ...data,
         ownerId: currentUser.uid,
-        createdAt: Timestamp.now(),
-        updatedAt: Timestamp.now(),
-        permissions: {}
       });
+      
+      const newArea = {
+        ...data,
+        ownerId: currentUser.uid,
+        sharedWith: data.sharedWith || [],
+        permissions: data.permissions || {},
+        createdAt: Timestamp.now()
+      };
+
+      await addDocument<Area>('areas', newArea);
+      console.log('Area created successfully');
       await fetchAreas();
     } catch (err) {
       console.error('Error creating area:', err);

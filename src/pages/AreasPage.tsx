@@ -52,19 +52,16 @@ export default function AreasPage() {
 
     try {
       setIsCreating(true);
-      await createArea({
+      const newArea = {
         name: formData.name.trim(),
         description: formData.description,
         color: formData.color,
         sharedWith: [],
         permissions: {},
-        permissionInheritance: {
-          propagateToGoals: true,
-          propagateToMilestones: true,
-          propagateToTasks: true,
-          propagateToRoutines: true
-        }
-      });
+      };
+      console.log('Creating new area:', newArea);
+      await createArea(newArea);
+      console.log('Area created successfully');
       setFormData({ name: '', description: '', color: '#000000' });
       setIsCreating(false);
     } catch (err) {

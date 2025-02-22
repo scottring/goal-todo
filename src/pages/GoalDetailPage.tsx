@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Edit, Trash2, Plus, Users, CheckCircle, Clock, X } from 'lucide-react';
 import { useGoalsContext } from '../contexts/GoalsContext';
@@ -18,6 +18,8 @@ import type {
 import { ShareModal } from '../components/ShareModal';
 import { CircularProgress, Box } from '@mui/material';
 import { HouseholdMemberSelect } from '../components/HouseholdMemberSelect';
+import { useAuth } from '../contexts/AuthContext';
+import { getUserService } from '../services/UserService';
 
 type TaskPriority = 'low' | 'medium' | 'high';
 type TaskStatus = 'not_started' | 'in_progress' | 'completed';
@@ -85,6 +87,26 @@ const GoalDetailPage: React.FC = () => {
   const { goals, loading: goalsLoading, deleteGoal, updateGoal } = useGoalsContext();
   const { sharedGoals, userGoals, loading: sharedLoading, updateUserGoal } = useSharedGoalsContext();
   const { areas } = useAreasContext();
+  const { currentUser } = useAuth();
+  const userService = getUserService();
+
+  // Add detailed logging for goal search
+  useEffect(() => {
+    if (!goalId) return;
+    
+    console.log('Searching for goal:', {
+      goalId,
+      goalsLoading,
+      sharedLoading,
+      currentUserId: currentUser?.uid,
+      goalsCount: goals.length,
+      sharedGoalsCount: sharedGoals.length,
+      userGoalsCount: userGoals.length,
+      goalsIds: goals.map(g => g.id),
+      sharedGoalsIds: sharedGoals.map(g => g.id),
+      userGoalsIds: userGoals.map(g => g.id)
+    });
+  }, [goalId, goals, sharedGoals, userGoals, goalsLoading, sharedLoading, currentUser]);
 
   const goal = goals.find(g => g.id === goalId);
   const sharedGoal = sharedGoals.find(sg => sg.id === goalId);
@@ -93,6 +115,21 @@ const GoalDetailPage: React.FC = () => {
   const isSharedGoal = !!sharedGoal;
   const displayGoal = isSharedGoal ? userGoal : goal;
   const area = areas.find(a => a.id === displayGoal?.areaId);
+
+  // Add logging to track loading states and data
+  useEffect(() => {
+    console.log('Goal Detail Page State:', {
+      goalId,
+      goalsLoading,
+      sharedLoading,
+      hasGoal: !!goal,
+      hasSharedGoal: !!sharedGoal,
+      hasUserGoal: !!userGoal,
+      goals: goals.length,
+      sharedGoals: sharedGoals.length,
+      userGoals: userGoals.length
+    });
+  }, [goalId, goalsLoading, sharedLoading, goal, sharedGoal, userGoal, goals, sharedGoals, userGoals]);
 
   const [showRoutineForm, setShowRoutineForm] = useState(false);
   const [showTaskForm, setShowTaskForm] = useState(false);
@@ -846,7 +883,9 @@ const GoalDetailPage: React.FC = () => {
     </div>
   );
 
-  if (goalsLoading || sharedLoading) {
+  // Modify loading condition to be more precise
+  if ((goalsLoading || sharedLoading) && !displayGoal) {
+    console.log('Loading state active:', { goalsLoading, sharedLoading, hasDisplayGoal: !!displayGoal });
     return (
       <Box 
         sx={{ 
@@ -955,7 +994,7 @@ const GoalDetailPage: React.FC = () => {
                 <div>
                   <h3 className="text-sm font-medium text-gray-700">Measurable Metric</h3>
                   <p className="mt-1 text-gray-600">
-                    {MEASURABLE_METRIC_LABELS[displayGoal.measurableMetric]}
+                    {MEASURABLE_METRIC_LABELS[displayGoal.measurableMetric as MeasurableMetric]}
                     {displayGoal.customMetric && (
                       <span className="block text-sm text-gray-500">
                         Custom metric: {displayGoal.customMetric}
@@ -988,7 +1027,7 @@ const GoalDetailPage: React.FC = () => {
                   ) : (
                     <div className="space-y-2">
                       <p className="text-gray-600">
-                        Continuous goal with {REVIEW_CYCLE_LABELS[displayGoal.timeTracking.reviewCycle || 'monthly']} reviews
+                        Continuous goal with {REVIEW_CYCLE_LABELS[displayGoal.timeTracking.reviewCycle as ReviewCycle || 'monthly']} reviews
                       </p>
                       {displayGoal.timeTracking.nextReviewDate && (
                         <div className="flex items-center gap-2 text-gray-600">
@@ -1018,7 +1057,12 @@ const GoalDetailPage: React.FC = () => {
               </div>
 
               <div className="space-y-4">
-                {displayGoal.milestones.map((milestone, index) => (
+                {displayGoal.milestones.map((milestone: { 
+                  name: string;
+                  successCriteria: string;
+                  status: TaskStatus;
+                  targetDate?: Timestamp;
+                }, index: number) => (
                   <div 
                     key={index}
                     className="border rounded-lg p-4 hover:shadow-sm transition-shadow"
@@ -1068,7 +1112,7 @@ const GoalDetailPage: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                {displayGoal.routines.map((routine, index) => (
+                {displayGoal.routines.map((routine: RoutineWithoutSystemFields, index: number) => (
                   <div 
                     key={index}
                     className="p-4 border rounded-lg hover:bg-gray-50"
@@ -1094,7 +1138,10 @@ const GoalDetailPage: React.FC = () => {
                       )}
                       {routine.schedule.daysOfWeek && routine.schedule.daysOfWeek.length > 0 && (
                         <p className="mt-1">
-                          On: {routine.schedule.daysOfWeek.map(daySchedule => 
+                          On: {routine.schedule.daysOfWeek.map((daySchedule: {
+                            day: DayOfWeek;
+                            time: TimeOfDay;
+                          }) => 
                             `${daySchedule.day.charAt(0).toUpperCase() + daySchedule.day.slice(1)} at ${String(daySchedule.time.hour).padStart(2, '0')}:${String(daySchedule.time.minute).padStart(2, '0')}`
                           ).join(', ')}
                         </p>
@@ -1129,7 +1176,13 @@ const GoalDetailPage: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                {displayGoal.tasks.map((task, index) => (
+                {displayGoal.tasks.map((task: {
+                  id: string;
+                  title: string;
+                  completed: boolean;
+                  dueDate?: Timestamp;
+                  priority: TaskPriority;
+                }, index: number) => (
                   <div 
                     key={index}
                     className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
@@ -1171,7 +1224,7 @@ const GoalDetailPage: React.FC = () => {
                   <h2 className="text-xl font-semibold text-gray-800">Shared With</h2>
                 </div>
                 <div className="space-y-2">
-                  {sharedGoal.sharedWith.map((userId, index) => (
+                  {sharedGoal.sharedWith.map((userId: string, index: number) => (
                     <div key={index} className="flex items-center gap-2 text-gray-600">
                       {/* Here you would typically show user info like name/email */}
                       <span>{userId}</span>
