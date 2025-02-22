@@ -12,6 +12,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { getPrefixedCollection } from '../utils/environment';
 
 export const useFirestore = () => {
   const { currentUser, loading: authLoading } = useAuth();
@@ -31,7 +32,8 @@ export const useFirestore = () => {
   ) => {
     checkAuth();
     try {
-      const collectionRef = collection(db, collectionName);
+      const prefixedCollection = getPrefixedCollection(collectionName);
+      const collectionRef = collection(db, prefixedCollection);
       const q = query(collectionRef, ...constraints);
       const querySnapshot = await getDocs(q);
       
@@ -51,7 +53,8 @@ export const useFirestore = () => {
   ) => {
     checkAuth();
     try {
-      const docRef = doc(db, collectionName, documentId);
+      const prefixedCollection = getPrefixedCollection(collectionName);
+      const docRef = doc(db, prefixedCollection, documentId);
       const docSnap = await getDoc(docRef);
       
       if (docSnap.exists()) {
@@ -73,7 +76,8 @@ export const useFirestore = () => {
   ) => {
     checkAuth();
     try {
-      const collectionRef = collection(db, collectionName);
+      const prefixedCollection = getPrefixedCollection(collectionName);
+      const collectionRef = collection(db, prefixedCollection);
       const docRef = await addDoc(collectionRef, {
         ...data,
         ownerId: currentUser!.uid,
@@ -95,7 +99,8 @@ export const useFirestore = () => {
   ) => {
     checkAuth();
     try {
-      const docRef = doc(db, collectionName, documentId);
+      const prefixedCollection = getPrefixedCollection(collectionName);
+      const docRef = doc(db, prefixedCollection, documentId);
 
       // Recursively remove undefined values
       function clean(obj: any): any {
@@ -134,7 +139,8 @@ export const useFirestore = () => {
   ) => {
     checkAuth();
     try {
-      const docRef = doc(db, collectionName, documentId);
+      const prefixedCollection = getPrefixedCollection(collectionName);
+      const docRef = doc(db, prefixedCollection, documentId);
       await deleteDoc(docRef);
     } catch (error) {
       console.error(`Error deleting document from ${collectionName}:`, error);

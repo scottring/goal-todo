@@ -22,18 +22,22 @@ import {
   DialogContent,
   DialogActions,
   Badge,
-  Alert
+  Alert,
+  TextField,
+  FormControl,
+  FormLabel
 } from '@mui/material';
 import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
 import { WeeklyPlanSummary } from '../components/WeeklyPlanSummary';
-import { format, addDays, isSameDay, startOfWeek, isSunday, nextSunday, previousSunday, isAfter, isBefore, startOfDay } from 'date-fns';
+import { format, addDays, isSameDay, startOfWeek, isSunday, nextSunday, previousSunday, isAfter, isBefore, startOfDay, addWeeks } from 'date-fns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { useGoalsContext } from '../contexts/GoalsContext';
+import { DatePicker } from '@mui/x-date-pickers';
 
 interface PlannedTask {
   id: string;
@@ -53,7 +57,7 @@ interface WeeklyPlanningContextType {
   currentSession: any;
   isLoading: boolean;
   error: string | null;
-  startNewSession: () => Promise<void>;
+  startNewSession: (reviewStartDate?: Date) => Promise<void>;
   moveToReviewPhase: () => Promise<void>;
   moveToPlanningPhase: () => Promise<void>;
   completeSession: () => Promise<void>;
@@ -68,6 +72,8 @@ interface WeeklyPlanningContextType {
   scheduleRecurringTask: (routineId: string, frequency: string, schedule: any) => Promise<void>;
   fetchUnscheduledItems: () => Promise<void>;
   getScheduleSuggestions: () => Promise<void>;
+  getLastReviewDate: () => Promise<Date | null>;
+  updateDateRanges: (startDate: Date, endDate: Date) => Promise<void>;
 }
 
 const steps = ['Start Session', 'Weekly Review', 'Weekly Planning', 'Finalize'];
@@ -129,7 +135,9 @@ export const WeeklyPlanningPage: React.FC = () => {
     addNextWeekTask,
     scheduleRecurringTask,
     fetchUnscheduledItems,
-    getScheduleSuggestions
+    getScheduleSuggestions,
+    getLastReviewDate,
+    updateDateRanges
   } = useWeeklyPlanning();
 
   const [activeStep, setActiveStep] = useState(0);
@@ -252,26 +260,81 @@ interface StepProps {
 }
 
 const StartSessionStep: React.FC<StepProps> = ({ onNext }) => {
+  const { startNewSession, getLastReviewDate, isLoading } = useWeeklyPlanning();
+  const [reviewStartDate, setReviewStartDate] = useState<Date | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Set default review start date
+    const loadLastReviewDate = async () => {
+      const lastReview = await getLastReviewDate();
+      const defaultStart = lastReview || addWeeks(startOfDay(new Date()), -1);
+      setReviewStartDate(defaultStart);
+    };
+    loadLastReviewDate();
+  }, [getLastReviewDate]);
+
+  const handleStartSession = async () => {
+    if (!reviewStartDate) {
+      setError('Please select a review start date');
+      return;
+    }
+
+    const today = startOfDay(new Date());
+    if (isAfter(reviewStartDate, today)) {
+      setError('Review start date cannot be in the future');
+      return;
+    }
+
+    try {
+      await startNewSession(reviewStartDate);
+      onNext();
+    } catch (err) {
+      setError('Failed to start session');
+    }
+  };
+
   return (
-    <Paper sx={{ p: 3 }}>
+    <Box sx={{ mt: 4 }}>
       <Typography variant="h5" gutterBottom>
-        Start Your Weekly Planning Session
+        Start Weekly Planning Session
       </Typography>
-      <Typography paragraph>
-        Welcome to your weekly planning and review session. This process will help you:
-      </Typography>
-      <ul>
-        <li>Review your progress from the past week</li>
-        <li>Reflect on your goals and habits</li>
-        <li>Plan your priorities for the upcoming week</li>
-        <li>Coordinate with your team on shared goals</li>
-      </ul>
-      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
-        <Button variant="contained" onClick={onNext}>
-          Start Session
-        </Button>
-      </Box>
-    </Paper>
+      
+      <Paper sx={{ p: 3, mt: 2 }}>
+        <FormControl fullWidth>
+          <FormLabel>Review Period Start Date</FormLabel>
+          <DatePicker
+            value={reviewStartDate}
+            onChange={(date) => {
+              setReviewStartDate(date);
+              setError(null);
+            }}
+            maxDate={new Date()}
+            sx={{ mt: 1 }}
+          />
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Select the start date for your review period. This is typically since your last review
+            or up to a week ago.
+          </Typography>
+        </FormControl>
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+          <Button
+            variant="contained"
+            onClick={handleStartSession}
+            disabled={isLoading || !reviewStartDate}
+          >
+            Start Session
+          </Button>
+        </Box>
+      </Paper>
+    </Box>
   );
 };
 
@@ -559,6 +622,7 @@ const DayCard = ({
 const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const {
     currentSession,
+    updateDateRanges,
     unscheduledItems,
     addNextWeekTask,
     scheduleRecurringTask,
@@ -580,6 +644,10 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const [scheduledTasks, setScheduledTasks] = useState<Record<string, string>>({});
   const [localUnscheduledItems, setLocalUnscheduledItems] = useState<UnscheduledItem[]>([]);
   const [hasScheduledNewItem, setHasScheduledNewItem] = useState(false);
+
+  const [planningStartDate, setPlanningStartDate] = useState<Date>(new Date());
+  const [planningEndDate, setPlanningEndDate] = useState<Date>(nextSunday(new Date()));
+  const [dateError, setDateError] = useState<string | null>(null);
 
   // Initialize localUnscheduledItems only once when component mounts or when explicitly fetched
   useEffect(() => {
@@ -606,6 +674,13 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
       setScheduledTasks(taskMap);
     }
   }, [currentSession, unscheduledItems]);
+
+  useEffect(() => {
+    if (currentSession?.planningPhase) {
+      setPlanningStartDate(timestampToDate(currentSession.planningPhase.startDate));
+      setPlanningEndDate(timestampToDate(currentSession.planningPhase.endDate));
+    }
+  }, [currentSession]);
 
   const handleScheduleClick = (item: UnscheduledItem) => {
     setSchedulingItem(item);
@@ -742,21 +817,81 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     setSelectedTimeSlot(null);
   };
 
+  const handleDateRangeUpdate = async () => {
+    if (!currentSession) return;
+
+    const today = startOfDay(new Date());
+    if (isBefore(planningEndDate, planningStartDate)) {
+      setDateError('End date must be after start date');
+      return;
+    }
+
+    if (isBefore(planningStartDate, today)) {
+      setDateError('Planning start date cannot be in the past');
+      return;
+    }
+
+    try {
+      await updateDateRanges(
+        timestampToDate(currentSession.reviewPhase.startDate),
+        planningStartDate,
+        planningEndDate
+      );
+      setDateError(null);
+    } catch (err) {
+      setDateError('Failed to update date range');
+    }
+  };
+
   return (
-    <Paper sx={{ p: 3 }}>
+    <Box sx={{ mt: 4 }}>
       <Typography variant="h5" gutterBottom>
-        Weekly Planning
+        Plan Your Week
       </Typography>
 
-      {successMessage && (
-        <Alert 
-          severity="success" 
-          sx={{ mb: 2 }}
-          onClose={() => setSuccessMessage(null)}
-        >
-          {successMessage}
-        </Alert>
-      )}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <FormControl fullWidth>
+          <FormLabel>Planning Period</FormLabel>
+          <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
+            <DatePicker
+              label="Start Date"
+              value={planningStartDate}
+              onChange={(date) => {
+                if (date) {
+                  setPlanningStartDate(date);
+                  setDateError(null);
+                }
+              }}
+              minDate={new Date()}
+              sx={{ flex: 1 }}
+            />
+            <DatePicker
+              label="End Date"
+              value={planningEndDate}
+              onChange={(date) => {
+                if (date) {
+                  setPlanningEndDate(date);
+                  setDateError(null);
+                }
+              }}
+              minDate={planningStartDate}
+              sx={{ flex: 1 }}
+            />
+          </Box>
+          <Button
+            variant="outlined"
+            onClick={handleDateRangeUpdate}
+            sx={{ mt: 2, alignSelf: 'flex-end' }}
+          >
+            Update Date Range
+          </Button>
+          {dateError && (
+            <Alert severity="error" sx={{ mt: 2 }}>
+              {dateError}
+            </Alert>
+          )}
+        </FormControl>
+      </Paper>
 
       <Box sx={{ display: 'flex', gap: 3, height: 'calc(100vh - 300px)', overflow: 'auto' }}>
         <Box sx={{ width: 300, overflow: 'auto' }}>
@@ -905,7 +1040,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
           Continue to Finalize
         </Button>
       </Box>
-    </Paper>
+    </Box>
   );
 };
 

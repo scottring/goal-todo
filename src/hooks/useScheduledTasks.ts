@@ -89,7 +89,7 @@ export const useScheduledTasks = () => {
   const { getCollection, updateDocument } = useFirestore();
 
   const generateRoutineTasks = (
-    routines: (Routine | RoutineWithoutSystemFields)[],
+    routines: (Routine | RoutineWithoutSystemFields | string)[],
     goalName?: string,
     milestoneName?: string
   ): ScheduledTask[] => {
@@ -100,9 +100,18 @@ export const useScheduledTasks = () => {
     weekEnd.setDate(weekStart.getDate() + 6); // End of week (Saturday)
     const todayTimestamp = FirebaseTimestamp.fromDate(today);
 
-    return routines.flatMap(routine => {
-      // Skip routines without system fields
-      if (!('id' in routine)) return [];
+    return routines.flatMap(routineOrId => {
+      // If routine is just an ID string, skip it
+      if (typeof routineOrId === 'string') {
+        return [];
+      }
+
+      const routine = routineOrId as Routine | RoutineWithoutSystemFields;
+
+      // Skip if routine doesn't have required fields
+      if (!routine.title || !routine.frequency || !routine.schedule) {
+        return [];
+      }
 
       // Skip if routine has an end date that's passed
       if (routine.endDate) {
@@ -113,7 +122,7 @@ export const useScheduledTasks = () => {
       }
 
       // Get completions for this week
-      const completionsThisWeek = routine.completionDates.filter(date => {
+      const completionsThisWeek = (routine.completionDates || []).filter(date => {
         const completionDate = getDateFromTimestamp(date);
         return completionDate && completionDate >= weekStart && completionDate <= weekEnd;
       }).length;
@@ -126,7 +135,8 @@ export const useScheduledTasks = () => {
 
       // Handle skipped dates
       const isDateSkipped = (date: Date) => {
-        return routine.skipDates?.some(skipDate => {
+        const skipDates = 'skipDates' in routine ? routine.skipDates : undefined;
+        return skipDates?.some((skipDate: Timestamp) => {
           const skippedDate = getDateFromTimestamp(skipDate);
           return skippedDate && 
             skippedDate.getDate() === date.getDate() &&
@@ -139,7 +149,7 @@ export const useScheduledTasks = () => {
       const getNextDueDate = (): Date | null => {
         if (!routine.schedule) return null;
 
-        const lastCompleted = routine.completionDates[routine.completionDates.length - 1];
+        const lastCompleted = (routine.completionDates || [])[routine.completionDates?.length - 1];
         const lastCompletedDate = lastCompleted ? getDateFromTimestamp(lastCompleted) : null;
 
         switch (routine.frequency) {
@@ -199,13 +209,13 @@ export const useScheduledTasks = () => {
 
       // Generate tasks for each scheduled day
       return scheduledDays.map(date => ({
-        id: `${routine.id}-${FirebaseTimestamp.fromDate(date).seconds}`,
+        id: `${('id' in routine ? routine.id : crypto.randomUUID())}-${FirebaseTimestamp.fromDate(date).seconds}`,
         title: routine.title,
         description: routine.description || '',
         completed: false,
         priority: 'medium',
         status: 'not_started',
-        ownerId: routine.ownerId,
+        ownerId: 'ownerId' in routine ? routine.ownerId : currentUser?.uid || '',
         createdAt: FirebaseTimestamp.fromDate(date),
         updatedAt: FirebaseTimestamp.fromDate(date),
         source: {
@@ -221,8 +231,8 @@ export const useScheduledTasks = () => {
           interval: routine.schedule.targetCount,
           daysOfWeek: routine.schedule.daysOfWeek,
           dayOfMonth: routine.schedule.dayOfMonth,
-          skipDates: routine.skipDates,
-          lastCompleted: routine.completionDates[routine.completionDates.length - 1],
+          skipDates: 'skipDates' in routine ? routine.skipDates : undefined,
+          lastCompleted: (routine.completionDates || [])[routine.completionDates?.length - 1],
           nextDue: nextDueDate ? FirebaseTimestamp.fromDate(nextDueDate) : undefined
         },
         progress: {

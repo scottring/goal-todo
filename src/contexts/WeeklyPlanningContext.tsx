@@ -23,11 +23,13 @@ import {
   previousSunday,
   isAfter,
   isBefore,
-  startOfDay
+  startOfDay,
+  addWeeks,
+  max
 } from 'date-fns';
 import { dateToTimestamp, timestampToDate, now } from '../utils/date';
 import { toFirebaseTimestamp, fromFirebaseTimestamp, convertToFirebaseTimestamp, convertFromFirebaseTimestamp } from '../utils/firebase-adapter';
-import { updateDocument } from '../utils/firestore';
+import { updateDocument, getDocument } from '../utils/firestore';
 import { v4 as uuidv4 } from 'uuid';
 
 export interface UnscheduledItem {
@@ -46,7 +48,7 @@ export interface WeeklyPlanningContextType {
   isLoading: boolean;
   error: string | null;
   unscheduledItems: UnscheduledItem[];
-  startNewSession: () => Promise<void>;
+  startNewSession: (reviewStartDate?: Date) => Promise<void>;
   moveToReviewPhase: () => Promise<void>;
   moveToPlanningPhase: () => Promise<void>;
   completeSession: () => Promise<void>;
@@ -60,6 +62,8 @@ export interface WeeklyPlanningContextType {
   scheduleRecurringTask: (routineId: string, frequency: string, schedule: RoutineSchedule) => Promise<void>;
   fetchUnscheduledItems: () => Promise<void>;
   getScheduleSuggestions: (item: UnscheduledItem) => Date[];
+  getLastReviewDate: () => Promise<Date | null>;
+  updateDateRanges: (reviewStart: Date, planningStart: Date, planningEnd: Date) => Promise<void>;
 }
 
 const WeeklyPlanningContext = createContext<WeeklyPlanningContextType | undefined>(undefined);
@@ -157,7 +161,57 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     }
   };
 
-  const startNewSession = async () => {
+  const getLastReviewDate = async (): Promise<Date | null> => {
+    if (!currentUser) return null;
+    
+    try {
+      const sessions = await getCollection<WeeklyPlanningSession>('weeklyPlanningSessions', [
+        where('ownerId', '==', currentUser.uid),
+        where('status', '==', 'completed')
+      ]);
+      
+      if (sessions.length === 0) return null;
+      
+      // Find the most recent completed session
+      const lastSession = sessions.reduce((latest, current) => {
+        const currentDate = timestampToDate(current.weekEndDate);
+        const latestDate = timestampToDate(latest.weekEndDate);
+        return currentDate > latestDate ? current : latest;
+      });
+      
+      return timestampToDate(lastSession.weekEndDate);
+    } catch (err) {
+      console.error('Error getting last review date:', err);
+      return null;
+    }
+  };
+
+  const getOptimalDateRanges = async (): Promise<{
+    reviewStart: Date;
+    planningStart: Date;
+    planningEnd: Date;
+  }> => {
+    const today = startOfDay(new Date());
+    const lastReviewDate = await getLastReviewDate();
+    const nextSundayDate = nextSunday(today);
+    
+    // Review phase: start from last review or a week ago if no previous review
+    const reviewStart = lastReviewDate 
+      ? max([lastReviewDate, addWeeks(today, -1)])
+      : addWeeks(today, -1);
+    
+    // Planning phase: start from current date, end on next Sunday
+    const planningStart = today;
+    const planningEnd = nextSundayDate;
+    
+    return {
+      reviewStart,
+      planningStart,
+      planningEnd
+    };
+  };
+
+  const startNewSession = async (reviewStartDate?: Date) => {
     if (!currentUser) {
       setError('User must be authenticated to start a session');
       return;
@@ -165,31 +219,23 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
 
     try {
       setIsLoading(true);
-      const { weekStart, weekEnd } = getWeekBoundaries();
-
-      // Get all tasks from goals
-      const tasksToReview: TaskReviewItem[] = goals.flatMap(goal => 
-        (Array.isArray(goal.tasks) ? goal.tasks : []).map(task => ({
-          taskId: task.id,
-          title: task.title,
-          status: task.completed ? 'completed' : 'needs_review',
-          originalDueDate: task.dueDate || Timestamp.now(),
-          priority: task.priority || 'medium'
-        }))
-      );
-
+      const dateRanges = await getOptimalDateRanges();
+      const reviewStart = reviewStartDate || dateRanges.reviewStart;
+      
       const newSession: Omit<WeeklyPlanningSession, 'id'> = {
         ownerId: currentUser.uid,
-        weekStartDate: Timestamp.fromDate(weekStart),
-        weekEndDate: Timestamp.fromDate(weekEnd),
+        weekStartDate: Timestamp.fromDate(reviewStart),
+        weekEndDate: Timestamp.fromDate(dateRanges.planningEnd),
         status: 'not_started',
         createdAt: Timestamp.now(),
         updatedAt: Timestamp.now(),
         reviewPhase: {
+          startDate: Timestamp.fromDate(reviewStart),
+          endDate: Timestamp.fromDate(dateRanges.planningStart),
           completedTasks: [],
           missedTasks: [],
           partiallyCompletedTasks: [],
-          taskReviews: tasksToReview,
+          taskReviews: [],
           longTermGoalReviews: [],
           sharedGoalReviews: [],
           summary: {
@@ -201,6 +247,8 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
           }
         },
         planningPhase: {
+          startDate: Timestamp.fromDate(dateRanges.planningStart),
+          endDate: Timestamp.fromDate(dateRanges.planningEnd),
           nextWeekTasks: [],
           sharedGoalAssignments: [],
           recurringTasks: [],
@@ -213,7 +261,6 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
 
       const sessionId = await addDocument('weeklyPlanningSessions', newSession);
       const session = await getDocument('weeklyPlanningSessions', sessionId);
-      console.log('session', session)
       setCurrentSession(session as WeeklyPlanningSession);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
@@ -577,6 +624,35 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     }
   };
 
+  const updateDateRanges = async (
+    reviewStart: Date,
+    planningStart: Date,
+    planningEnd: Date
+  ) => {
+    if (!currentSession) return;
+
+    try {
+      const updatedSession = {
+        ...currentSession,
+        reviewPhase: {
+          ...currentSession.reviewPhase,
+          startDate: Timestamp.fromDate(reviewStart),
+          endDate: Timestamp.fromDate(planningStart)
+        },
+        planningPhase: {
+          ...currentSession.planningPhase,
+          startDate: Timestamp.fromDate(planningStart),
+          endDate: Timestamp.fromDate(planningEnd)
+        }
+      };
+
+      await updateSession(updatedSession);
+    } catch (err) {
+      console.error('Error updating date ranges:', err);
+      setError('Failed to update date ranges');
+    }
+  };
+
   const value: WeeklyPlanningContextType = {
     currentSession,
     isLoading,
@@ -595,7 +671,9 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     addNextWeekTask,
     scheduleRecurringTask: async () => {}, // TODO: Implement
     fetchUnscheduledItems,
-    getScheduleSuggestions
+    getScheduleSuggestions,
+    getLastReviewDate,
+    updateDateRanges
   };
 
   return (

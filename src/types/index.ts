@@ -357,10 +357,12 @@ export interface WeeklyPlanningSession extends BaseDocument {
   status: 'not_started' | 'review_phase' | 'planning_phase' | 'completed';
   
   reviewPhase: {
+    startDate: Timestamp;  // Start date for review period
+    endDate: Timestamp;    // End date for review period (usually current date)
     completedTasks: string[];  // Task IDs
     missedTasks: string[];     // Task IDs
     partiallyCompletedTasks: string[];  // Task IDs
-    taskReviews: TaskReviewItem[];  // Add this field
+    taskReviews: TaskReviewItem[];
     longTermGoalReviews: {
       goalId: string;
       madeProgress: boolean;
@@ -383,6 +385,8 @@ export interface WeeklyPlanningSession extends BaseDocument {
   };
 
   planningPhase: {
+    startDate: Timestamp;  // Start date for planning period (usually current date)
+    endDate: Timestamp;    // End date for planning period (usually next Sunday)
     nextWeekTasks: {
       taskId: string;
       priority: TaskPriority;
