@@ -13,36 +13,31 @@ import type {
   RoutineWithoutSystemFields,
   MeasurableMetric,
   ReviewCycle,
-  Timestamp
+  Timestamp,
+  Routine,
+  TaskPriority,
+  TaskStatus,
+  Task,
+  Milestone
 } from '../types';
 import { ShareModal } from '../components/ShareModal';
-import { CircularProgress, Box } from '@mui/material';
+import { CircularProgress, Box, Container, Typography, Alert } from '@mui/material';
 import { HouseholdMemberSelect } from '../components/HouseholdMemberSelect';
 import { useAuth } from '../contexts/AuthContext';
 import { formatDate } from '../utils/date';
 import { cleanData } from '../utils/data';
 import { useFirestore } from '../hooks/useFirestore';
 import { DAYS_OF_WEEK, MONTHS } from '../constants';
-import { TaskPriority, TaskStatus } from '../types';
+import { toast } from 'react-hot-toast';
+import { debounce } from '../utils/debounce';
 
 interface RoutineFormData {
   title: string;
-  description?: string;
+  description: string;
   frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-  schedule: {
-    daysOfWeek: {
-      day: DayOfWeek;
-      time: TimeOfDay;
-      specificDate?: Timestamp;
-      assignedTo?: string;
-      assignedToEmail?: string;
-    }[];
-    dayOfMonth?: number;
-    monthsOfYear: number[];
-    timeOfDay: TimeOfDay;
-  };
+  schedule: RoutineSchedule;
   targetCount: number;
-  endDate?: string;
+  endDate?: Timestamp;
 }
 
 const MEASURABLE_METRIC_LABELS: Record<MeasurableMetric, string> = {
@@ -61,6 +56,12 @@ const REVIEW_CYCLE_LABELS: Record<ReviewCycle, string> = {
   biannual: 'Every 6 months',
   yearly: 'Yearly'
 };
+
+// Add Notes interface
+interface Notes {
+  content: string;
+  lastUpdated: Timestamp;
+}
 
 const GoalDetailPage: React.FC = () => {
   const { goalId } = useParams<{ goalId: string }>();
@@ -120,23 +121,22 @@ const GoalDetailPage: React.FC = () => {
     description: '',
     frequency: 'daily',
     schedule: {
+      type: 'daily',
+      targetCount: 1,
+      timeOfDay: { hour: 9, minute: 0 },
       daysOfWeek: [],
       dayOfMonth: undefined,
-      monthsOfYear: [],
-      timeOfDay: {
-        hour: 9,
-        minute: 0
-      }
+      monthsOfYear: []
     },
-    targetCount: 1
+    targetCount: 1,
+    endDate: undefined
   });
   const [taskForm, setTaskForm] = useState({
     title: '',
     description: '',
     dueDate: '',
     priority: 'medium' as TaskPriority,
-    status: 'not_started' as TaskStatus,
-    assignedTo: undefined as string | undefined
+    status: 'not_started' as TaskStatus
   });
   const [milestoneForm, setMilestoneForm] = useState({
     name: '',
@@ -144,6 +144,34 @@ const GoalDetailPage: React.FC = () => {
     successCriteria: '',
     status: 'not_started' as TaskStatus
   });
+
+  // Add state for notes
+  const [notes, setNotes] = useState<string>(displayGoal?.notes?.content || '');
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
+
+  // Add debounced save function
+  const saveNotes = debounce(async (content: string) => {
+    if (!displayGoal) return;
+    
+    try {
+      setIsSavingNotes(true);
+      const notesData: Notes = {
+        content,
+        lastUpdated: FirebaseTimestamp.now()
+      };
+      
+      if (isSharedGoal && userGoal) {
+        await updateUserGoal(userGoal.id, { notes: notesData });
+      } else if (goal) {
+        await updateGoal(goal.id, { notes: notesData });
+      }
+    } catch (error) {
+      console.error('Error saving notes:', error);
+      toast.error('Failed to save notes');
+    } finally {
+      setIsSavingNotes(false);
+    }
+  }, 1000);
 
   const handleDelete = async () => {
     if (!goalId) return;
@@ -157,57 +185,80 @@ const GoalDetailPage: React.FC = () => {
     }
   };
 
-  const handleAddRoutine = async () => {
-    if (!routineForm.title.trim() || !displayGoal) return;
+  const handleRoutineSubmit = async () => {
+    if (!displayGoal || !routineForm.title.trim() || !currentUser) return;
 
     try {
-      // Create the schedule object with the correct type
-      const schedule: RoutineSchedule = {
-        type: routineForm.frequency,
-        targetCount: routineForm.targetCount,
-        timeOfDay: routineForm.frequency !== 'weekly' ? routineForm.schedule.timeOfDay : undefined,
-        daysOfWeek: routineForm.frequency === 'weekly' ? routineForm.schedule.daysOfWeek : undefined,
-        dayOfMonth: routineForm.frequency === 'monthly' ? routineForm.schedule.dayOfMonth : undefined,
-        monthsOfYear: ['quarterly', 'yearly'].includes(routineForm.frequency) ? routineForm.schedule.monthsOfYear : undefined
-      };
-
-      const newRoutine: RoutineWithoutSystemFields = {
+      const now = FirebaseTimestamp.now();
+      const newRoutine: Partial<RoutineWithoutSystemFields> = {
         title: routineForm.title.trim(),
-        description: routineForm.description?.trim() || '',
+        description: routineForm.description?.trim(),
         frequency: routineForm.frequency,
-        schedule,
+        schedule: routineForm.schedule,
         targetCount: routineForm.targetCount,
-        endDate: routineForm.endDate ? FirebaseTimestamp.fromDate(new Date(routineForm.endDate)) : undefined,
+        endDate: routineForm.endDate,
         completionDates: [],
-        weeklyCompletionTracker: new Array(7).fill(false),
-        areaId: displayGoal.areaId,
-        assignedTo: undefined
+        review: {
+          reflectionFrequency: 'weekly',
+          reviewStatus: {
+            lastReviewDate: now,
+            nextReviewDate: now,
+            completedReviews: []
+          },
+          adherenceRate: 0,
+          streakData: {
+            currentStreak: 0,
+            longestStreak: 0,
+            lastCompletedDate: now
+          }
+        }
       };
 
-      const cleanedRoutine = cleanData(newRoutine) as RoutineWithoutSystemFields;
-
-      const updatedRoutines = displayGoal.routines ? [...displayGoal.routines, cleanedRoutine] : [cleanedRoutine];
+      const updatedRoutines = [...displayGoal.routines, newRoutine];
       
-      if ('parentGoalId' in displayGoal) {
-        await updateUserGoal(displayGoal.id, { routines: updatedRoutines });
-      } else {
-        await updateGoal(displayGoal.id, { routines: updatedRoutines });
+      if (isSharedGoal && userGoal) {
+        await updateUserGoal(userGoal.id, { routines: updatedRoutines });
+      } else if (goal) {
+        await updateGoal(goal.id, { routines: updatedRoutines });
       }
 
+      setShowRoutineForm(false);
       setRoutineForm({
         title: '',
         description: '',
         frequency: 'daily',
         schedule: {
+          type: 'daily',
+          targetCount: 1,
+          timeOfDay: { hour: 9, minute: 0 },
           daysOfWeek: [],
-          monthsOfYear: [],
-          timeOfDay: { hour: 9, minute: 0 }
+          dayOfMonth: undefined,
+          monthsOfYear: []
         },
-        targetCount: 1
+        targetCount: 1,
+        endDate: undefined
       });
-      setShowRoutineForm(false);
-    } catch (err) {
-      console.error('Error adding routine:', err);
+    } catch (error) {
+      console.error('Error adding routine:', error);
+      toast.error('Failed to add routine');
+    }
+  };
+
+  const handleDeleteRoutine = async (index: number) => {
+    if (!displayGoal || !window.confirm('Are you sure you want to delete this routine?')) return;
+
+    try {
+      const updatedRoutines = displayGoal.routines.filter((_: Routine, i: number) => i !== index);
+      
+      if (isSharedGoal && userGoal) {
+        await updateUserGoal(userGoal.id, { routines: updatedRoutines });
+      } else if (goal) {
+        await updateGoal(goal.id, { routines: updatedRoutines });
+      }
+      toast.success('Routine deleted successfully');
+    } catch (error) {
+      console.error('Error deleting routine:', error);
+      toast.error('Failed to delete routine');
     }
   };
 
@@ -222,7 +273,7 @@ const GoalDetailPage: React.FC = () => {
         dueDate: taskForm.dueDate ? FirebaseTimestamp.fromDate(new Date(taskForm.dueDate)) : undefined,
         priority: taskForm.priority,
         status: taskForm.status,
-        assignedTo: taskForm.assignedTo,
+        assignedTo: undefined,
         completed: false,
         ownerId: displayGoal.ownerId,
         areaId: displayGoal.areaId,
@@ -248,8 +299,7 @@ const GoalDetailPage: React.FC = () => {
         description: '',
         dueDate: '',
         priority: 'medium',
-        status: 'not_started',
-        assignedTo: undefined
+        status: 'not_started'
       });
       setShowTaskForm(false);
     } catch (err) {
@@ -290,27 +340,60 @@ const GoalDetailPage: React.FC = () => {
     }
   };
 
-  const handleTaskCompletion = async (taskId: string, currentStatus: boolean) => {
+  const handleTaskCompletion = async (taskId: string, completed: boolean) => {
     if (!displayGoal) return;
 
     try {
-      const updatedTasks = displayGoal.tasks.map(task =>
-        task.id === taskId
-          ? {
-              ...task,
-              completed: !currentStatus,
-              updatedAt: FirebaseTimestamp.now()
-            }
-          : task
+      const task = displayGoal.tasks.find((t: Task) => t.id === taskId);
+      if (!task) return;
+
+      const updatedTasks = displayGoal.tasks.map((t: Task) =>
+        t.id === taskId ? { ...t, completed: !completed } : t
       );
 
-      if ('parentGoalId' in displayGoal) {
-        await updateUserGoal(displayGoal.id, { tasks: updatedTasks });
-      } else {
-        await updateGoal(displayGoal.id, { tasks: updatedTasks });
+      if (isSharedGoal && userGoal) {
+        await updateUserGoal(userGoal.id, { tasks: updatedTasks });
+      } else if (goal) {
+        await updateGoal(goal.id, { tasks: updatedTasks });
       }
-    } catch (err) {
-      console.error('Error updating task completion:', err);
+    } catch (error) {
+      console.error('Error updating task completion:', error);
+    }
+  };
+
+  const handleDeleteMilestone = async (index: number) => {
+    if (!displayGoal || !window.confirm('Are you sure you want to delete this milestone?')) return;
+
+    try {
+      const updatedMilestones = displayGoal.milestones.filter((_: Milestone, i: number) => i !== index);
+      
+      if (isSharedGoal && userGoal) {
+        await updateUserGoal(userGoal.id, { milestones: updatedMilestones });
+      } else if (goal) {
+        await updateGoal(goal.id, { milestones: updatedMilestones });
+      }
+      toast.success('Milestone deleted successfully');
+    } catch (error) {
+      console.error('Error deleting milestone:', error);
+      toast.error('Failed to delete milestone');
+    }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!displayGoal || !window.confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      const updatedTasks = displayGoal.tasks.filter((t: Task) => t.id !== taskId);
+      
+      if (isSharedGoal && userGoal) {
+        await updateUserGoal(userGoal.id, { tasks: updatedTasks });
+      } else if (goal) {
+        await updateGoal(goal.id, { tasks: updatedTasks });
+      }
+      toast.success('Task deleted successfully');
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
     }
   };
 
@@ -328,9 +411,7 @@ const GoalDetailPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Form fields */}
           <div className="space-y-6">
-            {/* Title */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Title
@@ -344,7 +425,6 @@ const GoalDetailPage: React.FC = () => {
               />
             </div>
 
-            {/* Description */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Description (optional)
@@ -357,17 +437,24 @@ const GoalDetailPage: React.FC = () => {
               />
             </div>
 
-            {/* Frequency */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Frequency
               </label>
               <select
                 value={routineForm.frequency}
-                onChange={e => setRoutineForm(prev => ({
-                  ...prev,
-                  frequency: e.target.value as RoutineFormData['frequency']
-                }))}
+                onChange={e => {
+                  const frequency = e.target.value as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+                  setRoutineForm(prev => ({
+                    ...prev,
+                    frequency,
+                    schedule: {
+                      ...prev.schedule,
+                      type: frequency,
+                      targetCount: frequency === 'daily' ? 1 : frequency === 'weekly' ? 3 : 1
+                    }
+                  }));
+                }}
                 className="w-full p-2 border rounded-md"
               >
                 <option value="daily">Daily</option>
@@ -378,110 +465,47 @@ const GoalDetailPage: React.FC = () => {
               </select>
             </div>
 
-            {/* Schedule fields based on frequency */}
             {routineForm.frequency === 'weekly' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Days and Times
+                  Days of Week
                 </label>
-                <div className="space-y-4">
-                  {DAYS_OF_WEEK.map((day: DayOfWeek) => {
-                    const daySchedule = routineForm.schedule.daysOfWeek.find(d => d.day === day);
-                    return (
-                      <div key={day} className="flex items-center gap-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setRoutineForm(prev => {
-                              const newDaysOfWeek = daySchedule
-                                ? prev.schedule.daysOfWeek.filter(d => d.day !== day)
-                                : [...prev.schedule.daysOfWeek, {
-                                    day,
-                                    time: { hour: 9, minute: 0 }
-                                  }];
-                              return {
-                                ...prev,
-                                schedule: {
-                                  ...prev.schedule,
-                                  daysOfWeek: newDaysOfWeek
-                                }
-                              };
-                            });
-                          }}
-                          className={`px-3 py-1 rounded-full text-sm ${
-                            daySchedule
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
-                        >
-                          {day.charAt(0).toUpperCase() + day.slice(1)}
-                        </button>
-                        
-                        {daySchedule && (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              min="0"
-                              max="23"
-                              value={daySchedule.time.hour}
-                              onChange={e => {
-                                setRoutineForm(prev => ({
-                                  ...prev,
-                                  schedule: {
-                                    ...prev.schedule,
-                                    daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                      d.day === day
-                                        ? {
-                                            ...d,
-                                            time: {
-                                              ...d.time,
-                                              hour: parseInt(e.target.value)
-                                            }
-                                          }
-                                        : d
-                                    )
-                                  }
-                                }));
-                              }}
-                              className="w-20 p-2 border rounded-md"
-                            />
-                            <span>:</span>
-                            <input
-                              type="number"
-                              min="0"
-                              max="59"
-                              value={daySchedule.time.minute}
-                              onChange={e => {
-                                setRoutineForm(prev => ({
-                                  ...prev,
-                                  schedule: {
-                                    ...prev.schedule,
-                                    daysOfWeek: prev.schedule.daysOfWeek.map(d =>
-                                      d.day === day
-                                        ? {
-                                            ...d,
-                                            time: {
-                                              ...d.time,
-                                              minute: parseInt(e.target.value)
-                                            }
-                                          }
-                                        : d
-                                    )
-                                  }
-                                }));
-                              }}
-                              className="w-20 p-2 border rounded-md"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="flex flex-wrap gap-2">
+                  {['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map(day => (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => {
+                        setRoutineForm(prev => {
+                          const currentDays = prev.schedule.daysOfWeek || [];
+                          const isDaySelected = currentDays.some(d => d.day === day);
+                          
+                          const updatedDays = isDaySelected
+                            ? currentDays.filter(d => d.day !== day)
+                            : [...currentDays, { day: day as DayOfWeek, time: prev.schedule.timeOfDay || { hour: 9, minute: 0 } }];
+                          
+                          return {
+                            ...prev,
+                            schedule: {
+                              ...prev.schedule,
+                              daysOfWeek: updatedDays
+                            }
+                          };
+                        });
+                      }}
+                      className={`px-3 py-1 rounded-full text-sm ${
+                        routineForm.schedule.daysOfWeek?.some(d => d.day === day)
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-800'
+                      }`}
+                    >
+                      {day.charAt(0).toUpperCase() + day.slice(1, 3)}
+                    </button>
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Monthly schedule */}
             {routineForm.frequency === 'monthly' && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -491,7 +515,7 @@ const GoalDetailPage: React.FC = () => {
                   type="number"
                   min="1"
                   max="31"
-                  value={routineForm.schedule.dayOfMonth || 1}
+                  value={routineForm.schedule.dayOfMonth || ''}
                   onChange={e => setRoutineForm(prev => ({
                     ...prev,
                     schedule: {
@@ -504,42 +528,6 @@ const GoalDetailPage: React.FC = () => {
               </div>
             )}
 
-            {/* Quarterly/Yearly schedule */}
-            {['quarterly', 'yearly'].includes(routineForm.frequency) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Months
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {MONTHS.map((month: string, index: number) => (
-                    <button
-                      key={month}
-                      type="button"
-                      onClick={() => {
-                        setRoutineForm(prev => ({
-                          ...prev,
-                          schedule: {
-                            ...prev.schedule,
-                            monthsOfYear: prev.schedule.monthsOfYear.includes(index + 1)
-                              ? prev.schedule.monthsOfYear.filter(m => m !== index + 1)
-                              : [...prev.schedule.monthsOfYear, index + 1]
-                          }
-                        }));
-                      }}
-                      className={`px-3 py-1 rounded-full text-sm ${
-                        routineForm.schedule.monthsOfYear.includes(index + 1)
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {month.slice(0, 3)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Time of Day */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Time of Day
@@ -549,13 +537,13 @@ const GoalDetailPage: React.FC = () => {
                   type="number"
                   min="0"
                   max="23"
-                  value={routineForm.schedule.timeOfDay.hour}
+                  value={routineForm.schedule.timeOfDay?.hour || 9}
                   onChange={e => setRoutineForm(prev => ({
                     ...prev,
                     schedule: {
                       ...prev.schedule,
                       timeOfDay: {
-                        ...prev.schedule.timeOfDay,
+                        ...prev.schedule.timeOfDay!,
                         hour: parseInt(e.target.value)
                       }
                     }
@@ -567,13 +555,13 @@ const GoalDetailPage: React.FC = () => {
                   type="number"
                   min="0"
                   max="59"
-                  value={routineForm.schedule.timeOfDay.minute}
+                  value={routineForm.schedule.timeOfDay?.minute || 0}
                   onChange={e => setRoutineForm(prev => ({
                     ...prev,
                     schedule: {
                       ...prev.schedule,
                       timeOfDay: {
-                        ...prev.schedule.timeOfDay,
+                        ...prev.schedule.timeOfDay!,
                         minute: parseInt(e.target.value)
                       }
                     }
@@ -583,35 +571,42 @@ const GoalDetailPage: React.FC = () => {
               </div>
             </div>
 
-            {/* Target Count */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Target Count (times per {routineForm.frequency})
+                Target Count (per {routineForm.frequency})
               </label>
               <input
                 type="number"
                 min="1"
                 value={routineForm.targetCount}
-                onChange={e => setRoutineForm(prev => ({ ...prev, targetCount: parseInt(e.target.value) }))}
+                onChange={e => setRoutineForm(prev => ({
+                  ...prev,
+                  targetCount: parseInt(e.target.value),
+                  schedule: {
+                    ...prev.schedule,
+                    targetCount: parseInt(e.target.value)
+                  }
+                }))}
                 className="w-full p-2 border rounded-md"
               />
             </div>
 
-            {/* End Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 End Date (optional)
               </label>
               <input
                 type="date"
-                value={routineForm.endDate || ''}
-                onChange={e => setRoutineForm(prev => ({ ...prev, endDate: e.target.value }))}
+                value={routineForm.endDate ? new Date(routineForm.endDate.seconds * 1000).toISOString().split('T')[0] : ''}
+                onChange={e => setRoutineForm(prev => ({
+                  ...prev,
+                  endDate: e.target.value ? FirebaseTimestamp.fromDate(new Date(e.target.value)) : undefined
+                }))}
                 className="w-full p-2 border rounded-md"
               />
             </div>
           </div>
 
-          {/* Form Actions */}
           <div className="mt-6 flex justify-end gap-3">
             <button
               onClick={() => setShowRoutineForm(false)}
@@ -620,9 +615,9 @@ const GoalDetailPage: React.FC = () => {
               Cancel
             </button>
             <button
-              onClick={handleAddRoutine}
-              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+              onClick={handleRoutineSubmit}
               disabled={!routineForm.title.trim()}
+              className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
               Add Routine
             </button>
@@ -998,42 +993,85 @@ const GoalDetailPage: React.FC = () => {
               </div>
 
               <div className="space-y-4">
-                {displayGoal.milestones.map((milestone: { 
-                  name: string;
-                  successCriteria: string;
-                  status: TaskStatus;
-                  targetDate?: Timestamp;
-                }, index: number) => (
+                {displayGoal.milestones.map((milestone: Milestone, index: number) => (
                   <div 
                     key={index}
                     className="border rounded-lg p-4 hover:shadow-sm transition-shadow"
                   >
                     <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-medium text-gray-800">{milestone.name}</h3>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-gray-800">{milestone.name}</h3>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                setMilestoneForm({
+                                  name: milestone.name,
+                                  targetDate: milestone.targetDate ? new Date(milestone.targetDate.seconds * 1000).toISOString().split('T')[0] : '',
+                                  successCriteria: milestone.successCriteria,
+                                  status: milestone.status
+                                });
+                                setShowMilestoneForm(true);
+                              }}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteMilestone(index)}
+                              className="text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
                         <p className="text-sm text-gray-600 mt-1">
                           {milestone.successCriteria}
                         </p>
                       </div>
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        milestone.status === 'completed' 
-                          ? 'bg-green-100 text-green-800'
-                          : milestone.status === 'in_progress'
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}>
-                        {milestone.status.replace('_', ' ')}
-                      </span>
-                    </div>
-                    {milestone.targetDate && (
-                      <div className="flex items-center gap-2 text-sm text-gray-500 mt-2">
-                        <Calendar className="w-4 h-4" />
-                        {formatDate(milestone.targetDate)}
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={milestone.status}
+                          onChange={(e) => {
+                            const updatedMilestones = displayGoal.milestones.map((m: Milestone, i: number) =>
+                              i === index ? { ...m, status: e.target.value as TaskStatus } : m
+                            );
+                            if (isSharedGoal && userGoal) {
+                              updateUserGoal(userGoal.id, { milestones: updatedMilestones });
+                            } else if (goal) {
+                              updateGoal(goal.id, { milestones: updatedMilestones });
+                            }
+                          }}
+                          className="text-sm border rounded px-2 py-1"
+                        >
+                          <option value="not_started">Not Started</option>
+                          <option value="in_progress">In Progress</option>
+                          <option value="completed">Completed</option>
+                        </select>
                       </div>
-                    )}
+                    </div>
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Notes */}
+            <div className="bg-white p-6 rounded-lg shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-semibold text-gray-800">Notes</h2>
+                {isSavingNotes && (
+                  <span className="text-sm text-gray-500">Saving...</span>
+                )}
+              </div>
+              <textarea
+                value={notes}
+                onChange={(e) => {
+                  setNotes(e.target.value);
+                  saveNotes(e.target.value);
+                }}
+                placeholder="Add notes about your goal..."
+                className="w-full h-40 p-3 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
             </div>
           </div>
 
@@ -1053,53 +1091,69 @@ const GoalDetailPage: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                {displayGoal.routines.map((routine: RoutineWithoutSystemFields, index: number) => (
+                {displayGoal.routines.map((routine: Routine, index: number) => (
                   <div 
                     key={index}
                     className="p-4 border rounded-lg hover:bg-gray-50"
                   >
                     <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-medium text-gray-800">{routine.title}</h3>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-medium text-gray-800">{routine.title}</h3>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                setRoutineForm({
+                                  title: routine.title,
+                                  description: routine.description || '',
+                                  frequency: routine.frequency,
+                                  schedule: routine.schedule,
+                                  targetCount: routine.targetCount,
+                                  endDate: routine.endDate
+                                });
+                                setShowRoutineForm(true);
+                              }}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRoutine(index)}
+                              className="text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
                         {routine.description && (
                           <p className="text-sm text-gray-600 mt-1">{routine.description}</p>
                         )}
+                        <div className="mt-2 space-y-1">
+                          <p className="text-sm text-gray-600">
+                            <span className="font-medium">Progress:</span>{' '}
+                            {routine.completionDates?.length || 0} / {routine.targetCount} completions
+                          </p>
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="bg-blue-600 h-2 rounded-full"
+                              style={{
+                                width: `${Math.min(
+                                  ((routine.completionDates?.length || 0) / routine.targetCount) * 100,
+                                  100
+                                )}%`
+                              }}
+                            />
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div className="mt-2 text-sm text-gray-600">
-                      <p>
-                        {routine.targetCount} times per {routine.frequency}
-                      </p>
-                      {routine.schedule.timeOfDay && (
-                        <p className="mt-1 flex items-center gap-1">
-                          <Clock className="w-4 h-4" />
-                          {String(routine.schedule.timeOfDay.hour).padStart(2, '0')}:
-                          {String(routine.schedule.timeOfDay.minute).padStart(2, '0')}
-                        </p>
-                      )}
-                      {routine.schedule.daysOfWeek && routine.schedule.daysOfWeek.length > 0 && (
-                        <p className="mt-1">
-                          On: {routine.schedule.daysOfWeek.map((daySchedule: {
-                            day: DayOfWeek;
-                            time: TimeOfDay;
-                          }) => 
-                            `${daySchedule.day.charAt(0).toUpperCase() + daySchedule.day.slice(1)} at ${String(daySchedule.time.hour).padStart(2, '0')}:${String(daySchedule.time.minute).padStart(2, '0')}`
-                          ).join(', ')}
-                        </p>
-                      )}
-                      {routine.schedule.dayOfMonth && (
-                        <p className="mt-1">
-                          On day {routine.schedule.dayOfMonth} of each month
-                        </p>
-                      )}
-                      {routine.endDate && (
-                        <p className="mt-1">
-                          Until: {formatDate(routine.endDate)}
-                        </p>
-                      )}
                     </div>
                   </div>
                 ))}
+                {displayGoal.routines.length === 0 && (
+                  <div className="text-center text-gray-500 py-4">
+                    No routines or habits yet
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1117,18 +1171,12 @@ const GoalDetailPage: React.FC = () => {
               </div>
 
               <div className="space-y-3">
-                {displayGoal.tasks.map((task: {
-                  id: string;
-                  title: string;
-                  completed: boolean;
-                  dueDate?: Timestamp;
-                  priority: TaskPriority;
-                }, index: number) => (
+                {displayGoal.tasks.map((task: Task, index: number) => (
                   <div 
                     key={index}
                     className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
                   >
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-1">
                       <button
                         onClick={() => handleTaskCompletion(task.id, task.completed)}
                         className="focus:outline-none"
@@ -1139,24 +1187,56 @@ const GoalDetailPage: React.FC = () => {
                           } hover:${task.completed ? 'text-green-600' : 'text-gray-400'}`} 
                         />
                       </button>
-                      <div>
-                        <p className={`text-gray-800 ${task.completed ? 'line-through' : ''}`}>{task.title}</p>
-                        {task.dueDate && (
-                          <p className="text-sm text-gray-500">
-                            Due: {formatDate(task.dueDate)}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className={`text-gray-800 ${task.completed ? 'line-through' : ''}`}>
+                            {task.title}
                           </p>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => {
+                                setTaskForm({
+                                  title: task.title,
+                                  description: task.description || '',
+                                  dueDate: task.dueDate ? new Date(task.dueDate.seconds * 1000).toISOString().split('T')[0] : '',
+                                  priority: task.priority,
+                                  status: task.status
+                                });
+                                setShowTaskForm(true);
+                              }}
+                              className="text-gray-400 hover:text-gray-600"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteTask(task.id)}
+                              className="text-red-400 hover:text-red-600"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                        {task.description && (
+                          <p className="text-sm text-gray-500 mt-1">{task.description}</p>
                         )}
                       </div>
                     </div>
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      task.priority === 'high' 
-                        ? 'bg-red-100 text-red-800'
-                        : task.priority === 'medium'
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {task.priority}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-1 rounded ${
+                        task.priority === 'high' 
+                          ? 'bg-red-100 text-red-800'
+                          : task.priority === 'medium'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-green-100 text-green-800'
+                      }`}>
+                        {task.priority}
+                      </span>
+                      {task.dueDate && (
+                        <span className="text-sm text-gray-500">
+                          {formatDate(task.dueDate)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

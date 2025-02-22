@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
 import { timestampToDate } from '../utils/date';
+import { currentEnv } from '../config/firebase';
 import type { 
   Task, 
   Routine, 
@@ -16,6 +17,16 @@ import type {
   Timestamp,
   TaskDependency
 } from '../types';
+
+// Collection names based on environment
+const COLLECTION_PREFIX = currentEnv === 'development' ? 'dev_' : '';
+const COLLECTIONS = {
+  AREAS: `${COLLECTION_PREFIX}areas`,
+  ACTIVITIES: `${COLLECTION_PREFIX}activities`,
+  ROUTINES: `${COLLECTION_PREFIX}routines`,
+  USER_GOALS: `${COLLECTION_PREFIX}user_goals`,
+  SHARED_GOALS: `${COLLECTION_PREFIX}shared_goals`
+};
 
 export interface ScheduledTask extends Task {
   source: {

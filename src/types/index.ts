@@ -227,19 +227,42 @@ export interface SharedGoal extends BaseDocument {
   };
 }
 
-export interface UserGoal extends BaseDocument {
+export interface Notes {
+  content: string;
+  lastUpdated: Timestamp;
+}
+
+export interface UserGoal {
+  id: string;
   parentGoalId: string;
   name: string;
-  specificAction: string;
-  measurableMetric: MeasurableMetric;
-  customMetric?: string;
-  achievabilityCheck: AchievabilityCheck;
-  relevance: string;
-  timeTracking: TimeTracking;
-  milestones: Milestone[];
-  tasks: Task[];
-  routines: (Routine | RoutineWithoutSystemFields)[];
+  description?: string;
+  ownerId: string;
   areaId: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  tasks: Task[];
+  routines: Routine[];
+  milestones: Milestone[];
+  sharedWith: string[];
+  permissions: { [userId: string]: HierarchicalPermissions };
+  notes?: Notes;
+}
+
+export interface Goal {
+  id: string;
+  name: string;
+  description?: string;
+  ownerId: string;
+  areaId: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  tasks: Task[];
+  routines: Routine[];
+  milestones: Milestone[];
+  sharedWith: string[];
+  permissions: { [userId: string]: HierarchicalPermissions };
+  notes?: Notes;
 }
 
 export interface SharedWeeklyReview extends BaseDocument {
