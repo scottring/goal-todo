@@ -79,19 +79,16 @@ export const useScheduledTasks = () => {
 
   const generateRoutineTasks = (
     routines: (Routine | RoutineWithoutSystemFields)[],
-    goalName: string,
+    goalName?: string,
     milestoneName?: string
   ): ScheduledTask[] => {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayTimestamp = FirebaseTimestamp.fromDate(today);
-    
-    // Get start and end of current week
     const weekStart = new Date(today);
     weekStart.setDate(today.getDate() - today.getDay()); // Start of week (Sunday)
     const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    
+    weekEnd.setDate(weekStart.getDate() + 6); // End of week (Saturday)
+    const todayTimestamp = FirebaseTimestamp.fromDate(today);
+
     return routines.flatMap(routine => {
       // Skip routines without system fields
       if (!('id' in routine)) return [];
@@ -129,21 +126,29 @@ export const useScheduledTasks = () => {
 
       // Get the next due date based on pattern
       const getNextDueDate = (): Date | null => {
-        if (!routine.recurrence) return null;
+        if (!routine.schedule) return null;
 
-        const lastCompleted = routine.recurrence.lastCompleted ? 
-          getDateFromTimestamp(routine.recurrence.lastCompleted) : null;
+        const lastCompleted = routine.completionDates[routine.completionDates.length - 1];
+        const lastCompletedDate = lastCompleted ? getDateFromTimestamp(lastCompleted) : null;
 
-        switch (routine.recurrence.pattern) {
+        switch (routine.frequency) {
           case 'daily':
             return today;
           case 'weekly':
-            if (routine.schedule?.daysOfWeek && routine.schedule.daysOfWeek.length > 0) {
+            if (routine.schedule.daysOfWeek && routine.schedule.daysOfWeek.length > 0) {
               // Find the next scheduled day that hasn't been completed
-              const nextDay = routine.schedule.daysOfWeek.find(ds => 
-                DAY_TO_NUMBER[ds.day] >= dayOfWeek &&
-                (!lastCompleted || lastCompleted < today)
-              );
+              const nextDay = routine.schedule.daysOfWeek.find(ds => {
+                const dayNum = DAY_TO_NUMBER[ds.day];
+                if (dayNum < dayOfWeek) return false;
+                if (dayNum === dayOfWeek) {
+                  // If it's today, check if it's already been completed
+                  return !lastCompletedDate || 
+                    lastCompletedDate.getDate() !== today.getDate() ||
+                    lastCompletedDate.getMonth() !== today.getMonth() ||
+                    lastCompletedDate.getFullYear() !== today.getFullYear();
+                }
+                return true;
+              });
               if (nextDay) {
                 const nextDate = new Date(today);
                 nextDate.setDate(today.getDate() + (DAY_TO_NUMBER[nextDay.day] - dayOfWeek));
@@ -152,7 +157,7 @@ export const useScheduledTasks = () => {
             }
             return null;
           case 'monthly':
-            if (routine.schedule?.dayOfMonth) {
+            if (routine.schedule.dayOfMonth) {
               const nextDate = new Date(today);
               if (dayOfMonth <= routine.schedule.dayOfMonth) {
                 nextDate.setDate(routine.schedule.dayOfMonth);
@@ -168,41 +173,24 @@ export const useScheduledTasks = () => {
         }
       };
 
-      // Determine scheduled days based on frequency and pattern
-      switch (routine.frequency) {
-        case 'daily':
-          if (!isDateSkipped(today)) {
-            scheduledDays.push(today);
-          }
-          break;
-        case 'weekly':
-          const nextDue = getNextDueDate();
-          if (nextDue && !isDateSkipped(nextDue)) {
-            scheduledDays.push(nextDue);
-          }
-          break;
-        case 'monthly':
-          if (routine.schedule?.dayOfMonth === dayOfMonth && !isDateSkipped(today)) {
-            scheduledDays.push(today);
-          }
-          break;
-        case 'quarterly':
-          if (routine.schedule?.monthsOfYear?.includes(month + 1) && dayOfMonth === 1 && !isDateSkipped(today)) {
-            scheduledDays.push(today);
-          }
-          break;
-        case 'yearly':
-          if ((routine.schedule?.monthsOfYear?.[0] === month + 1 || month === 0) && dayOfMonth === 1 && !isDateSkipped(today)) {
-            scheduledDays.push(today);
-          }
-          break;
+      // Determine if we should show the task today
+      const nextDueDate = getNextDueDate();
+      if (!nextDueDate || isDateSkipped(nextDueDate)) return [];
+
+      // Only add to scheduledDays if it's due today
+      if (
+        nextDueDate.getDate() === today.getDate() &&
+        nextDueDate.getMonth() === today.getMonth() &&
+        nextDueDate.getFullYear() === today.getFullYear()
+      ) {
+        scheduledDays.push(nextDueDate);
       }
 
       // Generate tasks for each scheduled day
       return scheduledDays.map(date => ({
         id: `${routine.id}-${FirebaseTimestamp.fromDate(date).seconds}`,
         title: routine.title,
-        description: routine.description,
+        description: routine.description || '',
         completed: false,
         priority: 'medium',
         status: 'not_started',
@@ -217,15 +205,14 @@ export const useScheduledTasks = () => {
         },
         isRoutine: true,
         routineCompletionDate: todayTimestamp,
-        complexity: routine.complexity,
         recurrence: {
           pattern: routine.frequency,
-          interval: routine.targetCount,
-          daysOfWeek: routine.schedule?.daysOfWeek,
-          dayOfMonth: routine.schedule?.dayOfMonth,
+          interval: routine.schedule.targetCount,
+          daysOfWeek: routine.schedule.daysOfWeek,
+          dayOfMonth: routine.schedule.dayOfMonth,
           skipDates: routine.skipDates,
           lastCompleted: routine.completionDates[routine.completionDates.length - 1],
-          nextDue: routine.recurrence?.nextDue
+          nextDue: nextDueDate ? FirebaseTimestamp.fromDate(nextDueDate) : undefined
         },
         progress: {
           percentComplete: 0,

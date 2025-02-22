@@ -255,6 +255,38 @@ const TasksPage: React.FC = () => {
   }, [scheduledTasks]);
 
   const TaskCard: React.FC<{ task: ScheduledTask; index: number }> = ({ task, index }) => {
+    const formatRoutineSchedule = (task: ScheduledTask) => {
+      if (!task.recurrence) return '';
+      
+      const days = task.recurrence.daysOfWeek?.map(ds => ds.day.slice(0, 3)).join(' & ');
+      const time = task.recurrence.daysOfWeek?.[0]?.time;
+      
+      let scheduleText = '';
+      switch (task.recurrence.pattern) {
+        case 'daily':
+          scheduleText = 'Daily';
+          break;
+        case 'weekly':
+          scheduleText = days ? `${days}` : 'Weekly';
+          break;
+        case 'monthly':
+          scheduleText = task.recurrence.dayOfMonth ? 
+            `Monthly on day ${task.recurrence.dayOfMonth}` : 'Monthly';
+          break;
+        default:
+          scheduleText = task.recurrence.pattern;
+      }
+      
+      if (time) {
+        scheduleText += ` at ${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
+      }
+      
+      return scheduleText;
+    };
+
+    const isOverdue = task.dueDate && timestampToDate(task.dueDate) < new Date();
+    const routineSchedule = task.source.type === 'routine' ? formatRoutineSchedule(task) : '';
+
     return (
       <Card
         onClick={() => navigate(`/tasks/${task.id}`)}
@@ -268,6 +300,10 @@ const TasksPage: React.FC = () => {
           ...(index === selectedIndex && {
             outline: '2px solid',
             outlineColor: 'primary.main'
+          }),
+          ...(isOverdue && !task.completed && {
+            borderLeft: '4px solid',
+            borderLeftColor: 'error.main'
           })
         }}
       >
@@ -304,7 +340,7 @@ const TasksPage: React.FC = () => {
                 variant="body1"
                 sx={{
                   textDecoration: task.completed ? 'line-through' : 'none',
-                  color: task.dueDate && timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.primary',
+                  color: isOverdue && !task.completed ? 'error.main' : 'text.primary',
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap'
@@ -314,10 +350,13 @@ const TasksPage: React.FC = () => {
               </Typography>
               {task.source.type === 'routine' && (
                 <Chip
-                  label="Routine"
+                  label={routineSchedule || "Routine"}
                   size="small"
-                  color="primary"
-                  sx={{ bgcolor: 'primary.light', color: 'primary.dark' }}
+                  color={isOverdue && !task.completed ? "error" : "primary"}
+                  sx={{ 
+                    bgcolor: isOverdue && !task.completed ? 'error.light' : 'primary.light',
+                    color: isOverdue && !task.completed ? 'error.dark' : 'primary.dark'
+                  }}
                 />
               )}
               {task.priority === 'high' && (
@@ -339,7 +378,7 @@ const TasksPage: React.FC = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 0.5,
-                    color: timestampToDate(task.dueDate) < new Date() ? 'error.main' : 'text.secondary'
+                    color: isOverdue && !task.completed ? 'error.main' : 'text.secondary'
                   }}
                 >
                   <Calendar className="w-3 h-3" />

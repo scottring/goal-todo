@@ -14,4 +14,13 @@ const firebaseConfig = {
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
 
 // Get Firestore instance
-export const db = getFirestore(app); 
+export const db = getFirestore(app);
+
+// Export current environment for reference
+export const currentEnv = import.meta.env.VITE_ENV || 'development';
+
+// Helper function to check if we're in development
+export const isDevelopment = () => currentEnv === 'development';
+
+// Helper function to check if we're in production
+export const isProduction = () => currentEnv === 'production'; 

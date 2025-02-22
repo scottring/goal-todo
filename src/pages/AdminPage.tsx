@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { collection, getDocs, deleteDoc, query, limit } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { toast } from 'react-hot-toast';
+import { DevDataManager } from '../components/DevDataManager';
 
 const AdminPage: React.FC = () => {
   const [isDeleting, setIsDeleting] = useState(false);
@@ -69,6 +70,13 @@ const AdminPage: React.FC = () => {
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Admin Dashboard</h1>
       
       <div className="space-y-6">
+        {/* Development Data Manager */}
+        <div className="p-6 bg-white rounded-lg shadow">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Development Tools</h2>
+          <DevDataManager />
+        </div>
+
+        {/* Danger Zone */}
         <div className="p-6 bg-white rounded-lg shadow">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Danger Zone</h2>
           
