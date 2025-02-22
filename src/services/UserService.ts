@@ -1,4 +1,4 @@
-import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, getDoc, Timestamp, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, getDocs, doc, updateDoc, setDoc, serverTimestamp, getDoc, Timestamp, deleteDoc, arrayUnion } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserProfile, Timestamp as TimestampType } from '../types';
 import { getAuth } from 'firebase/auth';
@@ -51,6 +51,44 @@ export class UserService {
     }
   }
 
+  async findUsersInSameContext(userId: string): Promise<UserProfile[]> {
+    try {
+      // Get the user's profile first
+      const userRef = doc(db, 'users', userId);
+      const userDoc = await getDoc(userRef);
+      
+      if (!userDoc.exists()) {
+        return [];
+      }
+
+      const userData = userDoc.data() as UserProfile;
+      
+      // Get all users this person shares with or who share with them
+      const sharedWithUsers = await this.findUsersByIds(userData.sharedWith);
+      
+      // Also get users who have shared with this user
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('sharedWith', 'array-contains', userId));
+      const querySnapshot = await getDocs(q);
+      
+      const sharedByUsers = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      } as UserProfile));
+
+      // Combine and deduplicate users
+      const allUsers = [...sharedWithUsers, ...sharedByUsers];
+      const uniqueUsers = allUsers.filter((user, index, self) =>
+        index === self.findIndex((u) => u.id === user.id)
+      );
+
+      return uniqueUsers;
+    } catch (error) {
+      console.error('Error finding users in same context:', error);
+      throw error;
+    }
+  }
+
   async createUserProfile(email: string, displayName?: string): Promise<UserProfile> {
     try {
       const auth = getAuth();
@@ -63,40 +101,6 @@ export class UserService {
       if (existingUser) {
         return existingUser;
       }
-
-      // Clean up any pending invites for this email
-      const pendingInvitesRef = collection(db, 'pendingHouseholdMembers');
-      const pendingQuery = query(
-        pendingInvitesRef,
-        where('email', '==', email.toLowerCase())
-      );
-      const pendingSnapshot = await getDocs(pendingQuery);
-      
-      // Get all users who have pending invites for this email
-      const usersToUpdate = new Set<string>();
-      pendingSnapshot.docs.forEach(doc => {
-        const data = doc.data();
-        if (data.invitedBy) {
-          usersToUpdate.add(data.invitedBy);
-        }
-      });
-
-      // Delete all pending invites for this email
-      const pendingDeletes = pendingSnapshot.docs.map(doc => deleteDoc(doc.ref));
-
-      // Update all users who had pending invites for this email
-      const userUpdates = Array.from(usersToUpdate).map(async userId => {
-        const userRef = doc(db, 'users', userId);
-        const userDoc = await getDoc(userRef);
-        if (userDoc.exists()) {
-          const userData = userDoc.data();
-          await updateDoc(userRef, {
-            pendingInvites: (userData.pendingInvites || []).filter(
-              (invite: { email: string }) => invite.email.toLowerCase() !== email.toLowerCase()
-            )
-          });
-        }
-      });
 
       // Create new user document with user's UID as the document ID
       const userRef = doc(db, 'users', auth.currentUser.uid);
@@ -119,12 +123,29 @@ export class UserService {
         }
       };
 
-      // Execute all operations
-      await Promise.all([
-        setDoc(userRef, newUser),
-        ...pendingDeletes,
-        ...userUpdates
-      ]);
+      await setDoc(userRef, newUser);
+
+      // Find and process any pending invites
+      const pendingInvitesRef = collection(db, 'pendingHouseholdMembers');
+      const pendingQuery = query(
+        pendingInvitesRef,
+        where('email', '==', email.toLowerCase())
+      );
+      const pendingSnapshot = await getDocs(pendingQuery);
+
+      // For each pending invite, call acceptHouseholdInvitation with the inviter's email
+      const acceptPromises = pendingSnapshot.docs.map(async doc => {
+        const data = doc.data();
+        if (data.invitedByEmail) {
+          try {
+            await this.acceptHouseholdInvitation(data.invitedByEmail);
+          } catch (error) {
+            console.error('Error accepting invitation:', error);
+          }
+        }
+      });
+
+      await Promise.all(acceptPromises);
 
       // Return the user with the actual timestamp
       return {
@@ -314,6 +335,47 @@ export class UserService {
         updates.push(this.updateUserProfile(currentUser.id, currentUserUpdates));
       }
 
+      // Process any pending area shares
+      console.log('Processing pending area shares...');
+      const pendingSharesRef = collection(db, 'pendingAreaShares');
+      const pendingSharesQuery = query(
+        pendingSharesRef,
+        where('email', '==', auth.currentUser.email?.toLowerCase())
+      );
+      const pendingSharesSnapshot = await getDocs(pendingSharesQuery);
+
+      const areaUpdates = pendingSharesSnapshot.docs.map(async shareDoc => {
+        const shareData = shareDoc.data();
+        const areaRef = doc(db, 'areas', shareData.areaId);
+        const areaDoc = await getDoc(areaRef);
+
+        if (areaDoc.exists()) {
+          const areaData = areaDoc.data();
+          
+          // Update the area's sharing settings
+          await updateDoc(areaRef, {
+            sharedWith: arrayUnion(currentUser.id),
+            permissions: {
+              ...areaData.permissions,
+              [currentUser.id]: shareData.permissions
+            },
+            // Remove the pending share
+            pendingShares: (areaData.pendingShares || []).filter(
+              (share: { email: string }) => 
+                share.email.toLowerCase() !== auth.currentUser?.email?.toLowerCase()
+            )
+          });
+
+          // Update user's shared areas
+          await updateDoc(doc(db, 'users', currentUser.id), {
+            sharedAreas: arrayUnion(shareData.areaId)
+          });
+        }
+
+        // Delete the pending share document
+        await deleteDoc(shareDoc.ref);
+      });
+
       // Share existing goals and tasks
       console.log('Sharing existing goals and tasks...');
       
@@ -357,7 +419,12 @@ export class UserService {
 
       // Execute all updates
       console.log('Executing all updates...');
-      await Promise.all([...updates, ...goalUpdates, ...taskUpdates]);
+      await Promise.all([
+        ...updates, 
+        ...goalUpdates, 
+        ...taskUpdates,
+        ...areaUpdates
+      ]);
       
       console.log('Invitation accepted successfully');
     } catch (error) {

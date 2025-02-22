@@ -71,11 +71,30 @@ service cloud.firestore {
             || resource.data.invitedBy == request.auth.uid);
     }
 
+    // Pending area shares collection
+    match /pendingAreaShares/{shareId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() 
+        && (resource.data.email == request.auth.token.email 
+            || resource.data.sharedBy == request.auth.uid);
+      allow delete: if isSignedIn() 
+        && (resource.data.email == request.auth.token.email 
+            || resource.data.sharedBy == request.auth.uid);
+    }
+
     // Areas collection rules
     match /areas/{areaId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow update: if isSignedIn() && (
+        hasEditPermission(resource.data) ||
+        // Allow owners to update sharing-related fields
+        (isOwner(resource.data.ownerId) && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pendingShares']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedWith']) ||
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['permissions'])
+        ))
+      );
       allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 

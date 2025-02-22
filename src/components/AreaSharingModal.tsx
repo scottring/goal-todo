@@ -5,12 +5,31 @@ import { useFirestore } from '../hooks/useFirestore';
 import { getUserService } from '../services/UserService';
 import { getEmailService } from '../services/EmailService';
 import { toast } from 'react-hot-toast';
-import { onSnapshot, doc } from 'firebase/firestore';
+import { 
+  onSnapshot, 
+  doc, 
+  collection, 
+  setDoc, 
+  serverTimestamp,
+  getDoc,
+  updateDoc,
+  arrayUnion as firestoreArrayUnion
+} from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
   UserProfile, 
-  PermissionLevel
+  PermissionLevel,
+  HierarchicalPermissions
 } from '../types';
+import {
+  Autocomplete,
+  TextField,
+  Button,
+  Typography,
+  Box,
+  Chip,
+  CircularProgress
+} from '@mui/material';
 
 interface AreaSharingModalProps {
   isOpen: boolean;
@@ -27,67 +46,70 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
 }) => {
   const [email, setEmail] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [participants, setParticipants] = useState<UserProfile[]>([]);
+  const [collaborators, setCollaborators] = useState<UserProfile[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
   const { currentUser } = useAuth();
   const { updateDocument } = useFirestore();
   const userService = getUserService();
 
+  // Load existing collaborators
   useEffect(() => {
-    if (!areaId || !isOpen) return;
+    if (!isOpen || !currentUser) return;
 
-    const unsubscribe = onSnapshot(doc(db, 'areas', areaId), 
-      (doc) => {
-        if (doc.exists()) {
-          const data = doc.data();
-          // Update participants list
-          userService.findUsersByIds(data.sharedWith || [])
-            .then(users => setParticipants(users))
-            .catch(console.error);
-        }
-      },
-      (error) => {
-        console.error('Error listening to area updates:', error);
-        setError('Failed to get real-time updates');
+    const loadCollaborators = async () => {
+      try {
+        // Get users from the same household/organization
+        const users = await userService.findUsersInSameContext(currentUser.uid);
+        setCollaborators(users);
+      } catch (error) {
+        console.error('Error loading collaborators:', error);
+        setError('Failed to load collaborators');
       }
-    );
+    };
 
-    return () => unsubscribe();
-  }, [areaId, isOpen]);
+    loadCollaborators();
+  }, [isOpen, currentUser]);
 
-  const addCollaborator = async () => {
-    if (!email) return;
+  const handleUserSelect = (user: UserProfile | null) => {
+    setSelectedUser(user);
+    if (user) {
+      setEmail(user.email);
+    }
+  };
 
+  const addCollaborator = async (user: UserProfile) => {
     try {
       setIsSubmitting(true);
       setError(null);
 
-      // Look up user by email
-      const user = await userService.findUserByEmail(email);
-      if (!user) {
-        setError('User not found');
-        return;
-      }
-
       // Check if user is already a participant
-      if (participants.some(p => p.id === user.id)) {
+      if (collaborators.some(p => p.id === user.id)) {
         setError('User is already a collaborator');
         return;
       }
 
       // Add user to participants
-      setParticipants(prev => [...prev, user]);
-      setEmail('');
+      setCollaborators(prev => [...prev, user]);
+      setSelectedUser(null);
 
       // Send email notification
       if (currentUser) {
         await getEmailService().sendShareInvite(
-          email,
+          user.email,
           currentUser.email || 'unknown',
           areaName,
           areaId,
-          { level: 'editor' }
+          { 
+            level: 'editor',
+            specificOverrides: {
+              canEditTasks: true,
+              canEditRoutines: true,
+              canInviteUsers: false,
+              canModifyPermissions: false
+            }
+          }
         );
         toast.success('Invitation sent successfully');
       }
@@ -99,8 +121,101 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
     }
   };
 
+  const addCollaboratorByEmail = async () => {
+    if (!email) return;
+
+    try {
+      setIsSubmitting(true);
+      setError(null);
+
+      // Look up user by email
+      const existingUser = await userService.findUserByEmail(email);
+      
+      if (existingUser) {
+        // If user exists, add them as a collaborator
+        await addCollaborator(existingUser);
+      } else {
+        // If user doesn't exist, send an invitation and record the pending share
+        if (currentUser) {
+          // First add them as a household member which creates the invitation
+          await userService.addHouseholdMember(
+            currentUser.email || '',
+            email
+          );
+
+          // Record the pending area share
+          const pendingShareRef = doc(collection(db, 'pendingAreaShares'));
+          await setDoc(pendingShareRef, {
+            email: email.toLowerCase(),
+            areaId,
+            sharedBy: currentUser.uid,
+            sharedByEmail: currentUser.email,
+            createdAt: serverTimestamp(),
+            permissions: {
+              level: 'editor' as PermissionLevel,
+              specificOverrides: {
+                canEditTasks: true,
+                canEditRoutines: true,
+                canInviteUsers: false,
+                canModifyPermissions: false
+              }
+            }
+          });
+
+          // Get current area data
+          const areaRef = doc(db, 'areas', areaId);
+          const areaDoc = await getDoc(areaRef);
+          
+          if (areaDoc.exists()) {
+            // Update the area document with the pending share
+            await updateDoc(areaRef, {
+              pendingShares: firestoreArrayUnion({
+                email: email.toLowerCase(),
+                permissions: {
+                  level: 'editor' as PermissionLevel,
+                  specificOverrides: {
+                    canEditTasks: true,
+                    canEditRoutines: true,
+                    canInviteUsers: false,
+                    canModifyPermissions: false
+                  }
+                }
+              })
+            });
+          }
+          
+          // Send email notification about the area sharing
+          await getEmailService().sendShareInvite(
+            email,
+            currentUser.email || 'unknown',
+            areaName,
+            areaId,
+            { 
+              level: 'editor',
+              specificOverrides: {
+                canEditTasks: true,
+                canEditRoutines: true,
+                canInviteUsers: false,
+                canModifyPermissions: false
+              }
+            }
+          );
+
+          toast.success('Invitation sent successfully');
+        }
+      }
+      
+      setEmail('');
+    } catch (error) {
+      console.error('Error adding collaborator:', error);
+      setError('Failed to add collaborator');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const removeParticipant = (userId: string) => {
-    setParticipants(prev => prev.filter(p => p.id !== userId));
+    setCollaborators(prev => prev.filter(p => p.id !== userId));
   };
 
   const handleSave = async () => {
@@ -108,16 +223,34 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const sharedWith = participants.map(p => p.id);
+      const areaRef = doc(db, 'areas', areaId);
+      
+      // Update permissions first
       const permissions = Object.fromEntries(
-        participants.map(p => [p.id, {
-          level: 'editor' as PermissionLevel
-        }])
+        collaborators.map(p => [p.id, {
+          level: 'editor' as PermissionLevel,
+          specificOverrides: {
+            canEditTasks: true,
+            canEditRoutines: true,
+            canInviteUsers: false,
+            canModifyPermissions: false
+          }
+        } as HierarchicalPermissions])
       );
+      await updateDoc(areaRef, { permissions });
 
-      await updateDocument('areas', areaId, {
-        sharedWith,
-        permissions
+      // Then update sharedWith
+      const sharedWith = collaborators.map(p => p.id);
+      await updateDoc(areaRef, { sharedWith });
+
+      // Finally update permission inheritance
+      await updateDoc(areaRef, {
+        permissionInheritance: {
+          propagateToGoals: true,
+          propagateToMilestones: true,
+          propagateToTasks: true,
+          propagateToRoutines: true
+        }
       });
 
       toast.success('Area sharing updated');
@@ -144,71 +277,132 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
 
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <Typography variant="subtitle2" gutterBottom>
               Add People
-            </label>
-            <div className="flex gap-2">
-              <input
+            </Typography>
+            
+            <Box sx={{ mb: 3 }}>
+              <TextField
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter email address"
-                className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                fullWidth
+                size="small"
+                sx={{ mb: 1 }}
               />
-              <button
-                onClick={addCollaborator}
+              <Autocomplete<UserProfile>
+                options={collaborators}
+                getOptionLabel={(option) => `${option.email}${option.displayName ? ` (${option.displayName})` : ''}`}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="Or select from existing collaborators"
+                    size="small"
+                    fullWidth
+                  />
+                )}
+                value={selectedUser}
+                onChange={(_, newValue) => {
+                  if (newValue) {
+                    handleUserSelect(newValue);
+                  }
+                }}
+                renderOption={(props, option) => (
+                  <li {...props}>
+                    <Box>
+                      <Typography>{option.email}</Typography>
+                      {option.displayName && (
+                        <Typography variant="caption" color="text.secondary">
+                          {option.displayName}
+                        </Typography>
+                      )}
+                    </Box>
+                  </li>
+                )}
+              />
+              <Button
+                onClick={addCollaboratorByEmail}
                 disabled={isSubmitting || !email}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                variant="contained"
+                fullWidth
+                sx={{ mt: 1 }}
               >
-                Add
-              </button>
-            </div>
-            {error && <p className="mt-1 text-sm text-red-600">{error}</p>}
+                {isSubmitting ? <CircularProgress size={24} /> : 'Add'}
+              </Button>
+            </Box>
+            {error && (
+              <Typography color="error" variant="caption">
+                {error}
+              </Typography>
+            )}
           </div>
 
           <div>
-            <p className="text-sm text-gray-600 mb-2">
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Collaborators will have access to all goals, tasks, and routines in this area.
-            </p>
+            </Typography>
           </div>
 
           <div>
-            <h3 className="text-sm font-medium text-gray-700 mb-2">Collaborators</h3>
+            <Typography variant="subtitle2" gutterBottom>
+              Collaborators
+            </Typography>
             <div className="space-y-2 max-h-48 overflow-y-auto">
-              {participants.map((user) => (
-                <div key={user.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
-                  <span className="text-sm">{user.email}</span>
-                  <button
+              {collaborators.map((user) => (
+                <Box
+                  key={user.id}
+                  sx={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    p: 1,
+                    bgcolor: 'grey.50',
+                    borderRadius: 1
+                  }}
+                >
+                  <Box>
+                    <Typography variant="body2">{user.email}</Typography>
+                    <Chip
+                      label="Editor"
+                      size="small"
+                      sx={{ mt: 0.5 }}
+                    />
+                  </Box>
+                  <Button
                     onClick={() => removeParticipant(user.id)}
-                    className="text-red-500 hover:text-red-700"
+                    color="error"
+                    size="small"
                   >
-                    <X size={16} />
-                  </button>
-                </div>
+                    Remove
+                  </Button>
+                </Box>
               ))}
-              {participants.length === 0 && (
-                <p className="text-sm text-gray-500 text-center py-2">
+              {collaborators.length === 0 && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  align="center"
+                  sx={{ py: 2 }}
+                >
                   No collaborators yet
-                </p>
+                </Typography>
               )}
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 pt-4">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, pt: 2 }}>
+            <Button onClick={onClose}>
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={handleSave}
               disabled={isSubmitting}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+              variant="contained"
             >
               Save
-            </button>
-          </div>
+            </Button>
+          </Box>
         </div>
       </div>
     </div>

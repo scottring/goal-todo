@@ -19,18 +19,26 @@ import {
   TextField,
   CircularProgress,
   Alert,
-  Stack
+  Stack,
+  Tooltip
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ShareIcon from '@mui/icons-material/Share';
 import CloseIcon from '@mui/icons-material/Close';
+import GroupIcon from '@mui/icons-material/Group';
+import AreaSharingModal from '../components/AreaSharingModal';
+import ManageCollaboratorsModal from '../components/ManageCollaboratorsModal';
 
 export default function AreasPage() {
   const { areas, loading, error, createArea, updateArea, deleteArea } = useAreasContext();
   const [isCreating, setIsCreating] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingAreaId, setEditingAreaId] = useState<string | null>(null);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isCollaboratorsModalOpen, setIsCollaboratorsModalOpen] = useState(false);
+  const [sharingArea, setSharingArea] = useState<Area | null>(null);
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -49,7 +57,13 @@ export default function AreasPage() {
         description: formData.description,
         color: formData.color,
         sharedWith: [],
-        permissions: {}
+        permissions: {},
+        permissionInheritance: {
+          propagateToGoals: true,
+          propagateToMilestones: true,
+          propagateToTasks: true,
+          propagateToRoutines: true
+        }
       });
       setFormData({ name: '', description: '', color: '#000000' });
       setIsCreating(false);
@@ -96,6 +110,11 @@ export default function AreasPage() {
         console.error('Error deleting area:', err);
       }
     }
+  };
+
+  const handleShare = (area: Area) => {
+    setSharingArea(area);
+    setIsShareModalOpen(true);
   };
 
   const renderForm = (onSubmit: (e: React.FormEvent) => void, title: string, submitText: string) => (
@@ -214,18 +233,46 @@ export default function AreasPage() {
               Organize your tasks and activities into different areas of focus
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setIsCreating(true)}
-          >
-            Add Area
-          </Button>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Tooltip title="Manage Collaborators">
+              <Button
+                variant="outlined"
+                startIcon={<GroupIcon />}
+                onClick={() => setIsCollaboratorsModalOpen(true)}
+              >
+                Collaborators
+              </Button>
+            </Tooltip>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setIsCreating(true)}
+            >
+              Add Area
+            </Button>
+          </Box>
         </Box>
       </Box>
 
       {isCreating && renderForm(handleCreateArea, 'Add New Area', 'Create Area')}
       {isEditing && renderForm(handleUpdate, 'Edit Area', 'Update Area')}
+      {isShareModalOpen && sharingArea && (
+        <AreaSharingModal
+          isOpen={isShareModalOpen}
+          onClose={() => {
+            setIsShareModalOpen(false);
+            setSharingArea(null);
+          }}
+          areaId={sharingArea.id}
+          areaName={sharingArea.name}
+        />
+      )}
+      {isCollaboratorsModalOpen && (
+        <ManageCollaboratorsModal
+          isOpen={isCollaboratorsModalOpen}
+          onClose={() => setIsCollaboratorsModalOpen(false)}
+        />
+      )}
 
       <Grid container spacing={3}>
         {areas.map((area) => (
@@ -254,6 +301,16 @@ export default function AreasPage() {
                     )}
                   </Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleShare(area);
+                      }}
+                      sx={{ color: 'primary.main' }}
+                    >
+                      <ShareIcon fontSize="small" />
+                    </IconButton>
                     <IconButton
                       size="small"
                       onClick={(e) => {
