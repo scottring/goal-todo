@@ -30,6 +30,7 @@ import CloseIcon from '@mui/icons-material/Close';
 import GroupIcon from '@mui/icons-material/Group';
 import AreaSharingModal from '../components/AreaSharingModal';
 import ManageCollaboratorsModal from '../components/ManageCollaboratorsModal';
+import { toast } from 'react-hot-toast';
 
 export default function AreasPage() {
   const { areas, loading, error, createArea, updateArea, deleteArea } = useAreasContext();
@@ -51,7 +52,6 @@ export default function AreasPage() {
     if (!formData.name.trim()) return;
 
     try {
-      setIsCreating(true);
       const newArea = {
         name: formData.name.trim(),
         description: formData.description,
@@ -64,10 +64,10 @@ export default function AreasPage() {
       console.log('Area created successfully');
       setFormData({ name: '', description: '', color: '#000000' });
       setIsCreating(false);
+      toast.success('Area created successfully!');
     } catch (err) {
       console.error('Error creating area:', err);
-    } finally {
-      setIsCreating(false);
+      toast.error('Failed to create area. Please try again.');
     }
   };
 

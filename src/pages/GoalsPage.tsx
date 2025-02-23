@@ -4,6 +4,7 @@ import { useGoalsContext } from '../contexts/GoalsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Timestamp } from 'firebase/firestore';
+import type { Timestamp as FirebaseTimestamp } from 'firebase/firestore';
 import {
   Box,
   Container,
@@ -72,6 +73,7 @@ import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
+import { X } from 'lucide-react';
 
 const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
   const now = new Date();
@@ -112,6 +114,32 @@ const timestampToDateString = (timestamp: Timestamp | undefined): string => {
   }
 };
 
+const EDIT_MODE = {
+  WIZARD: 'wizard' as const,
+  EDIT: 'edit' as const
+} as const;
+
+type EditMode = typeof EDIT_MODE[keyof typeof EDIT_MODE];
+
+interface ReviewStatus {
+  lastReviewDate: FirebaseTimestamp;
+  nextReviewDate: FirebaseTimestamp;
+  completedReviews: string[];
+}
+
+interface StreakData {
+  currentStreak: number;
+  longestStreak: number;
+  lastCompletedDate: FirebaseTimestamp;
+}
+
+interface Review {
+  reflectionFrequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  reviewStatus: ReviewStatus;
+  adherenceRate: number;
+  streakData: StreakData;
+}
+
 interface SmartGoalForm {
   name: string;
   specificAction: string;
@@ -121,14 +149,14 @@ interface SmartGoalForm {
   relevance: string;
   timeTracking: {
     type: TimeTrackingType;
-    deadline?: Timestamp;
+    deadline?: FirebaseTimestamp;
     reviewCycle?: ReviewCycle;
   };
   areaId: string;
   milestones: {
     id: string;
     name: string;
-    targetDate?: Timestamp;
+    targetDate?: FirebaseTimestamp;
     successCriteria: string;
     status: TaskStatus;
     tasks: string[];
@@ -138,7 +166,7 @@ interface SmartGoalForm {
     id: string;
     title: string;
     description?: string;
-    dueDate?: Timestamp;
+    dueDate?: FirebaseTimestamp;
     priority: TaskPriority;
     status: TaskStatus;
     completed: boolean;
@@ -152,25 +180,27 @@ interface SmartGoalForm {
     frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
     schedule: RoutineSchedule;
     targetCount: number;
-    endDate?: Timestamp;
-    completionDates: Timestamp[];
+    endDate?: FirebaseTimestamp;
+    completionDates: FirebaseTimestamp[];
     permissions: {};
-    review: {
-      reflectionFrequency: 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-      reviewStatus: {
-        lastReviewDate: Timestamp;
-        nextReviewDate: Timestamp;
-        completedReviews: string[];
-      };
-      adherenceRate: number;
-      streakData: {
-        currentStreak: number;
-        longestStreak: number;
-        lastCompletedDate: Timestamp;
-      };
-    };
+    review: Review;
   }[];
 }
+
+const createDefaultReview = (): Review => ({
+  reflectionFrequency: 'weekly',
+  reviewStatus: {
+    lastReviewDate: Timestamp.now() as FirebaseTimestamp,
+    nextReviewDate: Timestamp.now() as FirebaseTimestamp,
+    completedReviews: []
+  },
+  adherenceRate: 0,
+  streakData: {
+    currentStreak: 0,
+    longestStreak: 0,
+    lastCompletedDate: Timestamp.now() as FirebaseTimestamp
+  }
+});
 
 const MEASURABLE_METRIC_OPTIONS: { label: string; value: MeasurableMetric }[] = [
   { label: 'Count occurrences', value: 'count_occurrences' },
@@ -277,39 +307,38 @@ const addRoutine = (smartGoal: SmartGoalForm): SmartGoalForm => ({
       targetCount: 3,
       completionDates: [],
       permissions: {},
-      review: {
-        reflectionFrequency: 'weekly' as const,
-        reviewStatus: {
-          lastReviewDate: Timestamp.now(),
-          nextReviewDate: Timestamp.now(),
-          completedReviews: []
-        },
-        adherenceRate: 0,
-        streakData: {
-          currentStreak: 0,
-          longestStreak: 0,
-          lastCompletedDate: Timestamp.now()
-        }
-      }
+      review: createDefaultReview()
     }
   ]
 });
 
-const addMilestone = (smartGoal: SmartGoalForm) => ({
-  ...smartGoal,
-  milestones: [
-    ...smartGoal.milestones,
-    {
-      id: uuidv4(),
-      name: '',
-      targetDate: Timestamp.fromDate(new Date()),
-      successCriteria: '',
-      status: 'not_started' as TaskStatus,
-      tasks: [],
-      routines: []
-    }
-  ]
-});
+const addMilestone = (smartGoal: SmartGoalForm) => {
+  const defaultName = 'New Milestone';
+  let uniqueName = defaultName;
+  let counter = 1;
+  
+  // Find a unique name
+  while (smartGoal.milestones.some(m => m.name.trim().toLowerCase() === uniqueName.trim().toLowerCase())) {
+    uniqueName = `${defaultName} ${counter}`;
+    counter++;
+  }
+
+  return {
+    ...smartGoal,
+    milestones: [
+      ...smartGoal.milestones,
+      {
+        id: uuidv4(),
+        name: uniqueName,
+        targetDate: Timestamp.fromDate(new Date()),
+        successCriteria: '',
+        status: 'not_started' as TaskStatus,
+        tasks: [],
+        routines: []
+      }
+    ]
+  };
+};
 
 const addTaskToMilestone = (smartGoal: SmartGoalForm, milestoneIndex: number) => {
   const milestone = smartGoal.milestones[milestoneIndex];
@@ -355,20 +384,7 @@ const addRoutineToMilestone = (smartGoal: SmartGoalForm, milestoneIndex: number)
     targetCount: 1,
     completionDates: [],
     permissions: {},
-    review: {
-      reflectionFrequency: 'weekly' as const,
-      reviewStatus: {
-        lastReviewDate: Timestamp.now(),
-        nextReviewDate: Timestamp.now(),
-        completedReviews: []
-      },
-      adherenceRate: 0,
-      streakData: {
-        currentStreak: 0,
-        longestStreak: 0,
-        lastCompletedDate: Timestamp.now()
-      }
-    }
+    review: createDefaultReview()
   };
 
   const newMilestones = [...smartGoal.milestones];
@@ -586,12 +602,12 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 const GoalsPage: React.FC = () => {
   const location = useLocation();
   const { areas } = useAreasContext();
-    const { goals, createGoal, updateGoal, deleteGoal } = useGoalsContext();
+  const { goals, createGoal, updateGoal, deleteGoal } = useGoalsContext();
   const { currentUser } = useAuth();
   const [isAdding, setIsAdding] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
   const [editingGoal, setEditingGoal] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState<'wizard' | 'edit'>('wizard');
+  const [editMode, setEditMode] = useState<EditMode>(EDIT_MODE.WIZARD);
   const [smartGoal, setSmartGoal] = useState<SmartGoalForm>(initialSmartGoal);
   const [submitting, setSubmitting] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -601,6 +617,15 @@ const GoalsPage: React.FC = () => {
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [taskTitleError, setTaskTitleError] = useState<{[key: string]: string}>({});
   const [openRoutineModal, setOpenRoutineModal] = useState<string | null>(null);
+  const [editingMilestone, setEditingMilestone] = useState<{index: number, milestone: SmartGoalForm['milestones'][0]} | null>(null);
+  const [isMilestoneModalOpen, setIsMilestoneModalOpen] = useState(false);
+  const [showMilestoneForm, setShowMilestoneForm] = useState(false);
+  const [milestoneForm, setMilestoneForm] = useState({
+    name: '',
+    targetDate: Timestamp.fromDate(new Date()),
+    successCriteria: '',
+    status: 'not_started'
+  });
 
   // Handle navigation state
   useEffect(() => {
@@ -614,6 +639,8 @@ const GoalsPage: React.FC = () => {
       const areaId: string = state.preselectedAreaId;
       setSmartGoal(prev => ({ ...prev, areaId }));
       setIsAdding(true);
+      setCurrentStep(0);
+      setEditMode(EDIT_MODE.WIZARD);
       // Clear the navigation state
       window.history.replaceState({}, document.title);
     }
@@ -695,20 +722,7 @@ const GoalsPage: React.FC = () => {
           completionDates: routine.completionDates || [],
           ownerId: currentUser?.uid || '',
           permissions: {},
-          review: {
-            reflectionFrequency: 'weekly',
-            reviewStatus: {
-              lastReviewDate: Timestamp.now(),
-              nextReviewDate: Timestamp.now(),
-              completedReviews: []
-            },
-            adherenceRate: 0,
-            streakData: {
-              currentStreak: 0,
-              longestStreak: 0,
-              lastCompletedDate: Timestamp.now()
-            }
-          }
+          review: createDefaultReview()
         }))
       };
 
@@ -727,7 +741,7 @@ const GoalsPage: React.FC = () => {
       setIsAdding(false);
       setCurrentStep(0);
       setEditingGoal(null);
-      setEditMode('wizard');
+      setEditMode(EDIT_MODE.WIZARD);
     } catch (error) {
       console.error('Error submitting goal:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to save goal. Please try again.');
@@ -737,7 +751,54 @@ const GoalsPage: React.FC = () => {
   };
 
   const handleEdit = (goal: SourceActivity) => {
-    navigate(`/goals/${goal.id}/edit`);
+    setEditingGoal(goal.id);
+    setIsAdding(true);
+    setEditMode(EDIT_MODE.EDIT);
+    setSmartGoal({
+      name: goal.name,
+      specificAction: goal.specificAction || '',
+      measurableMetric: goal.measurableMetric,
+      customMetric: goal.customMetric,
+      achievabilityCheck: goal.achievabilityCheck,
+      relevance: goal.relevance || '',
+      timeTracking: {
+        type: goal.timeTracking.type,
+        deadline: goal.timeTracking.deadline as FirebaseTimestamp | undefined,
+        reviewCycle: goal.timeTracking.reviewCycle
+      },
+      areaId: goal.areaId,
+      milestones: goal.milestones.map(m => ({
+        id: m.id,
+        name: m.name,
+        targetDate: m.targetDate as FirebaseTimestamp | undefined,
+        successCriteria: m.successCriteria || '',
+        status: m.status,
+        tasks: m.tasks || [],
+        routines: m.routines || []
+      })),
+      tasks: goal.tasks.map(t => ({
+        id: t.id,
+        title: t.title,
+        description: t.description || '',
+        dueDate: t.dueDate as FirebaseTimestamp | undefined,
+        priority: t.priority,
+        status: t.status,
+        completed: t.completed,
+        milestoneId: t.milestoneId
+      })),
+      routines: goal.routines.map(r => ({
+        id: r.id,
+        title: r.title,
+        description: r.description || '',
+        frequency: r.frequency,
+        schedule: r.schedule,
+        targetCount: r.targetCount,
+        endDate: r.endDate as FirebaseTimestamp | undefined,
+        completionDates: (r.completionDates || []) as FirebaseTimestamp[],
+        permissions: r.permissions || {},
+        review: createDefaultReview()
+      }))
+    });
   };
 
   const handleDelete = async (goalId: string) => {
@@ -772,6 +833,19 @@ const GoalsPage: React.FC = () => {
 
   const handleMilestoneChange = (index: number, field: keyof SmartGoalForm['milestones'][0], value: any) => {
     setSmartGoal(prev => {
+      // For name changes, check for duplicates
+      if (field === 'name' && typeof value === 'string') {
+        const trimmedValue = value.trim();
+        const isDuplicateName = prev.milestones.some((m, i) => 
+          i !== index && m.name.trim().toLowerCase() === trimmedValue.toLowerCase()
+        );
+        
+        if (isDuplicateName) {
+          toast.error('A milestone with this name already exists');
+          return prev; // Return unchanged state
+        }
+      }
+      
       const newMilestones = [...prev.milestones];
       newMilestones[index] = {
         ...newMilestones[index],
@@ -779,6 +853,7 @@ const GoalsPage: React.FC = () => {
           ? (value instanceof Date ? Timestamp.fromDate(value) : (value === null ? undefined : value))
           : value
       };
+      
       return { ...prev, milestones: newMilestones };
     });
   };
@@ -981,7 +1056,7 @@ const GoalsPage: React.FC = () => {
         <LocalizationProvider dateAdapter={AdapterDateFns}>
           <DatePicker
             label="Deadline"
-            value={smartGoal.timeTracking.deadline?.toDate() || null}
+            value={smartGoal.timeTracking.deadline instanceof Timestamp ? smartGoal.timeTracking.deadline.toDate() : null}
             onChange={(date) => setSmartGoal(prev => ({
               ...prev,
               timeTracking: {
@@ -1029,23 +1104,32 @@ const GoalsPage: React.FC = () => {
   const renderMilestonesStep = (): JSX.Element => (
     <Stack spacing={3}>
       {smartGoal.milestones.map((milestone, index) => (
-        <Paper key={index} sx={{ p: 3, position: 'relative' }}>
+        <Paper key={milestone.id} sx={{ p: 3, position: 'relative' }}>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="subtitle1" gutterBottom>
               Milestone {index + 1}
             </Typography>
-            {index > 0 && (
+            <Box>
               <IconButton
                 size="small"
-                onClick={() => {
-                  const newMilestones = smartGoal.milestones.filter((_, i) => i !== index);
-                  setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
-                }}
-                color="error"
+                onClick={() => handleMilestoneEdit(index, milestone)}
+                sx={{ mr: 1 }}
               >
-                <CloseIcon />
+                <EditIcon fontSize="small" />
               </IconButton>
-            )}
+              {index > 0 && (
+                <IconButton
+                  size="small"
+                  onClick={() => {
+                    const newMilestones = smartGoal.milestones.filter((_, i) => i !== index);
+                    setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
+                  }}
+                  color="error"
+                >
+                  <CloseIcon />
+                </IconButton>
+              )}
+            </Box>
           </Stack>
           <Stack spacing={2}>
             <TextField
@@ -1057,7 +1141,7 @@ const GoalsPage: React.FC = () => {
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
                 label="Target Date"
-                value={milestone.targetDate?.toDate() || null}
+                value={milestone.targetDate instanceof Timestamp ? milestone.targetDate.toDate() : null}
                 onChange={(date) => handleMilestoneChange(index, 'targetDate', date ? Timestamp.fromDate(date) : undefined)}
                 slotProps={{
                   textField: {
@@ -1345,7 +1429,7 @@ const GoalsPage: React.FC = () => {
         startIcon={<AddIcon />}
         onClick={() => setSmartGoal(prev => addMilestone(prev))}
       >
-        Add Milestone
+        {editMode === EDIT_MODE.EDIT ? 'Add New Milestone' : 'Add Milestone'}
       </Button>
     </Stack>
   );
@@ -1400,7 +1484,7 @@ const GoalsPage: React.FC = () => {
           startIcon={<AddIcon />}
           onClick={() => setSmartGoal(prev => addTask(prev))}
         >
-          Add Task
+          {editMode === EDIT_MODE.EDIT ? 'Add New Task' : 'Add Task'}
         </Button>
       </Stack>
     );
@@ -1422,7 +1506,7 @@ const GoalsPage: React.FC = () => {
               }}
               color="error"
             >
-              <CloseIcon />
+              <CloseIcon fontSize="small" />
             </IconButton>
           </Stack>
           <Stack spacing={2}>
@@ -1651,7 +1735,7 @@ const GoalsPage: React.FC = () => {
         startIcon={<AddIcon />}
         onClick={() => setSmartGoal(prev => addRoutine(prev))}
       >
-        Add Routine
+        {editMode === EDIT_MODE.EDIT ? 'Add New Routine' : 'Add Routine'}
       </Button>
     </Stack>
   );
@@ -1811,6 +1895,204 @@ const GoalsPage: React.FC = () => {
     </Box>
   );
 
+  // Add this new function to handle milestone editing
+  const handleMilestoneEdit = (index: number, milestone: SmartGoalForm['milestones'][0]) => {
+    setEditingMilestone({ index, milestone: { ...milestone } });
+    setIsMilestoneModalOpen(true);
+  };
+
+  // Add this new function to handle milestone update
+  const handleMilestoneUpdate = () => {
+    if (!editingMilestone) return;
+
+    setSmartGoal(prev => {
+      const newMilestones = [...prev.milestones];
+      newMilestones[editingMilestone.index] = editingMilestone.milestone;
+      return { ...prev, milestones: newMilestones };
+    });
+
+    setEditingMilestone(null);
+    setIsMilestoneModalOpen(false);
+  };
+
+  // Add this new component for the milestone edit dialog
+  const renderMilestoneEditDialog = () => {
+    if (!editingMilestone) return null;
+
+    return (
+      <Dialog
+        open={isMilestoneModalOpen}
+        onClose={() => {
+          setIsMilestoneModalOpen(false);
+          setEditingMilestone(null);
+        }}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">Edit Milestone</Typography>
+            <IconButton
+              edge="end"
+              onClick={() => {
+                setIsMilestoneModalOpen(false);
+                setEditingMilestone(null);
+              }}
+              size="small"
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {/* Blue rectangle for identification */}
+          <Box 
+            sx={{ 
+              width: '100%', 
+              height: '150px', 
+              backgroundColor: 'primary.main',
+              borderRadius: 1,
+              mb: 3,
+              mt: 1
+            }} 
+          />
+          <Stack spacing={2} sx={{ mt: 2 }}>
+            <TextField
+              label="Name"
+              value={editingMilestone.milestone.name}
+              onChange={(e) => {
+                const newName = e.target.value;
+                const isDuplicateName = smartGoal.milestones.some((m, i) => 
+                  i !== editingMilestone.index && m.name.trim().toLowerCase() === newName.trim().toLowerCase()
+                );
+                
+                if (isDuplicateName) {
+                  toast.error('A milestone with this name already exists');
+                  return;
+                }
+                
+                setEditingMilestone(prev => prev ? {
+                  ...prev,
+                  milestone: { ...prev.milestone, name: newName }
+                } : null);
+              }}
+              fullWidth
+            />
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="Target Date"
+                value={editingMilestone.milestone.targetDate instanceof Timestamp ? 
+                  editingMilestone.milestone.targetDate.toDate() : null}
+                onChange={(date) => setEditingMilestone(prev => prev ? {
+                  ...prev,
+                  milestone: {
+                    ...prev.milestone,
+                    targetDate: date ? Timestamp.fromDate(date) : undefined
+                  }
+                } : null)}
+                slotProps={{
+                  textField: {
+                    fullWidth: true
+                  }
+                }}
+              />
+            </LocalizationProvider>
+            <TextField
+              label="Success Criteria"
+              value={editingMilestone.milestone.successCriteria}
+              onChange={(e) => setEditingMilestone(prev => prev ? {
+                ...prev,
+                milestone: { ...prev.milestone, successCriteria: e.target.value }
+              } : null)}
+              fullWidth
+              multiline
+              rows={2}
+            />
+            <FormControl fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={editingMilestone.milestone.status}
+                onChange={(e) => setEditingMilestone(prev => prev ? {
+                  ...prev,
+                  milestone: { ...prev.milestone, status: e.target.value as TaskStatus }
+                } : null)}
+                label="Status"
+              >
+                {STATUS_OPTIONS.map(option => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {
+            setIsMilestoneModalOpen(false);
+            setEditingMilestone(null);
+          }}>
+            Cancel
+          </Button>
+          <Button variant="contained" onClick={handleMilestoneUpdate}>
+            Save Changes
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
+  const handleAddMilestone = () => {
+    setSmartGoal(prev => ({
+      ...prev,
+      milestones: [...prev.milestones, {
+        id: uuidv4(),
+        name: milestoneForm.name.trim(),
+        targetDate: dateToTimestamp(milestoneForm.targetDate),
+        successCriteria: milestoneForm.successCriteria.trim(),
+        status: 'not_started' as TaskStatus,
+        tasks: [],
+        routines: []
+      }],
+      tasks: [...prev.tasks, {
+        id: uuidv4(),
+        title: '',
+        description: '',
+        priority: 'medium' as TaskPriority,
+        status: 'not_started' as TaskStatus,
+        completed: false,
+        dueDate: undefined,
+        assignedTo: undefined,
+        milestoneId: prev.milestones[prev.milestones.length - 1].id
+      }],
+      routines: [...prev.routines, {
+        id: uuidv4(),
+        title: '',
+        description: '',
+        frequency: 'daily' as const,
+        schedule: {
+          type: 'daily' as const,
+          targetCount: 1,
+          timeOfDay: { hour: 9, minute: 0 },
+          daysOfWeek: [],
+          dayOfMonth: undefined,
+          monthsOfYear: []
+        },
+        targetCount: 1,
+        completionDates: [],
+        permissions: {},
+        review: createDefaultReview()
+      }]
+    }));
+    setMilestoneForm({
+      name: '',
+      targetDate: Timestamp.fromDate(new Date()).toDate().toISOString().split('T')[0],
+      successCriteria: '',
+      status: 'not_started'
+    });
+    setShowMilestoneForm(false);
+  };
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Box sx={{ mb: 4 }}>
@@ -1823,17 +2105,20 @@ const GoalsPage: React.FC = () => {
               Set and track your SMART goals
             </Typography>
           </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              setIsAdding(true);
-              setSmartGoal(initialSmartGoal);
-              setCurrentStep(0);
-            }}
-          >
-            Add Goal
-          </Button>
+          <Box>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setIsAdding(true);
+                setSmartGoal(initialSmartGoal);
+                setCurrentStep(0);
+                setEditMode(EDIT_MODE.WIZARD);
+              }}
+            >
+              Add Goal
+            </Button>
+          </Box>
         </Box>
       </Box>
 
@@ -1847,7 +2132,7 @@ const GoalsPage: React.FC = () => {
           <DialogTitle>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Typography variant="h6">
-                {editingGoal ? 'Edit SMART Goal' : 'Create SMART Goal'}
+                {editMode === EDIT_MODE.EDIT ? 'Edit Milestone' : 'Add Milestone'}
               </Typography>
               <IconButton
                 edge="end"
@@ -1855,6 +2140,7 @@ const GoalsPage: React.FC = () => {
                   setIsAdding(false);
                   setEditingGoal(null);
                   setSmartGoal(initialSmartGoal);
+                  setEditMode(EDIT_MODE.WIZARD);
                 }}
                 size="small"
               >
@@ -1865,13 +2151,13 @@ const GoalsPage: React.FC = () => {
 
           <DialogContent>
             <Box sx={{ mt: 2 }}>
-              {editingGoal ? (
+              {editMode === EDIT_MODE.EDIT ? (
                 renderEditForm()
               ) : (
                 <>
                   <Box sx={{ position: 'relative', mb: 6 }}>
                     <Typography variant="h5" align="center" gutterBottom sx={{ mb: 3 }}>
-                      Create SMART Goal
+                      {editMode === EDIT_MODE.EDIT ? 'Edit Milestone' : 'Create SMART Goal'}
                     </Typography>
                     <Stepper 
                       activeStep={currentStep} 
@@ -1891,18 +2177,6 @@ const GoalsPage: React.FC = () => {
                             '&.Mui-completed': {
                               color: 'success.main',
                             }
-                          }
-                        },
-                        '& .MuiStepConnector-root': {
-                          top: '1rem',
-                          '& .MuiStepConnector-line': {
-                            borderColor: 'grey.300'
-                          },
-                          '&.Mui-active .MuiStepConnector-line': {
-                            borderColor: 'primary.main'
-                          },
-                          '&.Mui-completed .MuiStepConnector-line': {
-                            borderColor: 'success.main'
                           }
                         }
                       }}
@@ -1948,7 +2222,7 @@ const GoalsPage: React.FC = () => {
           </DialogContent>
 
           <DialogActions>
-            {editingGoal ? (
+            {editMode === EDIT_MODE.EDIT ? (
               <>
                 <Button onClick={() => {
                   setIsAdding(false);
@@ -1993,6 +2267,9 @@ const GoalsPage: React.FC = () => {
       )}
 
       <Grid container spacing={3}>
+        {/* Milestone Edit Dialog */}
+        {editingMilestone && renderMilestoneEditDialog()}
+
         {goals.map(goal => (
           <Grid item xs={12} sm={6} lg={4} key={goal.id}>
             <Card 
@@ -2124,7 +2401,7 @@ const GoalsPage: React.FC = () => {
       )}
 
       {/* Routine Details Modal */}
-      {smartGoal.milestones.map((milestone) => (
+      {smartGoal.milestones.map((milestone) => 
         milestone.routines.map((routineId) => {
           const routine = smartGoal.routines.find(r => r.id === routineId);
           if (!routine) return null;
@@ -2279,7 +2556,13 @@ const GoalsPage: React.FC = () => {
                 </div>
               </DialogContent>
               <DialogActions>
-                <Button onClick={() => setOpenRoutineModal(null)}>Close</Button>
+                <Button onClick={() => setOpenRoutineModal(null)}>Cancel</Button>
+                <Button 
+                  variant="contained" 
+                  onClick={() => setOpenRoutineModal(null)}
+                >
+                  Save Changes
+                </Button>
               </DialogActions>
             </Dialog>
           );
