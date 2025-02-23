@@ -43,6 +43,7 @@ import { Close as CloseIcon } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+import { DAYS_OF_WEEK } from '../constants';
 import type { 
   SourceActivity, 
   RoutineWithoutSystemFields, 
@@ -56,7 +57,11 @@ import type {
   RoutineSchedule,
   Routine,
   TaskReviewItem as TaskReviewItemType,
-  ReviewFrequency
+  ReviewFrequency,
+  DayOfWeek,
+  TimeOfDay,
+  Task,
+  Milestone
 } from '../types';
 import { toast } from 'react-hot-toast';
 import AreaSharingModal from '../components/AreaSharingModal';
@@ -65,6 +70,8 @@ import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
 import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
+import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
+import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 
 const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
   const now = new Date();
@@ -104,34 +111,6 @@ const timestampToDateString = (timestamp: Timestamp | undefined): string => {
     return '';
   }
 };
-
-interface Milestone {
-  id: string;
-  name: string;
-  targetDate?: Timestamp;
-  successCriteria: string;
-  status: TaskStatus;
-  tasks: {
-    id: string;
-    title: string;
-    description?: string;
-    dueDate?: Timestamp;
-    priority: TaskPriority;
-    status: TaskStatus;
-    completed: boolean;
-    assignedTo?: string;
-  }[];
-  routines: {
-    id: string;
-    title: string;
-    description?: string;
-    frequency: 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
-    schedule: RoutineSchedule;
-    targetCount: number;
-    endDate?: Timestamp;
-    completionDates: Timestamp[];
-  }[];
-}
 
 interface SmartGoalForm {
   name: string;
@@ -264,6 +243,16 @@ const addTask = (smartGoal: SmartGoalForm) => ({
   ]
 });
 
+const handleTimeChange = (date: Date | null): TimeOfDay => {
+  if (!date) {
+    return { hour: 9, minute: 0 };
+  }
+  return {
+    hour: date.getHours(),
+    minute: date.getMinutes()
+  };
+};
+
 const addRoutine = (smartGoal: SmartGoalForm): SmartGoalForm => ({
   ...smartGoal,
   routines: [
@@ -272,15 +261,20 @@ const addRoutine = (smartGoal: SmartGoalForm): SmartGoalForm => ({
       id: uuidv4(),
       title: '',
       description: '',
-      frequency: 'daily' as const,
+      frequency: 'weekly' as const,
       schedule: {
-        type: 'daily' as const,
-        targetCount: 1,
+        type: 'weekly' as const,
+        targetCount: 3,
         timeOfDay: { hour: 9, minute: 0 },
-        daysOfWeek: [],
+        daysOfWeek: [
+          { day: 'monday' as DayOfWeek, time: { hour: 9, minute: 0 } },
+          { day: 'wednesday' as DayOfWeek, time: { hour: 9, minute: 0 } },
+          { day: 'friday' as DayOfWeek, time: { hour: 9, minute: 0 } }
+        ],
+        dayOfMonth: undefined,
         monthsOfYear: []
       } as RoutineSchedule,
-      targetCount: 1,
+      targetCount: 3,
       completionDates: [],
       permissions: {},
       review: {
@@ -360,7 +354,21 @@ const addRoutineToMilestone = (smartGoal: SmartGoalForm, milestoneIndex: number)
     },
     targetCount: 1,
     completionDates: [],
-    endDate: undefined
+    permissions: {},
+    review: {
+      reflectionFrequency: 'weekly' as const,
+      reviewStatus: {
+        lastReviewDate: Timestamp.now(),
+        nextReviewDate: Timestamp.now(),
+        completedReviews: []
+      },
+      adherenceRate: 0,
+      streakData: {
+        currentStreak: 0,
+        longestStreak: 0,
+        lastCompletedDate: Timestamp.now()
+      }
+    }
   };
 
   const newMilestones = [...smartGoal.milestones];
@@ -592,6 +600,7 @@ const GoalsPage: React.FC = () => {
   const [taskTitleUpdates, setTaskTitleUpdates] = useState<{[key: string]: string}>({});
   const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
   const [taskTitleError, setTaskTitleError] = useState<{[key: string]: string}>({});
+  const [openRoutineModal, setOpenRoutineModal] = useState<string | null>(null);
 
   // Handle navigation state
   useEffect(() => {
@@ -685,8 +694,21 @@ const GoalsPage: React.FC = () => {
           endDate: routine.endDate,
           completionDates: routine.completionDates || [],
           ownerId: currentUser?.uid || '',
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+          permissions: {},
+          review: {
+            reflectionFrequency: 'weekly',
+            reviewStatus: {
+              lastReviewDate: Timestamp.now(),
+              nextReviewDate: Timestamp.now(),
+              completedReviews: []
+            },
+            adherenceRate: 0,
+            streakData: {
+              currentStreak: 0,
+              longestStreak: 0,
+              lastCompletedDate: Timestamp.now()
+            }
+          }
         }))
       };
 
@@ -1249,6 +1271,22 @@ const GoalsPage: React.FC = () => {
                           fullWidth
                           size="small"
                         />
+                        <TextField
+                          label="Description"
+                          value={routine.description || ''}
+                          onChange={(e) => {
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              routines: prev.routines.map(r => 
+                                r.id === routineId ? { ...r, description: e.target.value } : r
+                              )
+                            }));
+                          }}
+                          fullWidth
+                          size="small"
+                          multiline
+                          rows={2}
+                        />
                         <FormControl fullWidth size="small">
                           <InputLabel>Frequency</InputLabel>
                           <Select
@@ -1278,6 +1316,13 @@ const GoalsPage: React.FC = () => {
                             <MenuItem value="yearly">Yearly</MenuItem>
                           </Select>
                         </FormControl>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => setOpenRoutineModal(`${milestone.id}-${routineId}`)}
+                        >
+                          Edit Schedule & Details
+                        </Button>
                       </Stack>
                     </Box>
                   );
@@ -1325,7 +1370,7 @@ const GoalsPage: React.FC = () => {
                 }}
                 color="error"
               >
-                <CloseIcon />
+                <CloseIcon fontSize="small" />
               </IconButton>
             </Stack>
             <Stack spacing={2}>
@@ -1435,12 +1480,19 @@ const GoalsPage: React.FC = () => {
               value={routine.targetCount}
               onChange={(e) => {
                 const newRoutines = [...smartGoal.routines];
+                const targetCount = parseInt(e.target.value) || 1;
                 newRoutines[index] = {
                   ...routine,
-                  targetCount: parseInt(e.target.value) || 1,
+                  targetCount,
                   schedule: {
                     ...routine.schedule,
-                    targetCount: parseInt(e.target.value) || 1
+                    targetCount,
+                    daysOfWeek: Array(targetCount).fill(null).map((_, i) => 
+                      routine.schedule.daysOfWeek?.[i] || {
+                        day: 'monday',
+                        time: { hour: 9, minute: 0 }
+                      }
+                    )
                   }
                 };
                 setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
@@ -1448,6 +1500,130 @@ const GoalsPage: React.FC = () => {
               fullWidth
               InputProps={{ inputProps: { min: 1 } }}
             />
+
+            {routine.frequency === 'weekly' && (
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Schedule for {routine.targetCount} days per week
+                </Typography>
+                <Stack spacing={2}>
+                  {Array.from({ length: routine.targetCount }).map((_, dayIndex) => {
+                    const currentSchedule = routine.schedule.daysOfWeek?.[dayIndex];
+                    return (
+                      <Box key={dayIndex} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <FormControl sx={{ minWidth: 120 }}>
+                            <InputLabel>Day</InputLabel>
+                            <Select
+                              value={currentSchedule?.day || 'monday'}
+                              onChange={(e) => {
+                                const newRoutines = [...smartGoal.routines];
+                                const newDaysOfWeek = [...(routine.schedule.daysOfWeek || [])];
+                                newDaysOfWeek[dayIndex] = {
+                                  ...newDaysOfWeek[dayIndex],
+                                  day: e.target.value as DayOfWeek,
+                                  time: currentSchedule?.time || { hour: 9, minute: 0 }
+                                };
+                                newRoutines[index] = {
+                                  ...routine,
+                                  schedule: {
+                                    ...routine.schedule,
+                                    daysOfWeek: newDaysOfWeek
+                                  }
+                                };
+                                setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                              }}
+                              label="Day"
+                            >
+                              {DAYS_OF_WEEK.map((day: string) => (
+                                <MenuItem key={day} value={day.toLowerCase()}>
+                                  {day.charAt(0).toUpperCase() + day.slice(1)}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          <LocalizationProvider dateAdapter={AdapterDateFns}>
+                            <TimePicker
+                              label="Time"
+                              value={new Date().setHours(
+                                currentSchedule?.time?.hour || 9,
+                                currentSchedule?.time?.minute || 0
+                              )}
+                              onChange={(newDate) => {
+                                if (!newDate) return;
+                                const timeOfDay = handleTimeChange(new Date(newDate));
+                                const newRoutines = [...smartGoal.routines];
+                                const newDaysOfWeek = [...(routine.schedule.daysOfWeek || [])];
+                                newDaysOfWeek[dayIndex] = {
+                                  ...newDaysOfWeek[dayIndex],
+                                  day: currentSchedule?.day || 'monday',
+                                  time: timeOfDay
+                                };
+                                newRoutines[index] = {
+                                  ...routine,
+                                  schedule: {
+                                    ...routine.schedule,
+                                    daysOfWeek: newDaysOfWeek
+                                  }
+                                };
+                                setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                              }}
+                            />
+                          </LocalizationProvider>
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
+
+            {(routine.frequency === 'daily' || routine.frequency === 'monthly') && (
+              <LocalizationProvider dateAdapter={AdapterDateFns}>
+                <TimePicker
+                  label="Time of Day"
+                  value={new Date().setHours(
+                    routine.schedule.timeOfDay?.hour || 9,
+                    routine.schedule.timeOfDay?.minute || 0
+                  )}
+                  onChange={(newDate) => {
+                    if (!newDate) return;
+                    const timeOfDay = handleTimeChange(new Date(newDate));
+                    const newRoutines = [...smartGoal.routines];
+                    newRoutines[index] = {
+                      ...routine,
+                      schedule: {
+                        ...routine.schedule,
+                        timeOfDay
+                      }
+                    };
+                    setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                  }}
+                />
+              </LocalizationProvider>
+            )}
+
+            {routine.frequency === 'monthly' && (
+              <TextField
+                label="Day of Month"
+                type="number"
+                value={routine.schedule.dayOfMonth || ''}
+                onChange={(e) => {
+                  const newRoutines = [...smartGoal.routines];
+                  newRoutines[index] = {
+                    ...routine,
+                    schedule: {
+                      ...routine.schedule,
+                      dayOfMonth: parseInt(e.target.value)
+                    }
+                  };
+                  setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
+                }}
+                fullWidth
+                InputProps={{ inputProps: { min: 1, max: 31 } }}
+              />
+            )}
+
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <DatePicker
                 label="End Date (Optional)"
@@ -1945,6 +2121,169 @@ const GoalsPage: React.FC = () => {
           areaId={sharingGoal.areaId}
           areaName={areas.find(a => a.id === sharingGoal.areaId)?.name || 'Area'}
         />
+      )}
+
+      {/* Routine Details Modal */}
+      {smartGoal.milestones.map((milestone) => (
+        milestone.routines.map((routineId) => {
+          const routine = smartGoal.routines.find(r => r.id === routineId);
+          if (!routine) return null;
+
+          return (
+            <Dialog
+              key={`${milestone.id}-${routineId}`}
+              open={openRoutineModal === `${milestone.id}-${routineId}`}
+              onClose={() => setOpenRoutineModal(null)}
+              maxWidth="md"
+              fullWidth
+            >
+              <DialogTitle>Edit Routine Schedule & Details</DialogTitle>
+              <DialogContent>
+                <div className="space-y-6 py-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Times per {routine.frequency}
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={routine.targetCount}
+                      onChange={e => {
+                        const targetCount = Math.max(1, parseInt(e.target.value) || 1);
+                        setSmartGoal(prev => {
+                          const newRoutines = prev.routines.map(r => 
+                            r.id === routineId ? {
+                              ...r,
+                              targetCount,
+                              schedule: {
+                                ...r.schedule,
+                                targetCount
+                              }
+                            } : r
+                          );
+                          return { ...prev, routines: newRoutines };
+                        });
+                      }}
+                      className="w-full p-2 border rounded-md"
+                    />
+                  </div>
+
+                  {routine.frequency === 'weekly' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Schedule
+                      </label>
+                      <div className="space-y-4">
+                        {[...Array(routine.targetCount)].map((_, occurrenceIndex) => (
+                          <div key={occurrenceIndex} className="space-y-2">
+                            <div className="flex gap-2">
+                              <select
+                                value={routine.schedule.daysOfWeek?.[occurrenceIndex]?.day || 'monday'}
+                                onChange={e => {
+                                  setSmartGoal(prev => {
+                                    const newRoutines = prev.routines.map(r => {
+                                      if (r.id !== routineId) return r;
+                                      
+                                      const newDaysOfWeek = [...(r.schedule.daysOfWeek || [])];
+                                      newDaysOfWeek[occurrenceIndex] = {
+                                        ...(newDaysOfWeek[occurrenceIndex] || {}),
+                                        day: e.target.value as DayOfWeek,
+                                        time: newDaysOfWeek[occurrenceIndex]?.time || { hour: 9, minute: 0 }
+                                      };
+                                      
+                                      return {
+                                        ...r,
+                                        schedule: {
+                                          ...r.schedule,
+                                          daysOfWeek: newDaysOfWeek
+                                        }
+                                      };
+                                    });
+                                    return { ...prev, routines: newRoutines };
+                                  });
+                                }}
+                                className="flex-1 p-2 border rounded-md"
+                              >
+                                <option value="monday">Monday</option>
+                                <option value="tuesday">Tuesday</option>
+                                <option value="wednesday">Wednesday</option>
+                                <option value="thursday">Thursday</option>
+                                <option value="friday">Friday</option>
+                                <option value="saturday">Saturday</option>
+                                <option value="sunday">Sunday</option>
+                              </select>
+                              <input
+                                type="time"
+                                value={`${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.minute || 0).padStart(2, '0')}`}
+                                onChange={e => {
+                                  const [hours, minutes] = e.target.value.split(':').map(Number);
+                                  setSmartGoal(prev => {
+                                    const newRoutines = prev.routines.map(r => {
+                                      if (r.id !== routineId) return r;
+                                      
+                                      const newDaysOfWeek = [...(r.schedule.daysOfWeek || [])];
+                                      newDaysOfWeek[occurrenceIndex] = {
+                                        ...(newDaysOfWeek[occurrenceIndex] || { day: 'monday' }),
+                                        time: { hour: hours, minute: minutes }
+                                      };
+                                      
+                                      return {
+                                        ...r,
+                                        schedule: {
+                                          ...r.schedule,
+                                          daysOfWeek: newDaysOfWeek
+                                        }
+                                      };
+                                    });
+                                    return { ...prev, routines: newRoutines };
+                                  });
+                                }}
+                                className="w-32 p-2 border rounded-md"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {routine.frequency === 'monthly' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Day of Month
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max="31"
+                        value={routine.schedule.dayOfMonth || 1}
+                        onChange={e => {
+                          const dayOfMonth = parseInt(e.target.value) || 1;
+                          setSmartGoal(prev => {
+                            const newRoutines = prev.routines.map(r => 
+                              r.id === routineId ? {
+                                ...r,
+                                schedule: {
+                                  ...r.schedule,
+                                  dayOfMonth
+                                }
+                              } : r
+                            );
+                            return { ...prev, routines: newRoutines };
+                          });
+                        }}
+                        className="w-full p-2 border rounded-md"
+                      />
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setOpenRoutineModal(null)}>Close</Button>
+              </DialogActions>
+            </Dialog>
+          );
+        })
       )}
     </Container>
   );

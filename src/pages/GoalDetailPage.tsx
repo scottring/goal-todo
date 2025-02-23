@@ -451,7 +451,10 @@ const GoalDetailPage: React.FC = () => {
                     schedule: {
                       ...prev.schedule,
                       type: frequency,
-                      targetCount: frequency === 'daily' ? 1 : frequency === 'weekly' ? 3 : 1
+                      targetCount: 1,
+                      daysOfWeek: [],
+                      dayOfMonth: undefined,
+                      monthsOfYear: []
                     }
                   }));
                 }}
@@ -465,43 +468,189 @@ const GoalDetailPage: React.FC = () => {
               </select>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Target Count (per {routineForm.frequency})
+              </label>
+              <input
+                type="number"
+                min="1"
+                value={routineForm.targetCount}
+                onChange={e => setRoutineForm(prev => ({
+                  ...prev,
+                  targetCount: parseInt(e.target.value),
+                  schedule: {
+                    ...prev.schedule,
+                    targetCount: parseInt(e.target.value)
+                  }
+                }))}
+                className="w-full p-2 border rounded-md"
+              />
+            </div>
+
             {routineForm.frequency === 'weekly' && (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Days of Week
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Schedule for {routineForm.targetCount} days per week
                 </label>
-                <div className="flex flex-wrap gap-2">
-                  {['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map(day => (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => {
-                        setRoutineForm(prev => {
-                          const currentDays = prev.schedule.daysOfWeek || [];
-                          const isDaySelected = currentDays.some(d => d.day === day);
-                          
-                          const updatedDays = isDaySelected
-                            ? currentDays.filter(d => d.day !== day)
-                            : [...currentDays, { day: day as DayOfWeek, time: prev.schedule.timeOfDay || { hour: 9, minute: 0 } }];
-                          
-                          return {
-                            ...prev,
-                            schedule: {
-                              ...prev.schedule,
-                              daysOfWeek: updatedDays
-                            }
-                          };
-                        });
-                      }}
-                      className={`px-3 py-1 rounded-full text-sm ${
-                        routineForm.schedule.daysOfWeek?.some(d => d.day === day)
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-800'
-                      }`}
-                    >
-                      {day.charAt(0).toUpperCase() + day.slice(1, 3)}
-                    </button>
-                  ))}
+                <div className="space-y-4">
+                  {Array.from({ length: routineForm.targetCount }).map((_, index) => {
+                    const currentSchedule = routineForm.schedule.daysOfWeek?.[index];
+                    return (
+                      <div key={index} className="flex items-center gap-4 p-3 border rounded-md">
+                        <select
+                          value={currentSchedule?.day || 'monday'}
+                          onChange={e => {
+                            const newDay = e.target.value as DayOfWeek;
+                            setRoutineForm(prev => {
+                              const newDaysOfWeek = [...(prev.schedule.daysOfWeek || [])];
+                              if (newDaysOfWeek[index]) {
+                                newDaysOfWeek[index] = {
+                                  ...newDaysOfWeek[index],
+                                  day: newDay
+                                };
+                              } else {
+                                newDaysOfWeek[index] = {
+                                  day: newDay,
+                                  time: { hour: 9, minute: 0 }
+                                };
+                              }
+                              return {
+                                ...prev,
+                                schedule: {
+                                  ...prev.schedule,
+                                  daysOfWeek: newDaysOfWeek
+                                }
+                              };
+                            });
+                          }}
+                          className="flex-1 p-2 border rounded-md"
+                        >
+                          {DAYS_OF_WEEK.map(day => (
+                            <option key={day} value={day.toLowerCase()}>
+                              {day.charAt(0).toUpperCase() + day.slice(1)}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="flex gap-2 items-center">
+                          <input
+                            type="number"
+                            min="0"
+                            max="23"
+                            value={currentSchedule?.time?.hour || 9}
+                            onChange={e => {
+                              const newHour = parseInt(e.target.value);
+                              setRoutineForm(prev => {
+                                const newDaysOfWeek = [...(prev.schedule.daysOfWeek || [])];
+                                if (newDaysOfWeek[index]) {
+                                  newDaysOfWeek[index] = {
+                                    ...newDaysOfWeek[index],
+                                    time: {
+                                      ...newDaysOfWeek[index].time,
+                                      hour: newHour
+                                    }
+                                  };
+                                } else {
+                                  newDaysOfWeek[index] = {
+                                    day: 'monday',
+                                    time: { hour: newHour, minute: 0 }
+                                  };
+                                }
+                                return {
+                                  ...prev,
+                                  schedule: {
+                                    ...prev.schedule,
+                                    daysOfWeek: newDaysOfWeek
+                                  }
+                                };
+                              });
+                            }}
+                            className="w-20 p-2 border rounded-md"
+                          />
+                          <span>:</span>
+                          <input
+                            type="number"
+                            min="0"
+                            max="59"
+                            value={currentSchedule?.time?.minute || 0}
+                            onChange={e => {
+                              const newMinute = parseInt(e.target.value);
+                              setRoutineForm(prev => {
+                                const newDaysOfWeek = [...(prev.schedule.daysOfWeek || [])];
+                                if (newDaysOfWeek[index]) {
+                                  newDaysOfWeek[index] = {
+                                    ...newDaysOfWeek[index],
+                                    time: {
+                                      ...newDaysOfWeek[index].time,
+                                      minute: newMinute
+                                    }
+                                  };
+                                } else {
+                                  newDaysOfWeek[index] = {
+                                    day: 'monday',
+                                    time: { hour: 9, minute: newMinute }
+                                  };
+                                }
+                                return {
+                                  ...prev,
+                                  schedule: {
+                                    ...prev.schedule,
+                                    daysOfWeek: newDaysOfWeek
+                                  }
+                                };
+                              });
+                            }}
+                            className="w-20 p-2 border rounded-md"
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {(routineForm.frequency === 'daily' || routineForm.frequency === 'monthly') && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Time of Day
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={routineForm.schedule.timeOfDay?.hour || 9}
+                    onChange={e => setRoutineForm(prev => ({
+                      ...prev,
+                      schedule: {
+                        ...prev.schedule,
+                        timeOfDay: {
+                          ...prev.schedule.timeOfDay!,
+                          hour: parseInt(e.target.value)
+                        }
+                      }
+                    }))}
+                    className="w-20 p-2 border rounded-md"
+                  />
+                  <span className="self-center">:</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    value={routineForm.schedule.timeOfDay?.minute || 0}
+                    onChange={e => setRoutineForm(prev => ({
+                      ...prev,
+                      schedule: {
+                        ...prev.schedule,
+                        timeOfDay: {
+                          ...prev.schedule.timeOfDay!,
+                          minute: parseInt(e.target.value)
+                        }
+                      }
+                    }))}
+                    className="w-20 p-2 border rounded-md"
+                  />
                 </div>
               </div>
             )}
@@ -527,69 +676,6 @@ const GoalDetailPage: React.FC = () => {
                 />
               </div>
             )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Time of Day
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={routineForm.schedule.timeOfDay?.hour || 9}
-                  onChange={e => setRoutineForm(prev => ({
-                    ...prev,
-                    schedule: {
-                      ...prev.schedule,
-                      timeOfDay: {
-                        ...prev.schedule.timeOfDay!,
-                        hour: parseInt(e.target.value)
-                      }
-                    }
-                  }))}
-                  className="w-20 p-2 border rounded-md"
-                />
-                <span className="self-center">:</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="59"
-                  value={routineForm.schedule.timeOfDay?.minute || 0}
-                  onChange={e => setRoutineForm(prev => ({
-                    ...prev,
-                    schedule: {
-                      ...prev.schedule,
-                      timeOfDay: {
-                        ...prev.schedule.timeOfDay!,
-                        minute: parseInt(e.target.value)
-                      }
-                    }
-                  }))}
-                  className="w-20 p-2 border rounded-md"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Target Count (per {routineForm.frequency})
-              </label>
-              <input
-                type="number"
-                min="1"
-                value={routineForm.targetCount}
-                onChange={e => setRoutineForm(prev => ({
-                  ...prev,
-                  targetCount: parseInt(e.target.value),
-                  schedule: {
-                    ...prev.schedule,
-                    targetCount: parseInt(e.target.value)
-                  }
-                }))}
-                className="w-full p-2 border rounded-md"
-              />
-            </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">

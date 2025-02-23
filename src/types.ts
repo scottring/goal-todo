@@ -268,4 +268,60 @@ export interface UserGoal {
   tasks: Task[];
   routines: Routine[];
   areaId: string;
-} 
+}
+
+export interface BaseDocument {
+  id: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+export interface SourceActivity extends BaseDocument {
+  name: string;
+  specificAction: string;
+  measurableMetric: MeasurableMetric;
+  customMetric?: string;
+  achievabilityCheck: AchievabilityCheck;
+  relevance: string;
+  timeTracking: {
+    type: TimeTrackingType;
+    deadline?: Timestamp;
+    reviewCycle?: ReviewCycle;
+    nextReviewDate?: Timestamp;
+    reviewStatus?: {
+      lastReviewDate: Timestamp;
+      nextReviewDate: Timestamp;
+      completedReviews: string[];
+    };
+  };
+  areaId: string;
+  sharedWith: string[];
+  milestones: Milestone[];
+  tasks: Task[];
+  routines: Routine[];
+}
+
+export type AchievabilityCheck = 'yes' | 'no' | 'need_resources';
+
+export type TimeTrackingType = 'fixed_deadline' | 'recurring_review';
+
+export interface Milestone {
+  id: string;
+  name: string;
+  targetDate?: Timestamp;
+  successCriteria: string;
+  status: TaskStatus;
+  tasks: string[];
+  routines: string[];
+}
+
+export interface TaskReviewItem {
+  taskId: string;
+  title: string;
+  status: 'completed' | 'missed' | 'needs_review';
+  originalDueDate: Timestamp;
+  action: 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close';
+  priority: TaskPriority;
+}
+
+export type ReviewFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly'; 
