@@ -116,6 +116,7 @@ const GoalDetailPage: React.FC = () => {
   const [showTaskForm, setShowTaskForm] = useState(false);
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
+  const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
   const [routineForm, setRoutineForm] = useState<RoutineFormData>({
     title: '',
     description: '',
@@ -311,21 +312,45 @@ const GoalDetailPage: React.FC = () => {
     if (!milestoneForm.name.trim() || !displayGoal) return;
 
     try {
-      const newMilestone = {
-        name: milestoneForm.name.trim(),
-        targetDate: milestoneForm.targetDate ? FirebaseTimestamp.fromDate(new Date(milestoneForm.targetDate)) : undefined,
-        successCriteria: milestoneForm.successCriteria.trim(),
-        status: milestoneForm.status,
-        tasks: []
-      };
+      if (editingMilestoneId !== null) {
+        // Handle edit case
+        const updatedMilestones = displayGoal.milestones.map((m, index) => {
+          if (index === editingMilestoneId) {
+            return {
+              ...m,
+              name: milestoneForm.name.trim(),
+              targetDate: milestoneForm.targetDate ? FirebaseTimestamp.fromDate(new Date(milestoneForm.targetDate)) : undefined,
+              successCriteria: milestoneForm.successCriteria.trim(),
+              status: milestoneForm.status
+            };
+          }
+          return m;
+        });
 
-      const cleanedMilestone = cleanData(newMilestone);
-      const updatedMilestones = displayGoal.milestones ? [...displayGoal.milestones, cleanedMilestone] : [cleanedMilestone];
-      
-      if ('parentGoalId' in displayGoal) {
-        await updateUserGoal(displayGoal.id, { milestones: updatedMilestones });
+        if ('parentGoalId' in displayGoal) {
+          await updateUserGoal(displayGoal.id, { milestones: updatedMilestones });
+        } else {
+          await updateGoal(displayGoal.id, { milestones: updatedMilestones });
+        }
       } else {
-        await updateGoal(displayGoal.id, { milestones: updatedMilestones });
+        // Handle add case
+        const newMilestone = {
+          name: milestoneForm.name.trim(),
+          targetDate: milestoneForm.targetDate ? FirebaseTimestamp.fromDate(new Date(milestoneForm.targetDate)) : undefined,
+          successCriteria: milestoneForm.successCriteria.trim(),
+          status: milestoneForm.status,
+          tasks: [] as string[],
+          routines: [] as string[]
+        };
+
+        const cleanedMilestone = cleanData(newMilestone);
+        const updatedMilestones = displayGoal.milestones ? [...displayGoal.milestones, cleanedMilestone] : [cleanedMilestone];
+        
+        if ('parentGoalId' in displayGoal) {
+          await updateUserGoal(displayGoal.id, { milestones: updatedMilestones });
+        } else {
+          await updateGoal(displayGoal.id, { milestones: updatedMilestones });
+        }
       }
 
       setMilestoneForm({
@@ -334,9 +359,10 @@ const GoalDetailPage: React.FC = () => {
         successCriteria: '',
         status: 'not_started'
       });
+      setEditingMilestoneId(null);
       setShowMilestoneForm(false);
     } catch (err) {
-      console.error('Error adding milestone:', err);
+      console.error('Error managing milestone:', err);
     }
   };
 
@@ -821,9 +847,14 @@ const GoalDetailPage: React.FC = () => {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Add Milestone</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {editingMilestoneId !== null ? 'Edit Milestone' : 'Add Milestone'}
+            </h2>
             <button
-              onClick={() => setShowMilestoneForm(false)}
+              onClick={() => {
+                setShowMilestoneForm(false);
+                setEditingMilestoneId(null);
+              }}
               className="text-gray-400 hover:text-gray-600"
             >
               <X className="w-6 h-6" />
@@ -887,7 +918,10 @@ const GoalDetailPage: React.FC = () => {
 
           <div className="mt-6 flex justify-end gap-3">
             <button
-              onClick={() => setShowMilestoneForm(false)}
+              onClick={() => {
+                setShowMilestoneForm(false);
+                setEditingMilestoneId(null);
+              }}
               className="px-4 py-2 text-gray-600 hover:text-gray-700"
             >
               Cancel
@@ -897,7 +931,7 @@ const GoalDetailPage: React.FC = () => {
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               disabled={!milestoneForm.name.trim()}
             >
-              Add Milestone
+              {editingMilestoneId !== null ? 'Save Changes' : 'Add Milestone'}
             </button>
           </div>
         </div>
@@ -1091,6 +1125,7 @@ const GoalDetailPage: React.FC = () => {
                           <div className="flex gap-1">
                             <button
                               onClick={() => {
+                                setEditingMilestoneId(index);
                                 setMilestoneForm({
                                   name: milestone.name,
                                   targetDate: milestone.targetDate ? new Date(milestone.targetDate.seconds * 1000).toISOString().split('T')[0] : '',
