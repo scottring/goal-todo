@@ -1,29 +1,15 @@
 import React, { useState } from 'react';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction,
-  IconButton,
-  Chip,
-  Stack,
-  Divider,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField
-} from '@mui/material';
-import SendIcon from '@mui/icons-material/Send';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
 import { format } from 'date-fns';
 import { Timestamp } from 'firebase/firestore';
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { cn } from "@/lib/utils";
+import { CheckCircle, AlertCircle, Send } from "lucide-react";
 
 interface SharedTask {
   id: string;
@@ -78,120 +64,96 @@ export const SharedGoalReview: React.FC<SharedGoalReviewProps> = ({
   };
 
   return (
-    <Card variant="outlined">
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
-          {goalName}
-        </Typography>
-
-        <Stack spacing={3}>
+    <Card>
+      <CardHeader>
+        <CardTitle>{goalName}</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <ScrollArea className="h-[500px] pr-4">
           {collaborators.map((collaborator) => {
             const userTasks = getTasksByUser(collaborator.id);
             const completedTasks = userTasks.filter(task => task.status === 'completed');
             const pendingTasks = userTasks.filter(task => task.status === 'pending');
 
             return (
-              <Box key={collaborator.id}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                  <Box>
-                    <Typography variant="subtitle1">
-                      {collaborator.name}
-                    </Typography>
-                    <Typography variant="body2" color="textSecondary">
-                      {collaborator.email}
-                    </Typography>
-                  </Box>
-                  <Box>
-                    <Chip
-                      icon={<CheckCircleIcon />}
-                      label={`${completedTasks.length} Completed`}
-                      color="success"
-                      variant="outlined"
-                      size="small"
-                      sx={{ mr: 1 }}
-                    />
+              <div key={collaborator.id} className="mb-6">
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className="text-lg font-medium">{collaborator.name}</h3>
+                    <p className="text-sm text-muted-foreground">{collaborator.email}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="bg-green-50">
+                      <CheckCircle className="w-4 h-4 mr-1" />
+                      {completedTasks.length} Completed
+                    </Badge>
                     {pendingTasks.length > 0 && (
-                      <Chip
-                        icon={<ErrorIcon />}
-                        label={`${pendingTasks.length} Pending`}
-                        color="warning"
-                        variant="outlined"
-                        size="small"
-                        sx={{ mr: 1 }}
-                      />
+                      <Badge variant="outline" className="bg-yellow-50">
+                        <AlertCircle className="w-4 h-4 mr-1" />
+                        {pendingTasks.length} Pending
+                      </Badge>
                     )}
                     <Button
-                      size="small"
-                      startIcon={<SendIcon />}
+                      variant="outline"
+                      size="sm"
                       onClick={() => handleOpenReminderDialog(collaborator.id, collaborator.name)}
                     >
+                      <Send className="w-4 h-4 mr-1" />
                       Send Reminder
                     </Button>
-                  </Box>
-                </Box>
+                  </div>
+                </div>
 
-                <List>
+                <div className="space-y-2">
                   {userTasks.map((task) => (
-                    <ListItem key={task.id} divider>
-                      <ListItemText
-                        primary={task.title}
-                        secondary={`Due: ${format(task.dueDate.toDate(), 'MMM d, yyyy')}`}
-                      />
-                      <ListItemSecondaryAction>
-                        <Button
-                          size="small"
-                          color={task.status === 'completed' ? 'success' : 'primary'}
-                          variant={task.status === 'completed' ? 'contained' : 'outlined'}
-                          onClick={() => onUpdateTaskStatus(
-                            goalId,
-                            task.id,
-                            task.status === 'completed' ? 'pending' : 'completed'
-                          )}
-                        >
-                          {task.status === 'completed' ? 'Completed' : 'Mark Complete'}
-                        </Button>
-                      </ListItemSecondaryAction>
-                    </ListItem>
+                    <div key={task.id} className="flex justify-between items-center p-3 rounded-lg border">
+                      <div>
+                        <p className="font-medium">{task.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Due: {format(task.dueDate.toDate(), 'MMM d, yyyy')}
+                        </p>
+                      </div>
+                      <Button
+                        variant={task.status === 'completed' ? 'default' : 'outline'}
+                        size="sm"
+                        onClick={() => onUpdateTaskStatus(
+                          goalId,
+                          task.id,
+                          task.status === 'completed' ? 'pending' : 'completed'
+                        )}
+                      >
+                        {task.status === 'completed' ? 'Completed' : 'Mark Complete'}
+                      </Button>
+                    </div>
                   ))}
-                </List>
-              </Box>
+                </div>
+                <Separator className="my-6" />
+              </div>
             );
           })}
-        </Stack>
+        </ScrollArea>
 
-        <Dialog
-          open={isReminderDialogOpen}
-          onClose={() => setIsReminderDialogOpen(false)}
-          maxWidth="sm"
-          fullWidth
-        >
-          <DialogTitle>
-            Send Reminder to {selectedUser?.name}
-          </DialogTitle>
+        <Dialog open={isReminderDialogOpen} onOpenChange={setIsReminderDialogOpen}>
+          <DialogHeader>
+            <DialogTitle>Send Reminder to {selectedUser?.name}</DialogTitle>
+          </DialogHeader>
           <DialogContent>
-            <TextField
-              fullWidth
-              multiline
-              rows={4}
+            <Textarea
               value={reminderMessage}
               onChange={(e) => setReminderMessage(e.target.value)}
-              label="Reminder Message"
-              variant="outlined"
-              margin="normal"
+              placeholder="Enter your reminder message..."
+              className="min-h-[150px]"
             />
           </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setIsReminderDialogOpen(false)}>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setIsReminderDialogOpen(false)}>
               Cancel
             </Button>
-            <Button
-              variant="contained"
-              onClick={handleSendReminder}
-              startIcon={<SendIcon />}
-            >
+            <Button onClick={handleSendReminder}>
+              <Send className="w-4 h-4 mr-1" />
               Send Reminder
             </Button>
-          </DialogActions>
+          </DialogFooter>
         </Dialog>
       </CardContent>
     </Card>

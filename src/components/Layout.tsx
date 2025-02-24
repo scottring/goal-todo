@@ -1,15 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  AppBar,
-  Toolbar,
-  Typography,
-  Button,
-  Box,
-  Container,
-  IconButton
-} from '@mui/material';
-import {
   Home,
   Target,
   CheckSquare,
@@ -18,6 +9,10 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { UserAccountButton } from './UserAccountButton';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { ThemeToggle } from './theme-toggle';
+import { Separator } from '@/components/ui/separator';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
@@ -27,10 +22,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isActive = (path: string) => location.pathname === path;
 
   const menuItems = [
-    { text: 'Areas', icon: <Home size={20} />, path: '/areas' },
-    { text: 'Goals', icon: <Target size={20} />, path: '/goals' },
-    { text: 'Tasks', icon: <CheckSquare size={20} />, path: '/tasks' },
-    { text: 'Weekly Planning', icon: <Calendar size={20} />, path: '/weekly-planning' }
+    { text: 'Areas', icon: Home, path: '/areas' },
+    { text: 'Goals', icon: Target, path: '/goals' },
+    { text: 'Tasks', icon: CheckSquare, path: '/tasks' },
+    { text: 'Weekly Planning', icon: Calendar, path: '/weekly-planning' }
   ];
 
   // Don't show navigation for auth pages
@@ -46,34 +41,41 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
-      <AppBar position="static" color="default" elevation={1}>
-        <Toolbar>
-          <Container maxWidth="lg" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              {menuItems.map((item) => (
-                <Button
-                  key={item.text}
-                  component={Link}
-                  to={item.path}
-                  color={isActive(item.path) ? 'primary' : 'inherit'}
-                  startIcon={item.icon}
-                >
-                  {item.text}
-                </Button>
-              ))}
-            </Box>
+    <div className="flex min-h-screen flex-col">
+      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+        <div className="container flex h-14 items-center">
+          <div className="mr-4 flex">
+            <nav className="flex items-center space-x-2">
+              {menuItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Button
+                    key={item.text}
+                    variant={isActive(item.path) ? "default" : "ghost"}
+                    className="h-9"
+                    asChild
+                  >
+                    <Link to={item.path} className="flex items-center gap-2">
+                      <Icon className="h-4 w-4" />
+                      {item.text}
+                    </Link>
+                  </Button>
+                );
+              })}
+            </nav>
+          </div>
+          <div className="flex flex-1 items-center justify-end space-x-2">
+            <ThemeToggle />
+            <Separator orientation="vertical" className="h-6" />
             <UserAccountButton />
-          </Container>
-        </Toolbar>
-      </AppBar>
+          </div>
+        </div>
+      </header>
 
-      <Box component="main" sx={{ flexGrow: 1, py: 4 }}>
-        <Container maxWidth="lg">
-          {children}
-        </Container>
-      </Box>
-    </Box>
+      <main className="flex-1 container py-6">
+        {children}
+      </main>
+    </div>
   );
 };
 

@@ -1,30 +1,22 @@
 import React, { useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  TextField,
   Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Stack,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction
-} from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import DragHandleIcon from '@mui/icons-material/DragHandle';
-import { TaskPriority } from '../types';
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Calendar } from "@/components/ui/calendar";
+import { Icons } from "@/components/icons";
+import { cn } from "@/lib/utils";
 import { format } from 'date-fns';
+import { TaskPriority } from '../types';
 import {
   DragDropContext,
   Droppable,
@@ -44,154 +36,164 @@ interface PlannedTask {
 interface NextWeekTaskPlannerProps {
   tasks: PlannedTask[];
   onAddTask: (task: Omit<PlannedTask, 'id'>) => void;
-  onUpdateTask: (taskId: string, updates: Partial<PlannedTask>) => void;
   onDeleteTask: (taskId: string) => void;
-  onReorderTasks: (startIndex: number, endIndex: number) => void;
+  onReorderTasks: (tasks: PlannedTask[]) => void;
 }
+
+const PRIORITIES = [
+  { value: 'high', label: 'High' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'low', label: 'Low' }
+] as const;
 
 export const NextWeekTaskPlanner: React.FC<NextWeekTaskPlannerProps> = ({
   tasks,
   onAddTask,
-  onUpdateTask,
   onDeleteTask,
   onReorderTasks
 }) => {
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>('medium');
-  const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(new Date());
+  const [newTask, setNewTask] = useState<Omit<PlannedTask, 'id'>>({
+    title: '',
+    priority: 'medium',
+    dueDate: new Date()
+  });
 
   const handleAddTask = () => {
-    if (newTaskTitle.trim() && newTaskDueDate) {
-      onAddTask({
-        title: newTaskTitle.trim(),
-        priority: newTaskPriority,
-        dueDate: newTaskDueDate
-      });
-      setNewTaskTitle('');
-      setNewTaskPriority('medium');
-      setNewTaskDueDate(new Date());
-    }
+    if (!newTask.title.trim()) return;
+    onAddTask(newTask);
+    setNewTask({
+      title: '',
+      priority: 'medium',
+      dueDate: new Date()
+    });
   };
 
   const handleDragEnd = (result: DropResult) => {
     if (!result.destination) return;
-    onReorderTasks(result.source.index, result.destination.index);
-  };
 
-  const getPriorityColor = (priority: TaskPriority) => {
-    switch (priority) {
-      case 'high':
-        return 'error.main';
-      case 'medium':
-        return 'warning.main';
-      case 'low':
-        return 'success.main';
-      default:
-        return 'text.primary';
-    }
+    const items = Array.from(tasks);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    onReorderTasks(items);
   };
 
   return (
-    <LocalizationProvider dateAdapter={AdapterDateFns}>
-      <Card variant="outlined">
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Plan Next Week's Tasks
-          </Typography>
+    <Card>
+      <CardHeader>
+        <CardTitle>Next Week's Tasks</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">Task Title</Label>
+              <Input
+                id="title"
+                value={newTask.title}
+                onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter task title"
+              />
+            </div>
 
-          <Stack spacing={2}>
-            <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
-              <TextField
-                label="Task Title"
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                fullWidth
-              />
-              <FormControl sx={{ minWidth: 120 }}>
-                <InputLabel>Priority</InputLabel>
-                <Select
-                  value={newTaskPriority}
-                  label="Priority"
-                  onChange={(e) => setNewTaskPriority(e.target.value as TaskPriority)}
-                >
-                  <MenuItem value="high">High</MenuItem>
-                  <MenuItem value="medium">Medium</MenuItem>
-                  <MenuItem value="low">Low</MenuItem>
-                </Select>
-              </FormControl>
-              <DatePicker
-                label="Due Date"
-                value={newTaskDueDate}
-                onChange={(newValue) => setNewTaskDueDate(newValue)}
-                sx={{ width: 200 }}
-              />
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={handleAddTask}
-                disabled={!newTaskTitle.trim() || !newTaskDueDate}
+            <div className="space-y-2">
+              <Label htmlFor="priority">Priority</Label>
+              <Select
+                value={newTask.priority}
+                onValueChange={(value: TaskPriority) => 
+                  setNewTask(prev => ({ ...prev, priority: value }))
+                }
               >
-                Add Task
-              </Button>
-            </Box>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PRIORITIES.map(priority => (
+                    <SelectItem key={priority.value} value={priority.value}>
+                      {priority.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <DragDropContext onDragEnd={handleDragEnd}>
-              <Droppable droppableId="task-list">
-                {(provided: DroppableProvided) => (
-                  <List
-                    {...provided.droppableProps}
-                    ref={provided.innerRef}
-                    sx={{ width: '100%' }}
-                  >
-                    {tasks.map((task, index) => (
-                      <Draggable key={task.id} draggableId={task.id} index={index}>
-                        {(provided: DraggableProvided) => (
-                          <ListItem
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            divider
-                          >
-                            <IconButton {...provided.dragHandleProps} size="small">
-                              <DragHandleIcon />
-                            </IconButton>
-                            <ListItemText
-                              primary={task.title}
-                              secondary={
-                                <Box component="span" sx={{ display: 'flex', gap: 1 }}>
-                                  <Typography
-                                    component="span"
-                                    variant="body2"
-                                    sx={{ color: getPriorityColor(task.priority) }}
-                                  >
-                                    {task.priority.toUpperCase()}
-                                  </Typography>
-                                  <Typography component="span" variant="body2">
-                                    Due: {format(task.dueDate, 'MMM d, yyyy')}
-                                  </Typography>
-                                </Box>
-                              }
-                            />
-                            <ListItemSecondaryAction>
-                              <IconButton
-                                edge="end"
-                                aria-label="delete"
-                                onClick={() => onDeleteTask(task.id)}
+            <div className="space-y-2">
+              <Label>Due Date</Label>
+              <Calendar
+                mode="single"
+                selected={newTask.dueDate}
+                onSelect={(date) => date && setNewTask(prev => ({ ...prev, dueDate: date }))}
+                className="rounded-md border"
+              />
+            </div>
+          </div>
+
+          <Button
+            onClick={handleAddTask}
+            disabled={!newTask.title.trim()}
+            className="w-full"
+          >
+            <Icons.add className="mr-2 h-4 w-4" />
+            Add Task
+          </Button>
+        </div>
+
+        <Separator />
+
+        <DragDropContext onDragEnd={handleDragEnd}>
+          <Droppable droppableId="tasks">
+            {(provided: DroppableProvided) => (
+              <div
+                {...provided.droppableProps}
+                ref={provided.innerRef}
+                className="space-y-2"
+              >
+                {tasks.map((task, index) => (
+                  <Draggable key={task.id} draggableId={task.id} index={index}>
+                    {(provided: DraggableProvided) => (
+                      <div
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                        className="flex items-center justify-between rounded-lg border p-4"
+                      >
+                        <div className="flex items-center gap-4">
+                          <Icons.grip className="h-4 w-4 text-muted-foreground" />
+                          <div className="space-y-1">
+                            <h4 className="font-medium">{task.title}</h4>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Badge
+                                variant={
+                                  task.priority === 'high' ? 'destructive' :
+                                  task.priority === 'medium' ? 'secondary' :
+                                  'default'
+                                }
                               >
-                                <DeleteIcon />
-                              </IconButton>
-                            </ListItemSecondaryAction>
-                          </ListItem>
-                        )}
-                      </Draggable>
-                    ))}
-                    {provided.placeholder}
-                  </List>
-                )}
-              </Droppable>
-            </DragDropContext>
-          </Stack>
-        </CardContent>
-      </Card>
-    </LocalizationProvider>
+                                {task.priority}
+                              </Badge>
+                              <span>•</span>
+                              <span>{format(task.dueDate, 'MMM d, yyyy')}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => onDeleteTask(task.id)}
+                        >
+                          <Icons.trash className="h-4 w-4" />
+                          <span className="sr-only">Delete task</span>
+                        </Button>
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        </DragDropContext>
+      </CardContent>
+    </Card>
   );
 }; 

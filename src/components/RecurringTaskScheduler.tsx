@@ -1,31 +1,21 @@
 import React, { useState } from 'react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  TextField,
   Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Stack,
-  Chip,
-  Grid,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemSecondaryAction
-} from '@mui/material';
-import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import { RoutineSchedule, DayOfWeek } from '../types';
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { Icons } from "@/components/icons";
+import { cn } from "@/lib/utils";
 import { format } from 'date-fns';
+import { RoutineSchedule, DayOfWeek } from '../types';
 
 interface RecurringTask {
   id: string;
@@ -37,7 +27,6 @@ interface RecurringTask {
 interface RecurringTaskSchedulerProps {
   tasks: RecurringTask[];
   onAddTask: (task: Omit<RecurringTask, 'id'>) => void;
-  onUpdateTask: (taskId: string, updates: Partial<RecurringTask>) => void;
   onDeleteTask: (taskId: string) => void;
 }
 
@@ -51,186 +40,199 @@ const DAYS_OF_WEEK: DayOfWeek[] = [
   'sunday'
 ];
 
+const FREQUENCIES = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'monthly', label: 'Monthly' }
+] as const;
+
 export const RecurringTaskScheduler: React.FC<RecurringTaskSchedulerProps> = ({
   tasks,
   onAddTask,
-  onUpdateTask,
   onDeleteTask
 }) => {
-  const [newTaskTitle, setNewTaskTitle] = useState('');
-  const [frequency, setFrequency] = useState<'daily' | 'weekly' | 'monthly'>('weekly');
-  const [selectedDays, setSelectedDays] = useState<DayOfWeek[]>([]);
-  const [selectedTime, setSelectedTime] = useState<Date | null>(new Date());
-  const [targetCount, setTargetCount] = useState(1);
+  const [newTask, setNewTask] = useState<Omit<RecurringTask, 'id'>>({
+    title: '',
+    frequency: 'weekly',
+    schedule: {
+      type: 'weekly',
+      targetCount: 1,
+      daysOfWeek: []
+    }
+  });
 
   const handleAddTask = () => {
-    if (newTaskTitle.trim() && selectedTime) {
-      const schedule: RoutineSchedule = {
-        type: frequency,
-        targetCount,
-        timeOfDay: {
-          hour: selectedTime.getHours(),
-          minute: selectedTime.getMinutes()
-        }
-      };
-
-      if (frequency === 'weekly') {
-        schedule.daysOfWeek = selectedDays.map(day => ({
-          day,
-          time: {
-            hour: selectedTime.getHours(),
-            minute: selectedTime.getMinutes()
-          }
-        }));
+    if (!newTask.title.trim()) return;
+    onAddTask(newTask);
+    setNewTask({
+      title: '',
+      frequency: 'weekly',
+      schedule: {
+        type: 'weekly',
+        targetCount: 1,
+        daysOfWeek: []
       }
+    });
+  };
 
-      onAddTask({
-        title: newTaskTitle.trim(),
-        frequency,
-        schedule
-      });
+  const handleDayToggle = (day: DayOfWeek) => {
+    const currentDays = newTask.schedule.daysOfWeek || [];
+    const dayIndex = currentDays.findIndex(d => d.day === day);
 
-      // Reset form
-      setNewTaskTitle('');
-      setFrequency('weekly');
-      setSelectedDays([]);
-      setSelectedTime(new Date());
-      setTargetCount(1);
+    if (dayIndex === -1) {
+      setNewTask(prev => ({
+        ...prev,
+        schedule: {
+          ...prev.schedule,
+          daysOfWeek: [...currentDays, { day, time: { hour: 9, minute: 0 } }]
+        }
+      }));
+    } else {
+      setNewTask(prev => ({
+        ...prev,
+        schedule: {
+          ...prev.schedule,
+          daysOfWeek: currentDays.filter(d => d.day !== day)
+        }
+      }));
     }
   };
 
-  const toggleDay = (day: DayOfWeek) => {
-    setSelectedDays(prev =>
-      prev.includes(day)
-        ? prev.filter(d => d !== day)
-        : [...prev, day]
-    );
-  };
-
   return (
-    <LocalizationProvider dateAdapter={AdapterDateFns}>
-      <Card variant="outlined">
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            Schedule Recurring Tasks
-          </Typography>
+    <Card>
+      <CardHeader>
+        <CardTitle>Recurring Tasks</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-4">
+          <div className="grid gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="title">Task Title</Label>
+              <Input
+                id="title"
+                value={newTask.title}
+                onChange={(e) => setNewTask(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Enter task title"
+              />
+            </div>
 
-          <Stack spacing={3}>
-            <Grid container spacing={2} alignItems="flex-start">
-              <Grid item xs={12} md={4}>
-                <TextField
-                  label="Task Title"
-                  value={newTaskTitle}
-                  onChange={(e) => setNewTaskTitle(e.target.value)}
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} md={2}>
-                <FormControl fullWidth>
-                  <InputLabel>Frequency</InputLabel>
-                  <Select
-                    value={frequency}
-                    label="Frequency"
-                    onChange={(e) => setFrequency(e.target.value as any)}
-                  >
-                    <MenuItem value="daily">Daily</MenuItem>
-                    <MenuItem value="weekly">Weekly</MenuItem>
-                    <MenuItem value="monthly">Monthly</MenuItem>
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={2}>
-                <TextField
-                  type="number"
-                  label="Target Count"
-                  value={targetCount}
-                  onChange={(e) => setTargetCount(parseInt(e.target.value, 10))}
-                  inputProps={{ min: 1 }}
-                  fullWidth
-                />
-              </Grid>
-              <Grid item xs={12} md={2}>
-                <TimePicker
-                  label="Time"
-                  value={selectedTime}
-                  onChange={(newValue) => setSelectedTime(newValue)}
-                  sx={{ width: '100%' }}
-                />
-              </Grid>
-              <Grid item xs={12} md={2}>
-                <Button
-                  variant="contained"
-                  startIcon={<AddIcon />}
-                  onClick={handleAddTask}
-                  disabled={!newTaskTitle.trim() || !selectedTime || (frequency === 'weekly' && selectedDays.length === 0)}
-                  fullWidth
-                >
-                  Add Task
-                </Button>
-              </Grid>
-            </Grid>
-
-            {frequency === 'weekly' && (
-              <Box>
-                <Typography variant="subtitle2" gutterBottom>
-                  Select Days:
-                </Typography>
-                <Stack direction="row" spacing={1}>
-                  {DAYS_OF_WEEK.map((day) => (
-                    <Chip
-                      key={day}
-                      label={day.charAt(0).toUpperCase() + day.slice(1, 3)}
-                      onClick={() => toggleDay(day)}
-                      color={selectedDays.includes(day) ? 'primary' : 'default'}
-                      variant={selectedDays.includes(day) ? 'filled' : 'outlined'}
-                    />
-                  ))}
-                </Stack>
-              </Box>
-            )}
-
-            <List>
-              {tasks.map((task) => (
-                <ListItem key={task.id} divider>
-                  <ListItemText
-                    primary={task.title}
-                    secondary={
-                      <Box>
-                        <Typography variant="body2" component="span">
-                          {task.frequency.charAt(0).toUpperCase() + task.frequency.slice(1)} |{' '}
-                          {task.schedule.type === 'weekly' && task.schedule.daysOfWeek && (
-                            <>
-                              {task.schedule.daysOfWeek.map(({ day }) => 
-                                day.charAt(0).toUpperCase() + day.slice(1, 3)
-                              ).join(', ')} at{' '}
-                            </>
-                          )}
-                          {format(
-                            new Date().setHours(
-                              task.schedule.timeOfDay?.hour ?? 0,
-                              task.schedule.timeOfDay?.minute ?? 0
-                            ),
-                            'h:mm a'
-                          )}
-                        </Typography>
-                      </Box>
+            <div className="space-y-2">
+              <Label htmlFor="frequency">Frequency</Label>
+              <Select
+                value={newTask.frequency}
+                onValueChange={(value: 'daily' | 'weekly' | 'monthly') => 
+                  setNewTask(prev => ({
+                    ...prev,
+                    frequency: value,
+                    schedule: {
+                      ...prev.schedule,
+                      type: value
                     }
-                  />
-                  <ListItemSecondaryAction>
-                    <IconButton
-                      edge="end"
-                      aria-label="delete"
-                      onClick={() => onDeleteTask(task.id)}
-                    >
-                      <DeleteIcon />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              ))}
-            </List>
-          </Stack>
-        </CardContent>
-      </Card>
-    </LocalizationProvider>
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select frequency" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FREQUENCIES.map(freq => (
+                    <SelectItem key={freq.value} value={freq.value}>
+                      {freq.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="targetCount">Target Count</Label>
+              <Input
+                id="targetCount"
+                type="number"
+                min={1}
+                value={newTask.schedule.targetCount}
+                onChange={(e) => setNewTask(prev => ({
+                  ...prev,
+                  schedule: {
+                    ...prev.schedule,
+                    targetCount: parseInt(e.target.value) || 1
+                  }
+                }))}
+              />
+            </div>
+
+            {newTask.frequency === 'weekly' && (
+              <div className="space-y-2">
+                <Label>Days of Week</Label>
+                <div className="flex flex-wrap gap-2">
+                  {DAYS_OF_WEEK.map(day => {
+                    const isSelected = newTask.schedule.daysOfWeek?.some(d => d.day === day);
+                    return (
+                      <Button
+                        key={day}
+                        variant={isSelected ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleDayToggle(day)}
+                      >
+                        {day.charAt(0).toUpperCase() + day.slice(1, 3)}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <Button
+            onClick={handleAddTask}
+            disabled={!newTask.title.trim()}
+            className="w-full"
+          >
+            <Icons.add className="mr-2 h-4 w-4" />
+            Add Task
+          </Button>
+        </div>
+
+        <Separator />
+
+        <div className="space-y-4">
+          {tasks.map(task => (
+            <div
+              key={task.id}
+              className="flex items-center justify-between rounded-lg border p-4"
+            >
+              <div className="space-y-1">
+                <h4 className="font-medium">{task.title}</h4>
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Badge variant="secondary">
+                    {task.frequency}
+                  </Badge>
+                  <span>•</span>
+                  <span>{task.schedule.targetCount}x</span>
+                  {task.frequency === 'weekly' && task.schedule.daysOfWeek && (
+                    <>
+                      <span>•</span>
+                      <span>
+                        {task.schedule.daysOfWeek.map(d => 
+                          d.day.charAt(0).toUpperCase() + d.day.slice(1, 3)
+                        ).join(', ')}
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onDeleteTask(task.id)}
+              >
+                <Icons.trash className="h-4 w-4" />
+                <span className="sr-only">Delete task</span>
+              </Button>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }; 

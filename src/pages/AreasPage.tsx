@@ -3,28 +3,22 @@ import { useAreasContext } from '../contexts/AreasContext';
 import { Plus, Pencil, Trash2 } from 'lucide-react';
 import type { Area } from '../types';
 import { useNavigate } from 'react-router-dom';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import {
-  Box,
-  Typography,
-  Button,
-  Container,
-  Grid,
-  Card,
-  CardContent,
-  IconButton,
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  TextField,
-  CircularProgress,
-  Alert,
-  Stack
-} from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import EditIcon from '@mui/icons-material/Edit';
-import DeleteIcon from '@mui/icons-material/Delete';
-import CloseIcon from '@mui/icons-material/Close';
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Icons } from "@/components/icons";
+import { cn } from "@/lib/utils";
 
 export default function AreasPage() {
   const { areas, loading, error, createArea, updateArea, deleteArea } = useAreasContext();
@@ -72,7 +66,7 @@ export default function AreasPage() {
 
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingAreaId) return;
+    if (!editingAreaId || !formData.name.trim()) return;
 
     try {
       await updateArea(editingAreaId, {
@@ -80,9 +74,9 @@ export default function AreasPage() {
         description: formData.description,
         color: formData.color
       });
-      setFormData({ name: '', description: '', color: '#000000' });
       setIsEditing(false);
       setEditingAreaId(null);
+      setFormData({ name: '', description: '', color: '#000000' });
     } catch (err) {
       console.error('Error updating area:', err);
     }
@@ -98,189 +92,189 @@ export default function AreasPage() {
     }
   };
 
-  const renderForm = (onSubmit: (e: React.FormEvent) => void, title: string, submitText: string) => (
-    <Dialog 
-      open={true} 
-      onClose={() => {
-        setIsCreating(false);
-        setIsEditing(false);
-        setEditingAreaId(null);
-        setFormData({ name: '', description: '', color: '#000000' });
-      }}
-      maxWidth="sm"
-      fullWidth
-    >
-      <form onSubmit={onSubmit}>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {title}
-          <IconButton
-            onClick={() => {
-              setIsCreating(false);
-              setIsEditing(false);
-              setEditingAreaId(null);
-              setFormData({ name: '', description: '', color: '#000000' });
-            }}
-            size="small"
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-
-        <DialogContent>
-          <Stack spacing={3} sx={{ mt: 1 }}>
-            <TextField
-              label="Name"
-              value={formData.name}
-              onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-              fullWidth
-              required
-            />
-
-            <TextField
-              label="Description"
-              value={formData.description}
-              onChange={e => setFormData(prev => ({ ...prev, description: e.target.value }))}
-              fullWidth
-              multiline
-              rows={3}
-            />
-
-            <Box>
-              <Typography variant="subtitle2" gutterBottom>
-                Color
-              </Typography>
-              <TextField
-                type="color"
-                value={formData.color}
-                onChange={e => setFormData(prev => ({ ...prev, color: e.target.value }))}
-                fullWidth
-                sx={{ 
-                  '& input': { 
-                    padding: '8px',
-                    height: '40px'
-                  } 
-                }}
-              />
-            </Box>
-          </Stack>
-        </DialogContent>
-
-        <DialogActions>
-          <Button
-            onClick={() => {
-              setIsCreating(false);
-              setIsEditing(false);
-              setEditingAreaId(null);
-              setFormData({ name: '', description: '', color: '#000000' });
-            }}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" variant="contained">
-            {submitText}
-          </Button>
-        </DialogActions>
-      </form>
-    </Dialog>
-  );
-
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (error) {
-    return (
-      <Box sx={{ p: 2 }}>
-        <Alert severity="error">
-          Error loading areas: {error.message}
-        </Alert>
-      </Box>
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
     );
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box>
-            <Typography variant="h4" component="h1" gutterBottom>
-              Areas
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Organize your tasks and activities into different areas of focus
-            </Typography>
-          </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => setIsCreating(true)}
-          >
-            Add Area
-          </Button>
-        </Box>
-      </Box>
+    <div className="container py-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Areas</h1>
+          <p className="text-muted-foreground">
+            Organize your goals and tasks into different areas of focus
+          </p>
+        </div>
+        <Dialog open={isCreating} onOpenChange={setIsCreating}>
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Area
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create New Area</DialogTitle>
+              <DialogDescription>
+                Add a new area to organize your goals and tasks
+              </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleCreateArea}>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="Enter area name"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Input
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Enter area description"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="color">Color</Label>
+                  <Input
+                    id="color"
+                    type="color"
+                    value={formData.color}
+                    onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsCreating(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={!formData.name.trim()}>
+                  Create Area
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
 
-      {isCreating && renderForm(handleCreateArea, 'Add New Area', 'Create Area')}
-      {isEditing && renderForm(handleUpdate, 'Edit Area', 'Update Area')}
+      {error && (
+        <Alert variant="destructive" className="mt-6">
+          <AlertDescription>{error.toString()}</AlertDescription>
+        </Alert>
+      )}
 
-      <Grid container spacing={3}>
+      <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {areas.map((area) => (
-          <Grid item xs={12} sm={6} lg={4} key={area.id}>
-            <Card
-              onClick={() => navigate(`/areas/${area.id}`)}
-              sx={{
-                cursor: 'pointer',
-                transition: 'box-shadow 0.2s',
-                '&:hover': {
-                  boxShadow: 3
-                },
-                borderLeft: `4px solid ${area.color || '#000000'}`
-              }}
-            >
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography variant="h6" gutterBottom>
-                      {area.name}
-                    </Typography>
-                    {area.description && (
-                      <Typography variant="body2" color="text.secondary">
-                        {area.description}
-                      </Typography>
-                    )}
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(area);
-                      }}
-                      sx={{ color: 'action.active' }}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(area.id);
-                      }}
-                      sx={{ color: 'error.main' }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+          <Card
+            key={area.id}
+            className="relative overflow-hidden"
+            style={{
+              borderColor: area.color,
+              borderWidth: '2px'
+            }}
+          >
+            <div
+              className="absolute inset-x-0 top-0 h-1"
+              style={{ backgroundColor: area.color }}
+            />
+            <CardHeader>
+              <CardTitle>{area.name}</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-muted-foreground">
+                {area.description || 'No description'}
+              </p>
+              <div className="mt-4 flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handleEdit(area)}
+                >
+                  <Pencil className="h-4 w-4" />
+                  <span className="sr-only">Edit area</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => handleDelete(area.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  <span className="sr-only">Delete area</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => navigate(`/areas/${area.id}`)}
+                >
+                  View Details
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         ))}
-      </Grid>
-    </Container>
+      </div>
+
+      <Dialog open={isEditing} onOpenChange={setIsEditing}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Area</DialogTitle>
+            <DialogDescription>
+              Update the area's details
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleUpdate}>
+            <div className="grid gap-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-name">Name</Label>
+                <Input
+                  id="edit-name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter area name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-description">Description</Label>
+                <Input
+                  id="edit-description"
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="Enter area description"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-color">Color</Label>
+                <Input
+                  id="edit-color"
+                  type="color"
+                  value={formData.color}
+                  onChange={(e) => setFormData(prev => ({ ...prev, color: e.target.value }))}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => {
+                setIsEditing(false);
+                setEditingAreaId(null);
+                setFormData({ name: '', description: '', color: '#000000' });
+              }}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={!formData.name.trim()}>
+                Update Area
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 }

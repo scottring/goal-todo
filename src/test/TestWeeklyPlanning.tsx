@@ -2,17 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { setupTestData } from './setupTestData';
 import { useNavigate } from 'react-router-dom';
-import {
-  Box,
-  Button,
-  Container,
-  Typography,
-  CircularProgress,
-  Alert,
-  List,
-  ListItem,
-  ListItemText
-} from '@mui/material';
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Icons } from "@/components/icons";
 
 export const TestWeeklyPlanning: React.FC = () => {
   const { currentUser, loading: authLoading } = useAuth();
@@ -60,63 +53,71 @@ export const TestWeeklyPlanning: React.FC = () => {
   if (authLoading) {
     console.log('Auth loading...');
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
-        <CircularProgress />
-      </Box>
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
     );
   }
 
   console.log('Rendering test content', { currentUser, error, success, loading });
 
   return (
-    <Container maxWidth="sm">
-      <Box sx={{ mt: 4, textAlign: 'center' }}>
-        <Typography variant="h4" gutterBottom>
-          Weekly Planning Test
-        </Typography>
-
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }}>
-            {error}
-          </Alert>
-        )}
-
-        {success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
-            Test data created successfully! Redirecting to weekly planning...
-          </Alert>
-        )}
-
-        <Button
-          variant="contained"
-          onClick={handleSetupTest}
-          disabled={loading || !currentUser}
-          sx={{ mt: 2 }}
-        >
-          {loading ? (
-            <CircularProgress size={24} sx={{ mr: 1 }} />
-          ) : (
-            'Setup Test Data'
+    <div className="container max-w-md py-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-center">Weekly Planning Test</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
-        </Button>
 
-        <Box sx={{ mt: 2 }}>
-          <Typography variant="body2" color="text.secondary" gutterBottom>
-            This will create:
-          </Typography>
-          <List>
-            <ListItem>
-              <ListItemText primary="A test area" />
-            </ListItem>
-            <ListItem>
-              <ListItemText primary="A test goal with 3 unscheduled tasks" />
-            </ListItem>
-            <ListItem>
-              <ListItemText primary="2 routines (daily and weekly)" />
-            </ListItem>
-          </List>
-        </Box>
-      </Box>
-    </Container>
+          {success && (
+            <Alert>
+              <AlertDescription>
+                Test data created successfully! Redirecting to weekly planning...
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <Button
+            className="w-full"
+            onClick={handleSetupTest}
+            disabled={loading || !currentUser}
+          >
+            {loading ? (
+              <>
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                Setting up...
+              </>
+            ) : (
+              'Setup Test Data'
+            )}
+          </Button>
+
+          <div className="rounded-lg border p-4">
+            <p className="mb-2 text-sm text-muted-foreground">
+              This will create:
+            </p>
+            <ul className="space-y-2">
+              <li className="flex items-center gap-2">
+                <Icons.check className="h-4 w-4 text-primary" />
+                <span>A test area</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Icons.check className="h-4 w-4 text-primary" />
+                <span>A test goal with 3 unscheduled tasks</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <Icons.check className="h-4 w-4 text-primary" />
+                <span>2 routines (daily and weekly)</span>
+              </li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }; 

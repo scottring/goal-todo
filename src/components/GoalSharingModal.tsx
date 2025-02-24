@@ -8,6 +8,19 @@ import { toast } from 'react-hot-toast';
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { UserProfile } from '../types';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 
 interface GoalSharingModalProps {
   isOpen: boolean;
@@ -246,145 +259,110 @@ const GoalSharingModal: React.FC<GoalSharingModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-800">
-            {goalId ? 'Share Goal' : 'Create Shared Goal'}
-          </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+    <Dialog open={isOpen} onOpenChange={open => !open && onClose()}>
+      <DialogContent className="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Share Goal</DialogTitle>
+        </DialogHeader>
 
-        {error && (
-          <div className="mb-4 p-3 bg-red-50 text-red-700 rounded-md">
-            {error}
-          </div>
-        )}
-
-        <div className="space-y-6">
-          <div>
-            <input
-              type="text"
-              placeholder="Goal Title"
+        <div className="space-y-6 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="goalTitle">Goal Title</Label>
+            <Input
+              id="goalTitle"
               value={goalTitle}
-              onChange={(e) => setGoalTitle(e.target.value)}
-              className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+              onChange={e => setGoalTitle(e.target.value)}
+              placeholder="Enter goal title"
             />
           </div>
 
-          <label className="flex items-center space-x-2">
-            <input
-              type="checkbox"
-              checked={sharingEnabled}
-              onChange={(e) => setSharingEnabled(e.target.checked)}
-              className="rounded text-blue-600 focus:ring-blue-500"
-            />
-            <span>Share this goal with others</span>
-          </label>
+          <Separator />
 
-          {sharingEnabled && (
-            <div className="space-y-4">
-              <div className="flex gap-2">
-                <input
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Label htmlFor="email">Add Collaborators</Label>
+              <div className="flex-1 space-x-2">
+                <Input
+                  id="email"
                   type="email"
-                  placeholder="Enter email address"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="Enter email address"
+                  className="flex-1"
                 />
-                <button
+                <Button
                   onClick={addCollaborator}
-                  disabled={!email || isSubmitting}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
+                  disabled={isSubmitting || !email}
+                  variant="secondary"
                 >
                   Add
-                </button>
+                </Button>
               </div>
+            </div>
 
-              {participants.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-700 mb-2">Permissions</h3>
-                  <div className="space-y-3">
-                    {participants.map((user) => (
-                      <div key={user.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-md">
-                        <div>
-                          <span className="text-sm font-medium">{user.email}</span>
-                          {user.displayName && (
-                            <span className="text-xs text-gray-500 ml-2">
-                              ({user.displayName})
-                            </span>
-                          )}
+            {error && (
+              <p className="text-sm text-destructive">{error}</p>
+            )}
+
+            {participants.length > 0 && (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="space-y-4">
+                    {participants.map(participant => (
+                      <div key={participant.id} className="flex items-center justify-between">
+                        <div className="flex items-center space-x-4">
+                          <div className="flex flex-col">
+                            <span className="font-medium">{participant.email}</span>
+                          </div>
                         </div>
-                        <div className="flex gap-3">
-                          <label className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={permissions[user.id]?.view ?? false}
-                              onChange={() => handlePermissionChange(user.id, 'view')}
-                              className="rounded text-blue-600"
+                        <div className="flex items-center space-x-4">
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`view-${participant.id}`}
+                              checked={permissions[participant.id]?.view}
+                              onCheckedChange={() => handlePermissionChange(participant.id, 'view')}
                             />
-                            <span className="text-sm">View</span>
-                          </label>
-                          <label className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={permissions[user.id]?.edit ?? false}
-                              onChange={() => handlePermissionChange(user.id, 'edit')}
-                              className="rounded text-blue-600"
+                            <Label htmlFor={`view-${participant.id}`}>View</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`edit-${participant.id}`}
+                              checked={permissions[participant.id]?.edit}
+                              onCheckedChange={() => handlePermissionChange(participant.id, 'edit')}
                             />
-                            <span className="text-sm">Edit</span>
-                          </label>
-                          <label className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={permissions[user.id]?.invite ?? false}
-                              onChange={() => handlePermissionChange(user.id, 'invite')}
-                              className="rounded text-blue-600"
+                            <Label htmlFor={`edit-${participant.id}`}>Edit</Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Checkbox
+                              id={`invite-${participant.id}`}
+                              checked={permissions[participant.id]?.invite}
+                              onCheckedChange={() => handlePermissionChange(participant.id, 'invite')}
                             />
-                            <span className="text-sm">Invite</span>
-                          </label>
+                            <Label htmlFor={`invite-${participant.id}`}>Invite</Label>
+                          </div>
                         </div>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
-            </div>
-          )}
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:text-gray-700"
-          >
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={handleShare}
-            disabled={!goalTitle.trim() || isSubmitting}
-            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            disabled={isSubmitting || !goalTitle.trim()}
           >
-            {isSubmitting ? (
-              <>
-                <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Sharing...
-              </>
-            ) : (
-              <>
-                <Check className="w-5 h-5" />
-                {goalId ? 'Update Sharing' : 'Share Goal'}
-              </>
-            )}
-          </button>
-        </div>
-      </div>
-    </div>
+            Share Goal
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 };
 

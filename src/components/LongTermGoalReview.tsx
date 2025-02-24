@@ -1,30 +1,13 @@
 import React, { useState } from 'react';
-import { Timestamp } from '../types';
-import { timestampToDate } from '../utils/date';
-import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  TextField,
-  FormControlLabel,
-  Switch,
-  Stack,
-  Divider,
-  IconButton,
-  Alert,
-  Collapse,
-  Chip,
-  Paper
-} from '@mui/material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import EditIcon from '@mui/icons-material/Edit';
-import SaveIcon from '@mui/icons-material/Save';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { addDays, nextSunday, previousSunday, isSunday, isAfter, isBefore, startOfDay } from 'date-fns';
+import { Timestamp } from 'firebase/firestore';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Calendar } from "@/components/ui/calendar";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { cn } from "@/lib/utils";
+import type { SelectSingleEventHandler } from "react-day-picker";
 
 interface LongTermGoalReviewProps {
   goalId: string;
@@ -36,29 +19,9 @@ interface LongTermGoalReviewProps {
 }
 
 const getNextReviewDate = (currentDate: Date = new Date()): Date => {
-  const today = startOfDay(currentDate);
-  const nextSundayDate = nextSunday(today);
-  const prevSundayDate = previousSunday(today);
-  
-  // If today is Sunday, return next Sunday
-  if (isSunday(today)) {
-    return nextSundayDate;
-  }
-  
-  // If we're within 3 days after the previous Sunday
-  const threeDaysAfterPrevSunday = addDays(prevSundayDate, 3);
-  if (isBefore(today, threeDaysAfterPrevSunday)) {
-    return prevSundayDate;
-  }
-  
-  // If we're within 3 days before next Sunday
-  const threeDaysBeforeNextSunday = addDays(nextSundayDate, -3);
-  if (isAfter(today, threeDaysBeforeNextSunday)) {
-    return nextSundayDate;
-  }
-  
-  // Otherwise, return next Sunday
-  return nextSundayDate;
+  const nextDate = new Date(currentDate);
+  nextDate.setDate(nextDate.getDate() + 7);
+  return nextDate;
 };
 
 export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
@@ -69,187 +32,101 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
   nextReviewDate,
   onUpdateReview
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
+  const initialReviewDate = nextReviewDate ? new Date(nextReviewDate.seconds * 1000) : getNextReviewDate();
+  const [selectedDate, setSelectedDate] = useState<Date>(initialReviewDate);
   const [madeProgress, setMadeProgress] = useState(false);
   const [adjustments, setAdjustments] = useState('');
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [showError, setShowError] = useState<string | null>(null);
-  const [hasBeenReviewed, setHasBeenReviewed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [savedReview, setSavedReview] = useState<{
-    madeProgress: boolean;
-    adjustments?: string;
-    nextReviewDate?: Date;
-  } | null>(null);
-  
-  // Initialize reviewDate safely handling non-Timestamp values
-  const initialReviewDate = (() => {
-    if (nextReviewDate) {
-      if ('toDate' in nextReviewDate && typeof nextReviewDate.toDate === 'function') {
-        return getNextReviewDate(nextReviewDate.toDate());
-      } else if (nextReviewDate instanceof Date) {
-        return getNextReviewDate(nextReviewDate);
-      } else {
-        return getNextReviewDate(new Date(nextReviewDate));
-      }
-    } else {
-      return getNextReviewDate();
-    }
-  })();
-  const [selectedDate, setSelectedDate] = useState<Date | null>(
-    nextReviewDate ? timestampToDate(nextReviewDate) : null
-  );
 
   const formatDate = (timestamp: Timestamp | undefined) => {
-    if (!timestamp) return 'Not set';
-    const date = timestampToDate(timestamp);
-    return date.toLocaleDateString();
+    if (!timestamp) return 'Not reviewed yet';
+    return new Date(timestamp.seconds * 1000).toLocaleDateString();
   };
 
   const handleSubmit = async () => {
-    if (!selectedDate) {
-      setShowError('Please select a next review date');
-      return;
-    }
-
     try {
       setIsSubmitting(true);
-      setShowError(null);
-      
-      // Always normalize the review date to the appropriate Sunday
-      const normalizedReviewDate = getNextReviewDate(selectedDate);
-      
-      // Create review data with only defined values
-      const reviewData = {
-        goalId,
-        madeProgress,
-        ...(adjustments && { adjustments }), // Only include if adjustments exists
-        nextReviewDate: normalizedReviewDate
-      };
-      
-      await onUpdateReview(goalId, madeProgress, adjustments || '', normalizedReviewDate);
-      setSavedReview({
-        madeProgress,
-        ...(adjustments && { adjustments }),
-        nextReviewDate: normalizedReviewDate
-      });
-      setHasBeenReviewed(true);
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+      await onUpdateReview(goalId, madeProgress, adjustments, selectedDate);
+      setAdjustments('');
+      setMadeProgress(false);
     } catch (error) {
-      console.error('Error saving review:', error);
-      setShowError(error instanceof Error ? error.message : 'Failed to save review');
+      console.error('Error updating review:', error);
     } finally {
       setIsSubmitting(false);
-      setIsEditing(false);
+    }
+  };
+
+  const handleDateSelect: SelectSingleEventHandler = (date) => {
+    if (date) {
+      setSelectedDate(date);
     }
   };
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Stack spacing={2}>
-        {showSuccess && (
-          <Alert severity="success" onClose={() => setShowSuccess(false)}>
-            Review saved successfully!
-          </Alert>
-        )}
-        
-        {showError && (
-          <Alert severity="error" onClose={() => setShowError(null)}>
-            {showError}
-          </Alert>
-        )}
+    <Card>
+      <CardHeader>
+        <CardTitle>{goalName}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Last Review: {formatDate(lastReviewDate)}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Next Review: {formatDate(nextReviewDate)}
+          </p>
+        </div>
 
-        <Box>
-          <Typography variant="h6" gutterBottom>
-            {goalName}
-          </Typography>
-          {description && (
-            <Typography variant="body2" color="text.secondary">
-              {description}
-            </Typography>
-          )}
-        </Box>
-
-        <Box>
-          {lastReviewDate && (
-            <Typography variant="body2" color="text.secondary">
-              Last reviewed: {formatDate(lastReviewDate)}
-            </Typography>
-          )}
-          {nextReviewDate && (
-            <Typography variant="body2" color="text.secondary">
-              Next review: {formatDate(nextReviewDate)}
-            </Typography>
-          )}
-        </Box>
-
-        <FormControlLabel
-          control={
+        <div className="space-y-2">
+          <div className="flex items-center space-x-2">
             <Switch
+              id="progress"
               checked={madeProgress}
-              onChange={(e) => setMadeProgress(e.target.checked)}
+              onCheckedChange={setMadeProgress}
               disabled={isSubmitting}
             />
-          }
-          label="Made progress since last review"
-        />
+            <Label htmlFor="progress">Made progress since last review</Label>
+          </div>
+        </div>
 
-        <TextField
-          label="Adjustments or Notes"
-          multiline
-          rows={3}
-          value={adjustments}
-          onChange={(e) => setAdjustments(e.target.value)}
-          fullWidth
-          disabled={isSubmitting}
-        />
-
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-          <DatePicker
-            label="Next Review Date"
-            value={selectedDate}
-            onChange={(date) => setSelectedDate(date)}
+        <div className="space-y-2">
+          <Label htmlFor="adjustments">Adjustments or Notes</Label>
+          <Textarea
+            id="adjustments"
+            value={adjustments}
+            onChange={(e) => setAdjustments(e.target.value)}
+            placeholder="Any adjustments needed or notes about progress..."
             disabled={isSubmitting}
-            slotProps={{
-              textField: {
-                fullWidth: true,
-                helperText: 'When would you like to review this goal again?',
-                error: !selectedDate && showError !== null
-              }
-            }}
+            className="min-h-[100px]"
           />
-        </LocalizationProvider>
+        </div>
 
-        <Button 
-          variant="contained" 
+        <div className="space-y-2">
+          <Label>Next Review Date</Label>
+          <div className="rounded-md border">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={handleDateSelect}
+              disabled={isSubmitting}
+              initialFocus
+            />
+          </div>
+        </div>
+      </CardContent>
+      <CardFooter>
+        <Button
           onClick={handleSubmit}
           disabled={isSubmitting}
+          className={cn(
+            "w-full",
+            isSubmitting && "opacity-50 cursor-not-allowed"
+          )}
         >
-          {isSubmitting ? 'Saving...' : 'Save Review'}
+          {isSubmitting ? "Updating..." : "Update Review"}
         </Button>
-
-        {hasBeenReviewed && savedReview && (
-          <Box sx={{ mt: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-            <Typography variant="subtitle2" gutterBottom>
-              Last Saved Review:
-            </Typography>
-            <Typography variant="body2">
-              Progress Made: {savedReview.madeProgress ? 'Yes' : 'No'}
-            </Typography>
-            {savedReview.adjustments && (
-              <Typography variant="body2">
-                Adjustments: {savedReview.adjustments}
-              </Typography>
-            )}
-            {savedReview.nextReviewDate && (
-              <Typography variant="body2">
-                Next Review: {savedReview.nextReviewDate.toLocaleDateString()}
-              </Typography>
-            )}
-          </Box>
-        )}
-      </Stack>
-    </Paper>
+      </CardFooter>
+    </Card>
   );
 }; 

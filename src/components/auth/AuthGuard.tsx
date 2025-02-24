@@ -1,91 +1,50 @@
 import React, { useEffect } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  Box,
-  CircularProgress,
-  Typography,
-  Alert,
-  Button,
-  Container
-} from '@mui/material';
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Icons } from "@/components/icons";
 
 interface AuthGuardProps {
   children: React.ReactNode;
 }
 
-export default function AuthGuard({ children }: AuthGuardProps) {
-  const { user, loading, error, syncError } = useAuth();
+const AuthGuard: React.FC<AuthGuardProps> = ({ children }) => {
+  const { currentUser, loading, error } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !currentUser) {
       navigate('/signin', { state: { from: location.pathname } });
     }
-  }, [user, loading, navigate, location]);
+  }, [currentUser, loading, navigate, location]);
 
   if (loading) {
     return (
-      <Container>
-        <Box
-          sx={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Box sx={{ textAlign: 'center' }}>
-            <CircularProgress />
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-              Initializing...
-            </Typography>
-          </Box>
-        </Box>
-      </Container>
+      <div className="flex h-screen items-center justify-center">
+        <Icons.spinner className="h-8 w-8 animate-spin" />
+      </div>
     );
   }
 
-  if (error || syncError) {
-    const errorMessage = error?.message || syncError?.message;
+  if (error) {
     return (
-      <Container>
-        <Box
-          sx={{
-            minHeight: '100vh',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
+      <div className="container mx-auto max-w-md p-4">
+        <Alert variant="destructive">
+          <AlertDescription>{error.message}</AlertDescription>
+        </Alert>
+        <Button
+          className="mt-4 w-full"
+          onClick={() => navigate('/signin')}
         >
-          <Box sx={{ maxWidth: 'sm' }}>
-            <Alert
-              severity="error"
-              action={
-                <Button
-                  color="inherit"
-                  size="small"
-                  onClick={() => window.location.reload()}
-                >
-                  Retry
-                </Button>
-              }
-            >
-              <Typography variant="subtitle2">Authentication Error</Typography>
-              <Typography variant="body2">
-                {errorMessage || 'An error occurred during authentication. Please try again.'}
-              </Typography>
-            </Alert>
-          </Box>
-        </Box>
-      </Container>
+          Back to Sign In
+        </Button>
+      </div>
     );
-  }
-
-  if (!user) {
-    return null;
   }
 
   return <>{children}</>;
-}
+};
+
+export default AuthGuard;

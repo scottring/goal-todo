@@ -3,46 +3,45 @@ import { useAreasContext } from '../contexts/AreasContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'react-router-dom';
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp as FirebaseTimestamp } from '@firebase/firestore';
+import type { Timestamp, FirebaseTimestamp as CustomFirebaseTimestamp } from '../types';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Box,
-  Container,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  IconButton,
-  Grid,
-  Stepper,
-  Step,
-  StepLabel,
-  TextField,
-  Select,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  FormHelperText,
-  Stack,
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Alert,
-  Paper,
-  Divider,
-  Chip,
-  Tabs,
-  Tab,
-  Badge
-} from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
-import EditIcon from '@mui/icons-material/Edit';
-import ShareIcon from '@mui/icons-material/Share';
-import AddIcon from '@mui/icons-material/Add';
-import { Close as CloseIcon } from '@mui/icons-material';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Stepper } from "@/components/ui/stepper";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Calendar } from "@/components/ui/calendar";
+import { Icons } from "@/components/icons";
+import { cn } from "@/lib/utils";
+import {
+  Trash2,
+  Edit,
+  Share2,
+  Plus,
+  X,
+  Calendar as CalendarIcon
+} from 'lucide-react';
 import type { 
   SourceActivity, 
   RoutineWithoutSystemFields, 
@@ -64,6 +63,11 @@ import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
 import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
+import { useToast } from '@/components/ui/use-toast';
+import { dateToTimestamp, timestampToDate } from '../utils/date';
+import { convertToFirebaseTimestamp, convertFromFirebaseTimestamp } from '../utils/firebase-adapter';
+import type { DayPickerSingleProps } from 'react-day-picker';
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
   const now = new Date();
@@ -81,27 +85,24 @@ const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
       now.setFullYear(now.getFullYear() + 1);
       break;
   }
-  return Timestamp.fromDate(now);
-};
-
-const dateToTimestamp = (dateString: string): Timestamp => {
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) {
-    return Timestamp.now();
-  }
-  return Timestamp.fromDate(date);
+  return dateToTimestamp(now);
 };
 
 const timestampToDateString = (timestamp: Timestamp | undefined): string => {
-  if (!timestamp || !timestamp.toDate || isNaN(timestamp.toDate().getTime())) {
-    return '';
-  }
+  if (!timestamp) return '';
   try {
-    return timestamp.toDate().toISOString().split('T')[0];
+    const date = timestampToDate(timestamp);
+    return date.toISOString().split('T')[0];
   } catch (error) {
     console.error('Error converting timestamp to date string:', error);
     return '';
   }
+};
+
+type GoalTimeTracking = {
+  type: 'fixed_deadline' | 'recurring_review';
+  deadline?: Timestamp;
+  reviewCycle?: string;
 };
 
 interface SmartGoalForm {
@@ -190,7 +191,7 @@ const initialSmartGoal: SmartGoalForm = {
   milestones: [{
     id: uuidv4(),
     name: '',
-    targetDate: Timestamp.fromDate(new Date()),
+    targetDate: dateToTimestamp(new Date()),
     successCriteria: '',
     status: 'not_started',
     tasks: []
@@ -247,7 +248,7 @@ const addMilestone = (smartGoal: SmartGoalForm) => ({
     {
       id: uuidv4(),
       name: '',
-      targetDate: Timestamp.fromDate(new Date()),
+      targetDate: dateToTimestamp(new Date()),
       successCriteria: '',
       status: 'not_started' as TaskStatus,
       tasks: []
@@ -290,13 +291,20 @@ const removeUndefinedFields = <T extends CleanableObject>(obj: T): T => {
 
 type TaskAction = 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close';
 
+interface SharedTask {
+  id: string;
+  title: string;
+  status: 'completed' | 'pending';
+  assignedTo: string;
+  dueDate: FirebaseTimestamp;
+}
+
 interface StepProps {
   onNext: () => void;
-  onBack: () => void;
+  onBack?: () => void;
 }
 
 const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
-  const [activeTab, setActiveTab] = useState(0);
   const {
     currentSession,
     updateTaskReview,
@@ -305,31 +313,27 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
     sendTeamReminders
   } = useWeeklyPlanning();
   const { goals } = useGoalsContext();
+  const { toast } = useToast();
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setActiveTab(newValue);
-  };
+  const taskReviewCount = currentSession?.reviewPhase?.taskReviews?.length ?? 0;
+  const sharedGoalReviewCount = currentSession?.reviewPhase?.sharedGoalReviews?.length ?? 0;
+  const goalCount = goals?.length ?? 0;
 
   const handleTaskAction = async (taskId: string, action: TaskAction) => {
-    const task = currentSession?.reviewPhase?.taskReviews?.find((t: TaskReviewItemType) => t.taskId === taskId);
-    if (!task) {
-      console.error('Task not found:', taskId);
-      return;
+    try {
+      const task = currentSession?.reviewPhase?.taskReviews?.find(t => t.taskId === taskId);
+      if (!task) {
+        console.error('Task not found:', taskId);
+        return;
+      }
+      await updateTaskReview(task);
+    } catch (error) {
+      console.error('Error handling task action:', error);
+      toast({
+        variant: "destructive",
+        description: "Failed to update task status"
+      });
     }
-
-    const reviewData: TaskReviewItemType = {
-      taskId,
-      title: task.title || 'Untitled Task',
-      status: action === 'mark_completed' ? 'completed' : 
-             action === 'mark_missed' ? 'missed' : 
-             'needs_review',
-      originalDueDate: task.originalDueDate instanceof Timestamp ? 
-                      task.originalDueDate : 
-                      Timestamp.fromDate(new Date()),
-      action
-    };
-
-    await updateTaskReview(reviewData);
   };
 
   const handleGoalReview = async (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => {
@@ -337,119 +341,145 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
       await updateLongTermGoalReview(goalId, madeProgress, adjustments, nextReviewDate);
     } catch (error) {
       console.error('Error updating goal review:', error);
+      toast({
+        variant: "destructive",
+        description: "Failed to update goal review"
+      });
     }
   };
 
   const handleSharedGoalUpdate = async (goalId: string, taskId: string, status: 'completed' | 'pending') => {
-    await updateSharedGoalReview(goalId, status === 'completed' ? [taskId] : [], status === 'pending' ? [taskId] : []);
+    try {
+      const completedTasks = status === 'completed' ? [taskId] : [];
+      const pendingTasks = status === 'pending' ? [taskId] : [];
+      await updateSharedGoalReview(goalId, completedTasks, pendingTasks);
+    } catch (error) {
+      console.error('Error updating shared goal status:', error);
+      toast({
+        variant: "destructive",
+        description: "Failed to update shared goal status"
+      });
+    }
   };
 
   const handleSendReminder = async (goalId: string, userId: string) => {
-    await sendTeamReminders(goalId, [userId]);
-  };
-
-  const getTaskReviewCount = () => {
-    return currentSession?.reviewPhase?.taskReviews?.length || 0;
-  };
-
-  const getSharedGoalReviewCount = () => {
-    return currentSession?.reviewPhase?.sharedGoalReviews?.length || 0;
-  };
-
-  const getLongTermGoalCount = () => {
-    return goals?.length || 0;
+    try {
+      await sendTeamReminders(goalId, [userId]);
+      toast({
+        description: "Reminder sent successfully"
+      });
+    } catch (error) {
+      console.error('Error sending reminder:', error);
+      toast({
+        variant: "destructive",
+        description: "Failed to send reminder"
+      });
+    }
   };
 
   return (
-    <Paper sx={{ p: 3 }}>
-      <Typography variant="h5" gutterBottom>
-        Weekly Review
-      </Typography>
-
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={activeTab} onChange={handleTabChange} aria-label="review tabs">
-          <Tab
-            label={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <span>TASKS & ROUTINES</span>
-                {getTaskReviewCount() > 0 && (
-                  <Badge badgeContent={getTaskReviewCount()} color="error" sx={{ ml: 1 }} />
-                )}
-              </Box>
-            }
+    <div className="space-y-6">
+      <Tabs defaultValue="tasks">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="tasks" className="relative">
+            Tasks
+            {taskReviewCount > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {taskReviewCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="shared" className="relative">
+            Shared Goals
+            {sharedGoalReviewCount > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {sharedGoalReviewCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="longterm" className="relative">
+            Long-term Goals
+            {goalCount > 0 && (
+              <Badge variant="secondary" className="ml-2">
+                {goalCount}
+              </Badge>
+            )}
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value="tasks" className="mt-6">
+          <TaskReviewList
+            tasks={currentSession?.reviewPhase?.taskReviews || []}
+            onTaskAction={handleTaskAction}
           />
-          <Tab
-            label={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <span>LONG-TERM GOALS</span>
-                {getLongTermGoalCount() > 0 && (
-                  <Badge badgeContent={getLongTermGoalCount()} color="error" sx={{ ml: 1 }} />
-                )}
-              </Box>
-            }
-          />
-          <Tab
-            label={
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <span>SHARED GOALS</span>
-                {getSharedGoalReviewCount() > 0 && (
-                  <Badge badgeContent={getSharedGoalReviewCount()} color="error" sx={{ ml: 1 }} />
-                )}
-              </Box>
-            }
-          />
-        </Tabs>
-      </Box>
+        </TabsContent>
+        <TabsContent value="shared" className="mt-6">
+          {currentSession?.reviewPhase?.sharedGoalReviews?.map(review => {
+            const tasks: SharedTask[] = [
+              ...review.completedTasks.map(taskId => ({
+                id: taskId,
+                title: `Task ${taskId}`, // TODO: Get actual task title
+                status: 'completed' as const,
+                assignedTo: '', // TODO: Get actual assignee
+                dueDate: convertToFirebaseTimestamp(dateToTimestamp(new Date())) as FirebaseTimestamp
+              })),
+              ...review.pendingTasks.map(taskId => ({
+                id: taskId,
+                title: `Task ${taskId}`, // TODO: Get actual task title
+                status: 'pending' as const,
+                assignedTo: '', // TODO: Get actual assignee
+                dueDate: convertToFirebaseTimestamp(dateToTimestamp(new Date())) as FirebaseTimestamp
+              }))
+            ];
 
-      {activeTab === 0 && (
-        <TaskReviewList
-          tasks={currentSession?.reviewPhase.taskReviews || []}
-          onTaskAction={handleTaskAction}
-        />
-      )}
+            return (
+              <SharedGoalReview
+                key={review.goalId}
+                goalId={review.goalId}
+                goalName={`Shared Goal ${review.goalId}`} // TODO: Get actual goal name
+                tasks={tasks}
+                collaborators={review.teamReminders.map(userId => ({
+                  id: userId,
+                  name: `User ${userId}`, // TODO: Get actual user name
+                  email: `user${userId}@example.com` // TODO: Get actual user email
+                }))}
+                onUpdateTaskStatus={handleSharedGoalUpdate}
+                onSendReminder={handleSendReminder}
+              />
+            );
+          })}
+        </TabsContent>
+        <TabsContent value="longterm" className="mt-6">
+          {goals?.map(goal => {
+            const lastReviewDate = goal.timeTracking.reviewStatus?.lastReviewDate;
+            const nextReviewDate = goal.timeTracking.nextReviewDate;
 
-      {activeTab === 1 && (
-        <Stack spacing={3}>
-          {goals.map(goal => (
-            <LongTermGoalReview
-              key={goal.id}
-              goalId={goal.id}
-              goalName={goal.name}
-              description={goal.specificAction}
-              lastReviewDate={goal.timeTracking.reviewStatus?.lastReviewDate}
-              nextReviewDate={goal.timeTracking.nextReviewDate}
-              onUpdateReview={handleGoalReview}
-            />
-          ))}
-          {goals.length === 0 && (
-            <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
-              No long-term goals found. Create some goals to start tracking your progress.
-            </Typography>
-          )}
-        </Stack>
-      )}
+            return (
+              <LongTermGoalReview
+                key={goal.id}
+                goalId={goal.id}
+                goalName={goal.name}
+                description={goal.specificAction}
+                lastReviewDate={lastReviewDate ? convertToFirebaseTimestamp(dateToTimestamp(new Date(lastReviewDate.seconds * 1000))) as FirebaseTimestamp : undefined}
+                nextReviewDate={nextReviewDate ? convertToFirebaseTimestamp(dateToTimestamp(new Date(nextReviewDate.seconds * 1000))) as FirebaseTimestamp : undefined}
+                onUpdateReview={handleGoalReview}
+              />
+            );
+          })}
+        </TabsContent>
+      </Tabs>
 
-      {activeTab === 2 && (
-        <Stack spacing={3}>
-          {/* TODO: Get shared goals from currentSession */}
-          <SharedGoalReview
-            goalId="example"
-            goalName="Example Shared Goal"
-            tasks={[]}
-            collaborators={[]}
-            onSendReminder={handleSendReminder}
-            onUpdateTaskStatus={handleSharedGoalUpdate}
-          />
-        </Stack>
-      )}
-
-      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
-        <Button onClick={onBack}>Back</Button>
-        <Button variant="contained" onClick={onNext}>
-          Continue to Planning
+      <div className="flex justify-end space-x-2">
+        <Button
+          variant="outline"
+          onClick={onBack}
+        >
+          Back
         </Button>
-      </Box>
-    </Paper>
+        <Button onClick={onNext}>
+          Next
+        </Button>
+      </div>
+    </div>
   );
 };
 
@@ -466,6 +496,7 @@ const GoalsPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [sharingGoal, setSharingGoal] = useState<SourceActivity | null>(null);
+  const [error, setError] = useState<Error | null>(null);
 
   // Handle navigation state
   useEffect(() => {
@@ -512,14 +543,14 @@ const GoalsPage: React.FC = () => {
                 reviewCycle: smartGoal.timeTracking.reviewCycle || 'monthly',
                 nextReviewDate: smartGoal.timeTracking.reviewCycle 
                   ? calculateNextReviewDate(smartGoal.timeTracking.reviewCycle)
-                  : Timestamp.now()
+                  : dateToTimestamp(new Date())
               }
           )
         },
         milestones: smartGoal.milestones.map(m => ({
           id: m.id || uuidv4(),
           name: m.name.trim(),
-          targetDate: m.targetDate || Timestamp.fromDate(new Date()),
+          targetDate: m.targetDate || dateToTimestamp(new Date()),
           successCriteria: m.successCriteria.trim(),
           status: m.status,
           tasks: m.tasks || []
@@ -529,8 +560,8 @@ const GoalsPage: React.FC = () => {
         tasks: smartGoal.tasks.map(task => ({
           id: task.id || uuidv4(),
           ownerId: currentUser?.uid || '',
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now(),
+          createdAt: dateToTimestamp(new Date()),
+          updatedAt: dateToTimestamp(new Date()),
           title: task.title.trim(),
           description: task.description?.trim() || '',
           dueDate: task.dueDate || undefined,
@@ -558,8 +589,8 @@ const GoalsPage: React.FC = () => {
           endDate: routine.endDate,
           completionDates: routine.completionDates || [],
           ownerId: currentUser?.uid || '',
-          createdAt: Timestamp.now(),
-          updatedAt: Timestamp.now()
+          createdAt: dateToTimestamp(new Date()),
+          updatedAt: dateToTimestamp(new Date())
         }))
       };
 
@@ -591,6 +622,7 @@ const GoalsPage: React.FC = () => {
     setEditingGoal(goal.id);
     setEditMode('edit');
     setSmartGoal({
+      ...initialSmartGoal,
       name: goal.name,
       specificAction: goal.specificAction,
       measurableMetric: goal.measurableMetric,
@@ -599,52 +631,13 @@ const GoalsPage: React.FC = () => {
       relevance: goal.relevance,
       timeTracking: {
         type: goal.timeTracking.type,
-        deadline: goal.timeTracking.deadline,
+        deadline: goal.timeTracking.deadline ? convertFromFirebaseTimestamp(goal.timeTracking.deadline as CustomFirebaseTimestamp) : undefined,
         reviewCycle: goal.timeTracking.reviewCycle
       },
       areaId: goal.areaId,
-      milestones: Array.isArray(goal.milestones) ? goal.milestones.map(m => ({
-        id: m.id || uuidv4(),
-        name: m.name,
-        targetDate: m.targetDate instanceof Timestamp ? m.targetDate : Timestamp.fromDate(new Date()),
-        successCriteria: m.successCriteria,
-        status: m.status,
-        tasks: Array.isArray(m.tasks) ? m.tasks : []
-      })) : [],
-      tasks: Array.isArray(goal.tasks) ? goal.tasks.map(task => ({
-        id: task.id || uuidv4(),
-        title: task.title,
-        description: task.description,
-        dueDate: task.dueDate instanceof Timestamp ? task.dueDate : undefined,
-        priority: task.priority,
-        status: task.status,
-        completed: task.completed,
-        assignedTo: task.assignedTo
-      })) : [],
-      routines: Array.isArray(goal.routines) ? goal.routines.map(routine => {
-        const hasSystemFields = 'id' in routine;
-        return {
-          id: hasSystemFields ? (routine as Routine).id : uuidv4(),
-          title: routine.title,
-          description: routine.description || '',
-          frequency: routine.frequency,
-          schedule: {
-            type: routine.frequency,
-            targetCount: routine.targetCount || 1,
-            timeOfDay: routine.schedule?.timeOfDay || { hour: 9, minute: 0 },
-            daysOfWeek: routine.schedule?.daysOfWeek || [],
-            dayOfMonth: routine.schedule?.dayOfMonth,
-            monthsOfYear: routine.schedule?.monthsOfYear || []
-          },
-          targetCount: routine.targetCount || 1,
-          endDate: routine.endDate instanceof Timestamp ? routine.endDate : undefined,
-          completionDates: Array.isArray(routine.completionDates) 
-            ? routine.completionDates.map(date => 
-                date instanceof Timestamp ? date : Timestamp.fromDate(new Date(date))
-              )
-            : []
-        };
-      }) : []
+      milestones: [],
+      tasks: [],
+      routines: []
     });
     setIsAdding(true);
   };
@@ -662,7 +655,7 @@ const GoalsPage: React.FC = () => {
   const handleDateChange = (value: string | undefined): Timestamp | undefined => {
     if (!value) return undefined;
     const date = new Date(value);
-    return isNaN(date.getTime()) ? undefined : Timestamp.fromDate(date);
+    return isNaN(date.getTime()) ? undefined : dateToTimestamp(date);
   };
 
   const handleTaskChange = (index: number, field: keyof SmartGoalForm['tasks'][0], value: any) => {
@@ -671,7 +664,7 @@ const GoalsPage: React.FC = () => {
       newTasks[index] = {
         ...newTasks[index],
         [field]: field === 'dueDate' 
-          ? (value instanceof Date ? Timestamp.fromDate(value) : (value === null ? undefined : value))
+          ? (value instanceof Date ? dateToTimestamp(value) : (value === null ? undefined : value))
           : value,
         completed: field === 'status' ? value === 'completed' : newTasks[index].completed
       };
@@ -685,7 +678,7 @@ const GoalsPage: React.FC = () => {
       newMilestones[index] = {
         ...newMilestones[index],
         [field]: field === 'targetDate'
-          ? (value instanceof Date ? Timestamp.fromDate(value) : (value === null ? undefined : value))
+          ? (value instanceof Date ? dateToTimestamp(value) : (value === null ? undefined : value))
           : value
       };
       return { ...prev, milestones: newMilestones };
@@ -698,456 +691,417 @@ const GoalsPage: React.FC = () => {
   };
 
   const renderAreaStep = () => (
-    <Box>
-      <Typography variant="h6" gutterBottom>
-        Select Area
-      </Typography>
-      <Typography variant="body2" color="text.secondary" paragraph>
-        Choose the area of your life this goal belongs to
-      </Typography>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Select Area</h2>
+        <p className="text-sm text-muted-foreground">
+          Choose the area of your life this goal belongs to
+        </p>
+      </div>
 
-      <FormControl fullWidth required>
-        <InputLabel>Area</InputLabel>
+      <div className="space-y-2">
+        <Label htmlFor="area">Area</Label>
         <Select
           value={smartGoal.areaId}
-          onChange={(e) => setSmartGoal(prev => ({ ...prev, areaId: e.target.value }))}
-          label="Area"
+          onValueChange={(value) => setSmartGoal(prev => ({ ...prev, areaId: value }))}
         >
-          {areas.map(area => (
-            <MenuItem key={area.id} value={area.id}>
-              {area.name}
-            </MenuItem>
-          ))}
+          <SelectTrigger>
+            <SelectValue placeholder="Select an area" />
+          </SelectTrigger>
+          <SelectContent>
+            {areas.map(area => (
+              <SelectItem key={area.id} value={area.id}>
+                {area.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
         </Select>
-        <FormHelperText>
+        <p className="text-sm text-muted-foreground">
           Areas help you organize and track related goals together
-        </FormHelperText>
-      </FormControl>
-    </Box>
+        </p>
+      </div>
+    </div>
   );
 
   const renderSpecificStep = () => (
-    <Stack spacing={3}>
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          Make it Specific
-        </Typography>
-        <Typography variant="body2" color="text.secondary" paragraph>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Make it Specific</h2>
+        <p className="text-sm text-muted-foreground">
           Define your goal with clear, specific details
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
-      <TextField
-        label="Goal Name"
-        value={smartGoal.name}
-        onChange={(e) => setSmartGoal(prev => ({ ...prev, name: e.target.value }))}
-        fullWidth
-        required
-        helperText="Give your goal a clear, memorable name"
-      />
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="goalName">Goal Name</Label>
+          <Input
+            id="goalName"
+            value={smartGoal.name}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSmartGoal(prev => ({ ...prev, name: e.target.value }))}
+            placeholder="Enter your goal name"
+            required
+          />
+          <p className="text-sm text-muted-foreground">
+            Give your goal a clear, memorable name
+          </p>
+        </div>
 
-      <TextField
-        label="Specific Action"
-        value={smartGoal.specificAction}
-        onChange={(e) => setSmartGoal(prev => ({ ...prev, specificAction: e.target.value }))}
-        fullWidth
-        required
-        multiline
-        rows={3}
-        helperText="What exactly do you want to accomplish? Be as specific as possible"
-      />
-    </Stack>
+        <div className="space-y-2">
+          <Label htmlFor="specificAction">Specific Action</Label>
+          <Textarea
+            id="specificAction"
+            value={smartGoal.specificAction}
+            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setSmartGoal(prev => ({ ...prev, specificAction: e.target.value }))}
+            placeholder="What exactly do you want to accomplish?"
+            required
+            className="min-h-[120px]"
+          />
+          <p className="text-sm text-muted-foreground">
+            Be as specific as possible about what you want to accomplish
+          </p>
+        </div>
+      </div>
+    </div>
   );
 
   const renderMeasurableStep = () => (
-    <Stack spacing={3}>
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          Make it Measurable
-        </Typography>
-        <Typography variant="body2" color="text.secondary" paragraph>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Make it Measurable</h2>
+        <p className="text-sm text-muted-foreground">
           Define how you'll measure progress towards this goal
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
-      <FormControl fullWidth required>
-        <InputLabel>Measurement Type</InputLabel>
-        <Select
-          value={smartGoal.measurableMetric}
-          onChange={(e) => {
-            const value = e.target.value as MeasurableMetric;
-            setSmartGoal(prev => ({
-              ...prev,
-              measurableMetric: value,
-              customMetric: value === 'custom' ? prev.customMetric : undefined
-            }));
-          }}
-          label="Measurement Type"
-        >
-          {MEASURABLE_METRIC_OPTIONS.map(option => (
-            <MenuItem key={option.value} value={option.value}>
-              {option.label}
-            </MenuItem>
-          ))}
-        </Select>
-        <FormHelperText>
-          How will you track progress towards this goal?
-        </FormHelperText>
-      </FormControl>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="measurementType">Measurement Type</Label>
+          <Select
+            value={smartGoal.measurableMetric}
+            onValueChange={(value: MeasurableMetric) => {
+              setSmartGoal(prev => ({
+                ...prev,
+                measurableMetric: value,
+                customMetric: value === 'custom' ? prev.customMetric : undefined
+              }));
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select measurement type" />
+            </SelectTrigger>
+            <SelectContent>
+              {MEASURABLE_METRIC_OPTIONS.map(option => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-sm text-muted-foreground">
+            How will you track progress towards this goal?
+          </p>
+        </div>
 
-      {smartGoal.measurableMetric === 'custom' && (
-        <TextField
-          label="Custom Metric"
-          value={smartGoal.customMetric || ''}
-          onChange={(e) => setSmartGoal(prev => ({ ...prev, customMetric: e.target.value }))}
-          fullWidth
-          required
-          helperText="Define your custom way of measuring progress"
-        />
-      )}
-    </Stack>
+        {smartGoal.measurableMetric === 'custom' && (
+          <div className="space-y-2">
+            <Label htmlFor="customMetric">Custom Metric</Label>
+            <Input
+              id="customMetric"
+              value={smartGoal.customMetric || ''}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => 
+                setSmartGoal(prev => ({ ...prev, customMetric: e.target.value }))
+              }
+              placeholder="Define your custom metric"
+              required
+            />
+            <p className="text-sm text-muted-foreground">
+              Define your custom way of measuring progress
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 
   const renderAchievableStep = () => (
-    <div className="space-y-3">
+    <div className="space-y-6">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Is this goal achievable with your current resources?
-        </label>
-        <select
+        <h2 className="text-lg font-semibold">Make it Achievable</h2>
+        <p className="text-sm text-muted-foreground">
+          Assess if this goal is realistic with your current resources
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="achievability">Is this goal achievable with your current resources?</Label>
+        <Select
           value={smartGoal.achievabilityCheck}
-          onChange={e => setSmartGoal(prev => ({ ...prev, achievabilityCheck: e.target.value as AchievabilityCheck }))}
-          className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
-          required
+          onValueChange={(value: AchievabilityCheck) => 
+            setSmartGoal(prev => ({ ...prev, achievabilityCheck: value }))
+          }
         >
-          {ACHIEVABILITY_OPTIONS.map(option => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger>
+            <SelectValue placeholder="Select achievability" />
+          </SelectTrigger>
+          <SelectContent>
+            {ACHIEVABILITY_OPTIONS.map(option => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );
 
   const renderRelevantStep = () => (
-    <div className="space-y-3">
+    <div className="space-y-6">
       <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Why is this goal important to you?
-        </label>
-        <textarea
+        <h2 className="text-lg font-semibold">Make it Relevant</h2>
+        <p className="text-sm text-muted-foreground">
+          Explain why this goal matters to you
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="relevance">Why is this goal important to you?</Label>
+        <Textarea
+          id="relevance"
           value={smartGoal.relevance}
-          onChange={e => setSmartGoal(prev => ({ ...prev, relevance: e.target.value }))}
-          className="w-full p-3 text-lg border rounded-lg bg-white shadow-sm focus:ring-2 focus:ring-blue-500"
+          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => 
+            setSmartGoal(prev => ({ ...prev, relevance: e.target.value }))
+          }
           placeholder="How does this goal align with your values and long-term objectives?"
-          rows={3}
+          className="min-h-[120px]"
           required
         />
+        <p className="text-sm text-muted-foreground italic">
+          Example: Improve health and maintain work-life balance
+        </p>
       </div>
-      <p className="text-sm text-gray-500 italic">Example: Improve health and maintain work-life balance</p>
     </div>
   );
 
   const renderTimeboundStep = (): JSX.Element => (
-    <Stack spacing={3}>
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          Make it Time-bound
-        </Typography>
-        <Typography variant="body2" color="text.secondary" paragraph>
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold">Make it Time-bound</h2>
+        <p className="text-sm text-muted-foreground">
           Set a clear timeline for achieving your goal
-        </Typography>
-      </Box>
+        </p>
+      </div>
 
-      <FormControl fullWidth>
-        <InputLabel>Tracking Type</InputLabel>
-        <Select
-          value={smartGoal.timeTracking.type}
-          onChange={(e) => setSmartGoal(prev => ({
-            ...prev,
-            timeTracking: {
-              ...prev.timeTracking,
-              type: e.target.value as TimeTrackingType
-            }
-          }))}
-          label="Tracking Type"
-        >
-          <MenuItem value="fixed_deadline">Fixed Deadline</MenuItem>
-          <MenuItem value="recurring_review">Recurring Review</MenuItem>
-        </Select>
-      </FormControl>
-
-      {smartGoal.timeTracking.type === 'fixed_deadline' ? (
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-          <DatePicker
-            label="Deadline"
-            value={smartGoal.timeTracking.deadline?.toDate() || null}
-            onChange={(date) => setSmartGoal(prev => ({
-              ...prev,
-              timeTracking: {
-                ...prev.timeTracking,
-                deadline: date ? Timestamp.fromDate(date) : undefined
-              }
-            }))}
-            slotProps={{
-              textField: {
-                fullWidth: true,
-                helperText: 'When do you want to achieve this goal by?'
-              }
-            }}
-          />
-        </LocalizationProvider>
-      ) : (
-        <FormControl fullWidth>
-          <InputLabel>Review Cycle</InputLabel>
+      <div className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="trackingType">Tracking Type</Label>
           <Select
-            value={smartGoal.timeTracking.reviewCycle || ''}
-            onChange={(e) => setSmartGoal(prev => ({
+            value={smartGoal.timeTracking.type}
+            onValueChange={(value: TimeTrackingType) => setSmartGoal(prev => ({
               ...prev,
               timeTracking: {
                 ...prev.timeTracking,
-                reviewCycle: e.target.value as ReviewCycle,
-                nextReviewDate: calculateNextReviewDate(e.target.value as ReviewCycle)
+                type: value
               }
             }))}
-            label="Review Cycle"
           >
-            {REVIEW_CYCLE_OPTIONS.map(option => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
-              </MenuItem>
-            ))}
+            <SelectTrigger>
+              <SelectValue placeholder="Select tracking type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fixed_deadline">Fixed Deadline</SelectItem>
+              <SelectItem value="recurring_review">Recurring Review</SelectItem>
+            </SelectContent>
           </Select>
-          <FormHelperText>
-            How often do you want to review your progress?
-          </FormHelperText>
-        </FormControl>
-      )}
-    </Stack>
+        </div>
+
+        {smartGoal.timeTracking.type === 'fixed_deadline' ? (
+          <div className="space-y-2">
+            <Label htmlFor="deadline">Deadline</Label>
+            <div className="rounded-md border">
+              <Calendar
+                mode="single"
+                selected={smartGoal.timeTracking.deadline ? timestampToDate(smartGoal.timeTracking.deadline) : undefined}
+                onSelect={(date) => {
+                  if (date) {
+                    const timestamp = dateToTimestamp(date);
+                    setSmartGoal(prev => ({
+                      ...prev,
+                      timeTracking: {
+                        ...prev.timeTracking,
+                        deadline: timestamp
+                      }
+                    }));
+                  } else {
+                    setSmartGoal(prev => ({
+                      ...prev,
+                      timeTracking: {
+                        ...prev.timeTracking,
+                        deadline: undefined
+                      }
+                    }));
+                  }
+                }}
+                className="rounded-md border"
+                disabled={(date) => date < new Date()}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground">
+              When do you want to achieve this goal by?
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="reviewCycle">Review Cycle</Label>
+            <Select
+              value={smartGoal.timeTracking.reviewCycle || ''}
+              onValueChange={(value: ReviewCycle) => setSmartGoal(prev => ({
+                ...prev,
+                timeTracking: {
+                  ...prev.timeTracking,
+                  reviewCycle: value,
+                  nextReviewDate: calculateNextReviewDate(value)
+                }
+              }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select review cycle" />
+              </SelectTrigger>
+              <SelectContent>
+                {REVIEW_CYCLE_OPTIONS.map(option => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-sm text-muted-foreground">
+              How often do you want to review your progress?
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 
   const renderMilestonesStep = (): JSX.Element => (
-    <Stack spacing={3}>
+    <div className="space-y-4">
       {smartGoal.milestones.map((milestone, index) => (
-        <Box key={index} sx={{ position: 'relative' }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="subtitle1" gutterBottom>
-              Milestone {index + 1}
-            </Typography>
-            {index > 0 && (
-              <IconButton
-                size="small"
-                onClick={() => {
-                  const newMilestones = smartGoal.milestones.filter((_, i) => i !== index);
-                  setSmartGoal(prev => ({ ...prev, milestones: newMilestones }));
-                }}
-                color="error"
+        <div key={index} className="rounded-lg border p-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="font-medium">{milestone.name}</h3>
+              <p className="text-sm text-muted-foreground">
+                Target Date: {milestone.targetDate ? timestampToDateString(milestone.targetDate) : 'No target date'}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Success Criteria: {milestone.successCriteria}
+              </p>
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleMilestoneChange(index, 'targetDate', undefined)}
+                className="text-destructive"
               >
-                <CloseIcon />
-              </IconButton>
-            )}
-          </Stack>
-          <Stack spacing={2}>
-            <TextField
-              label="Name"
-              value={milestone.name}
-              onChange={(e) => handleMilestoneChange(index, 'name', e.target.value)}
-              fullWidth
-            />
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                label="Target Date"
-                value={milestone.targetDate?.toDate() || null}
-                onChange={(date) => handleMilestoneChange(index, 'targetDate', date ? Timestamp.fromDate(date) : undefined)}
-                slotProps={{
-                  textField: {
-                    fullWidth: true
-                  }
-                }}
-              />
-            </LocalizationProvider>
-          </Stack>
-        </Box>
+                <X className="h-4 w-4" />
+                <span className="sr-only">Remove</span>
+              </Button>
+            </div>
+          </div>
+        </div>
       ))}
       <Button
-        variant="outlined"
-        startIcon={<AddIcon />}
+        variant="outline"
         onClick={() => setSmartGoal(prev => addMilestone(prev))}
       >
+        <Plus className="h-4 w-4 mr-2" />
         Add Milestone
       </Button>
-    </Stack>
+    </div>
   );
 
   const renderTasksStep = (): JSX.Element => (
-    <Stack spacing={3}>
+    <div className="space-y-4">
       {smartGoal.tasks.map((task, index) => (
-        <Box key={index}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="subtitle1">
-              Task {index + 1}
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => {
-                const newTasks = smartGoal.tasks.filter((_, i) => i !== index);
-                setSmartGoal(prev => ({ ...prev, tasks: newTasks }));
-              }}
-              color="error"
-            >
-              <CloseIcon />
-            </IconButton>
-          </Stack>
-          <Stack spacing={2}>
-            <TextField
-              label="Title"
-              value={task.title}
-              onChange={(e) => handleTaskChange(index, 'title', e.target.value)}
-              fullWidth
-            />
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                label="Due Date"
-                value={task.dueDate?.toDate() || null}
-                onChange={(date) => handleTaskChange(index, 'dueDate', date ? Timestamp.fromDate(date) : undefined)}
-                slotProps={{
-                  textField: {
-                    fullWidth: true
-                  }
-                }}
-              />
-            </LocalizationProvider>
-          </Stack>
-        </Box>
+        <div key={index} className="rounded-lg border p-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="font-medium">{task.title}</h3>
+              <p className="text-sm text-muted-foreground">
+                Due Date: {task.dueDate ? timestampToDateString(task.dueDate) : 'No due date'}
+              </p>
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => handleTaskChange(index, 'dueDate', undefined)}
+                className="text-destructive"
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Remove</span>
+              </Button>
+            </div>
+          </div>
+        </div>
       ))}
       <Button
-        variant="outlined"
-        startIcon={<AddIcon />}
+        variant="outline"
         onClick={() => setSmartGoal(prev => addTask(prev))}
       >
+        <Plus className="h-4 w-4 mr-2" />
         Add Task
       </Button>
-    </Stack>
+    </div>
   );
 
   const renderRoutinesStep = () => (
-    <Stack spacing={3}>
+    <div className="space-y-4">
       {smartGoal.routines.map((routine, index) => (
-        <Paper key={index} sx={{ p: 3, position: 'relative' }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" mb={2}>
-            <Typography variant="subtitle1">
-              Routine {index + 1}
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => {
-                const newRoutines = smartGoal.routines.filter((_, i) => i !== index);
-                setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
-              }}
-              color="error"
-            >
-              <CloseIcon />
-            </IconButton>
-          </Stack>
-          <Stack spacing={2}>
-            <TextField
-              label="Title"
-              value={routine.title}
-              onChange={(e) => {
-                const newRoutines = [...smartGoal.routines];
-                newRoutines[index] = { ...routine, title: e.target.value };
-                setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
-              }}
-              fullWidth
-            />
-            <TextField
-              label="Description"
-              value={routine.description || ''}
-              onChange={(e) => {
-                const newRoutines = [...smartGoal.routines];
-                newRoutines[index] = { ...routine, description: e.target.value };
-                setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
-              }}
-              fullWidth
-              multiline
-              rows={2}
-            />
-            <FormControl fullWidth>
-              <InputLabel>Frequency</InputLabel>
-              <Select
-                value={routine.frequency}
-                onChange={(e) => {
-                  const newRoutines = [...smartGoal.routines];
-                  const frequency = e.target.value as typeof routine.frequency;
-                  newRoutines[index] = {
-                    ...routine,
-                    frequency,
-                    schedule: {
-                      ...routine.schedule,
-                      type: frequency
-                    }
-                  };
+        <div key={index} className="rounded-lg border p-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="font-medium">{routine.title}</h3>
+              <p className="text-sm text-muted-foreground">
+                Frequency: {routine.frequency}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                Target: {routine.targetCount} times per {routine.frequency}
+              </p>
+              {routine.endDate && (
+                <p className="text-sm text-muted-foreground">
+                  End Date: {routine.endDate ? timestampToDateString(routine.endDate) : 'No end date'}
+                </p>
+              )}
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  const newRoutines = smartGoal.routines.filter((_, i) => i !== index);
                   setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
                 }}
-                label="Frequency"
+                className="text-destructive"
               >
-                <MenuItem value="daily">Daily</MenuItem>
-                <MenuItem value="weekly">Weekly</MenuItem>
-                <MenuItem value="monthly">Monthly</MenuItem>
-                <MenuItem value="quarterly">Quarterly</MenuItem>
-                <MenuItem value="yearly">Yearly</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField
-              label="Target Count"
-              type="number"
-              value={routine.targetCount}
-              onChange={(e) => {
-                const newRoutines = [...smartGoal.routines];
-                newRoutines[index] = {
-                  ...routine,
-                  targetCount: parseInt(e.target.value) || 1,
-                  schedule: {
-                    ...routine.schedule,
-                    targetCount: parseInt(e.target.value) || 1
-                  }
-                };
-                setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
-              }}
-              fullWidth
-              InputProps={{ inputProps: { min: 1 } }}
-            />
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                label="End Date (Optional)"
-                value={routine.endDate?.toDate() || null}
-                onChange={(date) => {
-                  const newRoutines = [...smartGoal.routines];
-                  newRoutines[index] = {
-                    ...routine,
-                    endDate: date ? Timestamp.fromDate(date) : undefined
-                  };
-                  setSmartGoal(prev => ({ ...prev, routines: newRoutines }));
-                }}
-                slotProps={{
-                  textField: {
-                    fullWidth: true
-                  }
-                }}
-              />
-            </LocalizationProvider>
-          </Stack>
-        </Paper>
+                <X className="h-4 w-4" />
+                <span className="sr-only">Remove</span>
+              </Button>
+            </div>
+          </div>
+        </div>
       ))}
       <Button
-        variant="outlined"
-        startIcon={<AddIcon />}
+        variant="outline"
         onClick={() => setSmartGoal(prev => addRoutine(prev))}
       >
+        <Plus className="h-4 w-4 mr-2" />
         Add Routine
       </Button>
-    </Stack>
+    </div>
   );
 
   const renderReviewStep = () => (
@@ -1287,194 +1241,222 @@ const GoalsPage: React.FC = () => {
   ];
 
   const renderEditForm = () => (
-    <Box sx={{ height: '80vh', overflowY: 'auto' }}>
-      <Stack spacing={4} sx={{ pb: 4 }}>
-        {wizardSteps.map((step, index) => (
-          <Paper key={index} sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              {step.title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              {step.subtitle}
-            </Typography>
-            <Divider sx={{ mb: 3 }} />
+    <div className="space-y-4">
+      {wizardSteps.map((step, index) => (
+        <div key={index} className="rounded-lg border p-4">
+          <div className="flex items-center justify-between">
+            <div className="space-y-1">
+              <h3 className="font-medium">{step.title}</h3>
+              <p className="text-sm text-muted-foreground">{step.subtitle}</p>
+            </div>
+            <div className="flex space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setCurrentStep(prev => prev - 1)}
+                className="text-destructive"
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Previous</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setCurrentStep(prev => prev + 1)}
+                className="text-destructive"
+              >
+                <X className="h-4 w-4" />
+                <span className="sr-only">Next</span>
+              </Button>
+            </div>
+          </div>
+          <div className="mt-3">
             {step.component()}
-          </Paper>
-        ))}
-      </Stack>
-    </Box>
+          </div>
+        </div>
+      ))}
+    </div>
   );
 
+  const renderError = (error: Error): JSX.Element => (
+    <div className="fixed inset-0 flex items-center justify-center bg-black/50">
+      <div className="relative w-full max-w-md rounded-lg bg-background p-6">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Error</h2>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setError(null)}
+              className="h-6 w-6 rounded-full"
+            >
+              <X className="h-4 w-4" />
+              <span className="sr-only">Close</span>
+            </Button>
+          </div>
+          <p className="text-sm text-destructive">{error.message}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  const toFirebaseTimestamp = (date: Date | undefined): Timestamp | undefined => {
+    return date ? dateToTimestamp(date) : undefined;
+  };
+
+  const fromFirebaseTimestamp = (timestamp: FirebaseTimestamp | undefined): Date | undefined => {
+    if (!timestamp) return undefined;
+    return timestamp.toDate();
+  };
+
+  const canProceed = (step: number): boolean => {
+    switch (step) {
+      case 0: // Specific
+        return Boolean(smartGoal.specificAction);
+      case 1: // Measurable
+        return Boolean(smartGoal.measurableMetric);
+      case 2: // Area
+        return Boolean(smartGoal.areaId);
+      case 3: // Achievable
+        return Boolean(smartGoal.achievabilityCheck);
+      case 4: // Relevant
+        return Boolean(smartGoal.relevance);
+      case 5: // Time-bound
+        return Boolean(smartGoal.timeTracking.type) && (
+          (smartGoal.timeTracking.type === 'fixed_deadline' && Boolean(smartGoal.timeTracking.deadline)) ||
+          (smartGoal.timeTracking.type === 'recurring_review' && Boolean(smartGoal.timeTracking.reviewCycle))
+        );
+      default:
+        return true;
+    }
+  };
+
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box>
-            <Typography variant="h4" component="h1" gutterBottom>
-              Goals
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Set and track your SMART goals
-            </Typography>
-          </Box>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              setIsAdding(true);
-              setSmartGoal(initialSmartGoal);
-              setCurrentStep(0);
-            }}
-          >
-            Add Goal
-          </Button>
-        </Box>
-      </Box>
+    <div className="space-y-6">
+      {error && renderError(error)}
+      
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl font-bold">Goals</h1>
+        <Button onClick={() => setIsAdding(true)}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Goal
+        </Button>
+      </div>
 
-      {isAdding && (
-        <Dialog
-          open={true}
-          onClose={() => setIsAdding(false)}
-          maxWidth="md"
-          fullWidth
-        >
-          <DialogTitle>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">
-                {editingGoal ? 'Edit SMART Goal' : 'Create SMART Goal'}
-              </Typography>
-              <IconButton
-                edge="end"
-                onClick={() => {
-                  setIsAdding(false);
-                  setEditingGoal(null);
-                  setSmartGoal(initialSmartGoal);
-                }}
-                size="small"
-              >
-                <CloseIcon />
-              </IconButton>
-            </Box>
-          </DialogTitle>
+      {/* Goal Creation/Edit Dialog */}
+      <Dialog open={isAdding} onOpenChange={setIsAdding}>
+        <DialogContent className="max-w-3xl max-h-[90vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle>{editingGoal ? 'Edit Goal' : 'Create New Goal'}</DialogTitle>
+            <DialogDescription>
+              {editMode === 'wizard' ? 'Follow the steps to create a SMART goal' : 'Edit your goal details'}
+            </DialogDescription>
+          </DialogHeader>
 
-          <DialogContent>
-            <Box sx={{ mt: 2 }}>
-              {editingGoal ? (
-                renderEditForm()
-              ) : (
+          <ScrollArea className="px-6 pb-6">
+            <form onSubmit={handleSubmit}>
+              {editMode === 'wizard' ? (
                 <>
-                  <Stepper activeStep={currentStep} sx={{ mb: 4 }}>
-                    {wizardSteps.map((step, index) => (
-                      <Step key={index}>
-                        <StepLabel>{step.title.split(' ')[0]}</StepLabel>
-                      </Step>
-                    ))}
-                  </Stepper>
-
-                  <Box sx={{ mt: 4 }}>
+                  <Stepper
+                    steps={wizardSteps.map(step => ({
+                      title: step.title,
+                      description: step.subtitle
+                    }))}
+                    activeStep={currentStep}
+                  />
+                  <div className="mt-6">
                     {wizardSteps[currentStep].component()}
-                  </Box>
+                  </div>
                 </>
+              ) : (
+                renderEditForm()
               )}
-            </Box>
-          </DialogContent>
 
-          <DialogActions>
-            {editingGoal ? (
-              <>
-                <Button onClick={() => {
-                  setIsAdding(false);
-                  setEditingGoal(null);
-                  setSmartGoal(initialSmartGoal);
-                }}>
+              <DialogFooter className="mt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setSmartGoal(initialSmartGoal);
+                    setIsAdding(false);
+                    setCurrentStep(0);
+                    setEditingGoal(null);
+                    setEditMode('wizard');
+                  }}
+                >
                   Cancel
                 </Button>
-                <Button
-                  variant="contained"
-                  onClick={(e) => handleSubmit(e as React.FormEvent)}
-                  disabled={submitting}
-                >
-                  Save Changes
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? (
+                    <>
+                      <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+                      {editingGoal ? 'Updating...' : 'Creating...'}
+                    </>
+                  ) : (
+                    <>{editingGoal ? 'Update Goal' : 'Create Goal'}</>
+                  )}
                 </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
-                  disabled={currentStep === 0}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={() => {
-                    if (currentStep === wizardSteps.length - 1) {
-                      handleSubmit({ preventDefault: () => {} } as React.FormEvent);
-                    } else {
-                      setCurrentStep(prev => prev + 1);
-                    }
-                  }}
-                  disabled={submitting}
-                >
-                  {currentStep === wizardSteps.length - 1 ? 'Create Goal' : 'Next'}
-                </Button>
-              </>
-            )}
-          </DialogActions>
-        </Dialog>
-      )}
+              </DialogFooter>
+            </form>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
-      <Grid container spacing={3}>
-        {goals.map(goal => (
-          <Grid item xs={12} sm={6} lg={4} key={goal.id}>
-            <Card>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography variant="h6" gutterBottom>
-                      {goal.name}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" paragraph>
-                      {goal.specificAction}
-                    </Typography>
-                    {areas.find(a => a.id === goal.areaId)?.name && (
-                      <Chip
-                        label={areas.find(a => a.id === goal.areaId)?.name}
-                        size="small"
-                        sx={{ mr: 1 }}
-                      />
-                    )}
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleShareClick(goal)}
-                      sx={{ color: 'primary.main' }}
-                    >
-                      <ShareIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleEdit(goal)}
-                      sx={{ color: 'action.active' }}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={() => handleDelete(goal.id)}
-                      sx={{ color: 'error.main' }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
+      {/* Goals List */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {goals?.map(goal => (
+          <Card key={goal.id} className="flex flex-col">
+            <CardHeader>
+              <div className="flex items-start justify-between">
+                <div className="space-y-1">
+                  <CardTitle>{goal.name}</CardTitle>
+                  {areas.find(area => area.id === goal.areaId)?.name && (
+                    <Badge variant="secondary">
+                      {areas.find(area => area.id === goal.areaId)?.name}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleShareClick(goal)}
+                  >
+                    <Share2 className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleEdit(goal)}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDelete(goal.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="flex-1">
+              <p className="text-sm text-muted-foreground line-clamp-2">
+                {goal.specificAction}
+              </p>
+              {goal.timeTracking.type === 'fixed_deadline' && goal.timeTracking.deadline && (
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Due: {timestampToDateString(goal.timeTracking.deadline)}
+                </p>
+              )}
+            </CardContent>
+          </Card>
         ))}
-      </Grid>
+      </div>
 
+      {/* Goal Sharing Modal */}
       {isShareModalOpen && sharingGoal && (
         <GoalSharingModal
           isOpen={isShareModalOpen}
@@ -1486,8 +1468,8 @@ const GoalsPage: React.FC = () => {
           initialTitle={sharingGoal.name}
         />
       )}
-    </Container>
+    </div>
   );
-}
+};
 
 export default GoalsPage;

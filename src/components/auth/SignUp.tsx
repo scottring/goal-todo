@@ -1,18 +1,12 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import {
-  Container,
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-  Paper,
-  Link as MuiLink,
-  CircularProgress
-} from '@mui/material';
-import { UserPlus } from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Icons } from "@/components/icons";
+import { cn } from "@/lib/utils";
 
 export default function SignUp() {
   const [email, setEmail] = useState('');
@@ -61,85 +55,79 @@ export default function SignUp() {
   };
 
   return (
-    <Container maxWidth="sm">
-      <Box sx={{ mt: 8, mb: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3 }}>
-            <UserPlus size={32} className="mr-2" />
-            <Typography variant="h4" component="h1">
-              Create Account
-            </Typography>
-          </Box>
-
+    <div className="container flex h-screen w-full flex-col items-center justify-center">
+      <Card className="w-full max-w-lg">
+        <CardHeader className="space-y-1">
+          <CardTitle className="text-2xl text-center">Create an Account</CardTitle>
+        </CardHeader>
+        <CardContent>
           {(error || validationError) && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {validationError || error?.message}
+            <Alert variant="destructive" className="mb-6">
+              <AlertDescription>
+                {error?.message || validationError}
+              </AlertDescription>
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit}>
-            <TextField
-              label="Display Name"
-              fullWidth
-              margin="normal"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              disabled={loading}
-            />
-            <TextField
-              label="Email"
-              type="email"
-              fullWidth
-              margin="normal"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              disabled={loading}
-            />
-            <TextField
-              label="Password"
-              type="password"
-              fullWidth
-              margin="normal"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-              helperText="Password must be at least 6 characters long"
-            />
-            <TextField
-              label="Confirm Password"
-              type="password"
-              fullWidth
-              margin="normal"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              disabled={loading}
-            />
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+              <Input
+                type="text"
+                placeholder="Display Name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                disabled={loading}
+              />
+              <Input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled={loading}
+              />
+              <Input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                disabled={loading}
+              />
+              <Input
+                type="password"
+                placeholder="Confirm Password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                disabled={loading}
+              />
+            </div>
 
             <Button
               type="submit"
-              fullWidth
-              variant="contained"
-              size="large"
+              className="w-full"
               disabled={loading}
-              sx={{ mt: 3, mb: 2 }}
             >
-              {loading ? <CircularProgress size={24} /> : 'Create Account'}
+              {loading ? (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                "Sign Up"
+              )}
             </Button>
           </form>
 
-          <Box sx={{ mt: 3, textAlign: 'center' }}>
-            <Typography variant="body2">
-              Already have an account?{' '}
-              <MuiLink component={Link} to="/signin">
-                Sign In
-              </MuiLink>
-            </Typography>
-          </Box>
-        </Paper>
-      </Box>
-    </Container>
+          <div className="mt-4 text-center text-sm">
+            Already have an account?{" "}
+            <Link
+              to="/signin"
+              className="text-primary hover:underline"
+            >
+              Sign in
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

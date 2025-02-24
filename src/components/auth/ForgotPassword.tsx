@@ -1,17 +1,12 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import {
-  Container,
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-  Paper,
-  Link as MuiLink,
-  CircularProgress
-} from '@mui/material';
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Icons } from "@/components/icons";
+import { cn } from "@/lib/utils";
 import { KeyRound, ArrowLeft } from 'lucide-react';
 
 export default function ForgotPassword() {
@@ -37,34 +32,31 @@ export default function ForgotPassword() {
   };
 
   return (
-    <Container maxWidth="sm">
-      <Box sx={{ mt: 8, mb: 4 }}>
-        <Paper elevation={3} sx={{ p: 4 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3 }}>
-            <KeyRound size={32} className="mr-2" />
-            <Typography variant="h4" component="h1">
-              Reset Password
-            </Typography>
-          </Box>
-
+    <div className="container flex h-screen w-full flex-col items-center justify-center">
+      <Card className="w-full max-w-lg">
+        <CardHeader className="space-y-1">
+          <div className="flex items-center justify-center space-x-2">
+            <KeyRound className="h-6 w-6" />
+            <CardTitle className="text-2xl">Reset Password</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
           {message && (
-            <Alert severity="success" sx={{ mb: 3 }}>
-              {message}
+            <Alert className="mb-6">
+              <AlertDescription>{message}</AlertDescription>
             </Alert>
           )}
 
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
-              {error.message}
+            <Alert variant="destructive" className="mb-6">
+              <AlertDescription>{error.message}</AlertDescription>
             </Alert>
           )}
 
-          <form onSubmit={handleSubmit}>
-            <TextField
-              label="Email"
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <Input
               type="email"
-              fullWidth
-              margin="normal"
+              placeholder="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -73,28 +65,28 @@ export default function ForgotPassword() {
 
             <Button
               type="submit"
-              fullWidth
-              variant="contained"
-              size="large"
+              className="w-full"
               disabled={loading}
-              sx={{ mt: 3, mb: 2 }}
             >
-              {loading ? <CircularProgress size={24} /> : 'Send Reset Link'}
+              {loading ? (
+                <Icons.spinner className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                "Send Reset Link"
+              )}
             </Button>
           </form>
 
-          <Box sx={{ mt: 3, textAlign: 'center' }}>
-            <MuiLink
-              component={Link}
+          <div className="mt-4 text-center">
+            <Link
               to="/signin"
-              sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}
+              className="inline-flex items-center text-sm text-primary hover:underline"
             >
-              <ArrowLeft size={16} />
+              <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Sign In
-            </MuiLink>
-          </Box>
-        </Paper>
-      </Box>
-    </Container>
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
