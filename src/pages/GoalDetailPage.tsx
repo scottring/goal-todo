@@ -117,6 +117,7 @@ const GoalDetailPage: React.FC = () => {
   const [showMilestoneForm, setShowMilestoneForm] = useState(false);
   const [showShareModal, setShowShareModal] = useState(false);
   const [editingMilestoneId, setEditingMilestoneId] = useState<number | null>(null);
+  const [editingRoutineId, setEditingRoutineId] = useState<number | null>(null);
   const [routineForm, setRoutineForm] = useState<RoutineFormData>({
     title: '',
     description: '',
@@ -191,39 +192,66 @@ const GoalDetailPage: React.FC = () => {
 
     try {
       const now = FirebaseTimestamp.now();
-      const newRoutine: Partial<RoutineWithoutSystemFields> = {
-        title: routineForm.title.trim(),
-        description: routineForm.description?.trim(),
-        frequency: routineForm.frequency,
-        schedule: routineForm.schedule,
-        targetCount: routineForm.targetCount,
-        endDate: routineForm.endDate,
-        completionDates: [],
-        review: {
-          reflectionFrequency: 'weekly',
-          reviewStatus: {
-            lastReviewDate: now,
-            nextReviewDate: now,
-            completedReviews: []
-          },
-          adherenceRate: 0,
-          streakData: {
-            currentStreak: 0,
-            longestStreak: 0,
-            lastCompletedDate: now
-          }
-        }
-      };
-
-      const updatedRoutines = [...displayGoal.routines, newRoutine];
       
-      if (isSharedGoal && userGoal) {
-        await updateUserGoal(userGoal.id, { routines: updatedRoutines });
-      } else if (goal) {
-        await updateGoal(goal.id, { routines: updatedRoutines });
+      if (editingRoutineId !== null) {
+        // Handle edit case
+        const updatedRoutines = displayGoal.routines.map((r, index) => {
+          if (index === editingRoutineId) {
+            return {
+              ...r,
+              title: routineForm.title.trim(),
+              description: routineForm.description?.trim(),
+              frequency: routineForm.frequency,
+              schedule: routineForm.schedule,
+              targetCount: routineForm.targetCount,
+              endDate: routineForm.endDate
+            };
+          }
+          return r;
+        });
+
+        if (isSharedGoal && userGoal) {
+          await updateUserGoal(userGoal.id, { routines: updatedRoutines });
+        } else if (goal) {
+          await updateGoal(goal.id, { routines: updatedRoutines });
+        }
+      } else {
+        // Handle add case
+        const newRoutine = {
+          title: routineForm.title.trim(),
+          description: routineForm.description?.trim(),
+          frequency: routineForm.frequency,
+          schedule: routineForm.schedule,
+          targetCount: routineForm.targetCount,
+          endDate: routineForm.endDate,
+          completionDates: [],
+          review: {
+            reflectionFrequency: 'weekly',
+            reviewStatus: {
+              lastReviewDate: now,
+              nextReviewDate: now,
+              completedReviews: []
+            },
+            adherenceRate: 0,
+            streakData: {
+              currentStreak: 0,
+              longestStreak: 0,
+              lastCompletedDate: now
+            }
+          }
+        };
+
+        const updatedRoutines = [...displayGoal.routines, newRoutine];
+        
+        if (isSharedGoal && userGoal) {
+          await updateUserGoal(userGoal.id, { routines: updatedRoutines });
+        } else if (goal) {
+          await updateGoal(goal.id, { routines: updatedRoutines });
+        }
       }
 
       setShowRoutineForm(false);
+      setEditingRoutineId(null);
       setRoutineForm({
         title: '',
         description: '',
@@ -240,8 +268,7 @@ const GoalDetailPage: React.FC = () => {
         endDate: undefined
       });
     } catch (error) {
-      console.error('Error adding routine:', error);
-      toast.error('Failed to add routine');
+      console.error('Error managing routine:', error);
     }
   };
 
@@ -428,9 +455,14 @@ const GoalDetailPage: React.FC = () => {
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl">
         <div className="p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Add Routine</h2>
+            <h2 className="text-2xl font-bold text-gray-900">
+              {editingRoutineId !== null ? 'Edit Routine' : 'Add Routine'}
+            </h2>
             <button
-              onClick={() => setShowRoutineForm(false)}
+              onClick={() => {
+                setShowRoutineForm(false);
+                setEditingRoutineId(null);
+              }}
               className="text-gray-400 hover:text-gray-600"
             >
               <X className="w-6 h-6" />
@@ -721,7 +753,10 @@ const GoalDetailPage: React.FC = () => {
 
           <div className="mt-6 flex justify-end gap-3">
             <button
-              onClick={() => setShowRoutineForm(false)}
+              onClick={() => {
+                setShowRoutineForm(false);
+                setEditingRoutineId(null);
+              }}
               className="px-4 py-2 text-gray-600 hover:text-gray-700"
             >
               Cancel
@@ -731,7 +766,7 @@ const GoalDetailPage: React.FC = () => {
               disabled={!routineForm.title.trim()}
               className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
             >
-              Add Routine
+              {editingRoutineId !== null ? 'Save Changes' : 'Add Routine'}
             </button>
           </div>
         </div>
@@ -1224,6 +1259,7 @@ const GoalDetailPage: React.FC = () => {
                           <div className="flex gap-1">
                             <button
                               onClick={() => {
+                                setEditingRoutineId(index);
                                 setRoutineForm({
                                   title: routine.title,
                                   description: routine.description || '',
