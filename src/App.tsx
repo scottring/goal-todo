@@ -1,4 +1,4 @@
-import React, { ErrorInfo, Component } from 'react';
+import React, { ErrorInfo, Component, useEffect } from 'react';
 import { AuthProvider } from './contexts/AuthContext';
 import { FirestoreProvider } from './contexts/FirestoreContext';
 import { AreasProvider } from './contexts/AreasContext';
@@ -10,8 +10,34 @@ import { ThemeProvider } from '@mui/material/styles';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import CssBaseline from '@mui/material/CssBaseline';
-import { Box, Typography, Button } from '@mui/material';
+import { Box, Typography, Button, GlobalStyles } from '@mui/material';
+import { Toaster } from 'react-hot-toast';
 import theme from './theme';
+
+// Add global styles
+const globalStyles = (
+  <GlobalStyles
+    styles={{
+      '@import': "url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap')",
+      'html, body': {
+        margin: 0,
+        padding: 0,
+        height: '100%',
+        width: '100%',
+      },
+      '#root': {
+        height: '100%',
+        width: '100%',
+      },
+      '*': {
+        boxSizing: 'border-box',
+      },
+      a: {
+        textDecoration: 'none',
+      },
+    }}
+  />
+);
 
 class ErrorBoundary extends Component<{ children: React.ReactNode }, { hasError: boolean }> {
   constructor(props: { children: React.ReactNode }) {
@@ -53,6 +79,7 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider theme={theme}>
+        {globalStyles}
         <CssBaseline />
         <LocalizationProvider dateAdapter={AdapterDateFns}>
           <AuthProvider>
@@ -62,6 +89,32 @@ function App() {
                   <SharedGoalsProvider>
                     <WeeklyPlanningProvider>
                       <AppRoutes />
+                      <Toaster 
+                        position="top-right"
+                        toastOptions={{
+                          style: {
+                            background: '#fff',
+                            color: theme.palette.text.primary,
+                            border: `1px solid ${theme.palette.divider}`,
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                            padding: '12px 16px',
+                            fontSize: '14px',
+                          },
+                          success: {
+                            iconTheme: {
+                              primary: theme.palette.success.main,
+                              secondary: '#fff',
+                            },
+                          },
+                          error: {
+                            iconTheme: {
+                              primary: theme.palette.error.main,
+                              secondary: '#fff',
+                            },
+                          },
+                        }}
+                      />
                     </WeeklyPlanningProvider>
                   </SharedGoalsProvider>
                 </GoalsProvider>

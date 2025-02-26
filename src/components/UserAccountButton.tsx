@@ -10,15 +10,18 @@ import {
   Typography,
   Divider,
   ListItemIcon,
-  Tooltip
+  Tooltip,
+  useTheme,
+  Button
 } from '@mui/material';
-import { LogOut, User, Settings } from 'lucide-react';
+import { LogOut, User, Settings, ChevronDown } from 'lucide-react';
 
 export const UserAccountButton: React.FC = () => {
   const { currentUser, signOut } = useAuth();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
+  const theme = useTheme();
 
   const handleClick = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -42,30 +45,71 @@ export const UserAccountButton: React.FC = () => {
     return null;
   }
 
+  // Get initials from name or email
+  const getInitials = () => {
+    if (currentUser.displayName) {
+      return currentUser.displayName
+        .split(' ')
+        .map(name => name[0])
+        .join('')
+        .toUpperCase()
+        .substring(0, 2);
+    }
+    return (currentUser.email || 'U')[0].toUpperCase();
+  };
+
   return (
     <Box>
-      <Tooltip title="Account settings">
-        <IconButton
-          onClick={handleClick}
-          size="small"
-          sx={{ ml: 2 }}
-          aria-controls={open ? 'account-menu' : undefined}
-          aria-haspopup="true"
-          aria-expanded={open ? 'true' : undefined}
+      <Button
+        onClick={handleClick}
+        sx={{
+          borderRadius: '24px',
+          textTransform: 'none',
+          pl: 1,
+          pr: 2,
+          py: 0.5,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          border: '1px solid',
+          borderColor: 'divider',
+          '&:hover': {
+            backgroundColor: theme.palette.action.hover,
+          }
+        }}
+        color="inherit"
+        endIcon={<ChevronDown size={16} />}
+      >
+        {currentUser.photoURL ? (
+          <Avatar 
+            src={currentUser.photoURL} 
+            alt={currentUser.displayName || 'User'}
+            sx={{ width: 32, height: 32 }}
+          />
+        ) : (
+          <Avatar 
+            sx={{ 
+              width: 32, 
+              height: 32, 
+              bgcolor: theme.palette.primary.main,
+              color: theme.palette.primary.contrastText,
+              fontWeight: 'bold',
+              fontSize: '0.875rem'
+            }}
+          >
+            {getInitials()}
+          </Avatar>
+        )}
+        <Typography 
+          variant="body2" 
+          sx={{ 
+            display: { xs: 'none', sm: 'block' },
+            fontWeight: 500
+          }}
         >
-          {currentUser.photoURL ? (
-            <Avatar 
-              src={currentUser.photoURL} 
-              alt={currentUser.displayName || 'User'}
-              sx={{ width: 32, height: 32 }}
-            />
-          ) : (
-            <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-              {(currentUser.displayName || currentUser.email || 'U')[0].toUpperCase()}
-            </Avatar>
-          )}
-        </IconButton>
-      </Tooltip>
+          {currentUser.displayName || currentUser.email?.split('@')[0] || 'User'}
+        </Typography>
+      </Button>
       <Menu
         anchorEl={anchorEl}
         id="account-menu"
@@ -73,16 +117,18 @@ export const UserAccountButton: React.FC = () => {
         onClose={handleClose}
         onClick={handleClose}
         PaperProps={{
-          elevation: 0,
+          elevation: 4,
           sx: {
             overflow: 'visible',
-            filter: 'drop-shadow(0px 2px 8px rgba(0,0,0,0.32))',
+            borderRadius: 2,
             mt: 1.5,
-            '& .MuiAvatar-root': {
-              width: 32,
-              height: 32,
-              ml: -0.5,
-              mr: 1,
+            boxShadow: '0 8px 16px rgba(0,0,0,0.1)',
+            minWidth: 200,
+            '& .MuiMenuItem-root': {
+              borderRadius: 1,
+              mx: 0.5,
+              my: 0.25,
+              px: 1.5,
             },
             '&:before': {
               content: '""',
@@ -101,31 +147,39 @@ export const UserAccountButton: React.FC = () => {
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
       >
-        <Box sx={{ px: 2, py: 1 }}>
-          <Typography variant="subtitle1" noWrap>
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Typography variant="subtitle1" fontWeight="bold" noWrap>
             {currentUser.displayName || 'User'}
           </Typography>
           <Typography variant="body2" color="text.secondary" noWrap>
             {currentUser.email}
           </Typography>
         </Box>
-        <Divider />
+        <Divider sx={{ my: 1 }} />
         <MenuItem onClick={() => navigate('/profile')}>
           <ListItemIcon>
-            <User size={20} />
+            <User size={18} />
           </ListItemIcon>
           Profile
         </MenuItem>
         <MenuItem onClick={() => navigate('/settings')}>
           <ListItemIcon>
-            <Settings size={20} />
+            <Settings size={18} />
           </ListItemIcon>
           Settings
         </MenuItem>
-        <Divider />
-        <MenuItem onClick={handleSignOut}>
+        <Divider sx={{ my: 1 }} />
+        <MenuItem 
+          onClick={handleSignOut}
+          sx={{ 
+            color: theme.palette.error.main,
+            '& .MuiListItemIcon-root': {
+              color: theme.palette.error.main,
+            }
+          }}
+        >
           <ListItemIcon>
-            <LogOut size={20} />
+            <LogOut size={18} />
           </ListItemIcon>
           Sign out
         </MenuItem>

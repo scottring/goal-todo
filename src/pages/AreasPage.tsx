@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAreasContext } from '../contexts/AreasContext';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Share2, Users } from 'lucide-react';
 import type { Area } from '../types';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -20,7 +20,10 @@ import {
   CircularProgress,
   Alert,
   Stack,
-  Tooltip
+  Tooltip,
+  Chip,
+  useTheme,
+  alpha
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
@@ -31,6 +34,7 @@ import GroupIcon from '@mui/icons-material/Group';
 import AreaSharingModal from '../components/AreaSharingModal';
 import ManageCollaboratorsModal from '../components/ManageCollaboratorsModal';
 import { toast } from 'react-hot-toast';
+import PageContainer from '../components/PageContainer';
 
 export default function AreasPage() {
   const { areas, loading, error, createArea, updateArea, deleteArea } = useAreasContext();
@@ -43,9 +47,10 @@ export default function AreasPage() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    color: '#000000'
+    color: '#3a86ff'
   });
   const navigate = useNavigate();
+  const theme = useTheme();
 
   const handleCreateArea = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -62,7 +67,7 @@ export default function AreasPage() {
       console.log('Creating new area:', newArea);
       await createArea(newArea);
       console.log('Area created successfully');
-      setFormData({ name: '', description: '', color: '#000000' });
+      setFormData({ name: '', description: '', color: '#3a86ff' });
       setIsCreating(false);
       toast.success('Area created successfully!');
     } catch (err) {
@@ -75,7 +80,7 @@ export default function AreasPage() {
     setFormData({
       name: area.name,
       description: area.description || '',
-      color: area.color || '#000000'
+      color: area.color || '#3a86ff'
     });
     setEditingAreaId(area.id);
     setIsEditing(true);
@@ -91,11 +96,13 @@ export default function AreasPage() {
         description: formData.description,
         color: formData.color
       });
-      setFormData({ name: '', description: '', color: '#000000' });
+      setFormData({ name: '', description: '', color: '#3a86ff' });
       setIsEditing(false);
       setEditingAreaId(null);
+      toast.success('Area updated successfully!');
     } catch (err) {
       console.error('Error updating area:', err);
+      toast.error('Failed to update area. Please try again.');
     }
   };
 
@@ -103,8 +110,10 @@ export default function AreasPage() {
     if (window.confirm('Are you sure you want to delete this area?')) {
       try {
         await deleteArea(areaId);
+        toast.success('Area deleted successfully!');
       } catch (err) {
         console.error('Error deleting area:', err);
+        toast.error('Failed to delete area. Please try again.');
       }
     }
   };
@@ -114,6 +123,13 @@ export default function AreasPage() {
     setIsShareModalOpen(true);
   };
 
+  const handleCardClick = (areaId: string, event: React.MouseEvent) => {
+    // Only navigate if the click wasn't on a button
+    if (!(event.target as HTMLElement).closest('button')) {
+      navigate(`/areas/${areaId}`);
+    }
+  };
+
   const renderForm = (onSubmit: (e: React.FormEvent) => void, title: string, submitText: string) => (
     <Dialog 
       open={true} 
@@ -121,22 +137,29 @@ export default function AreasPage() {
         setIsCreating(false);
         setIsEditing(false);
         setEditingAreaId(null);
-        setFormData({ name: '', description: '', color: '#000000' });
+        setFormData({ name: '', description: '', color: '#3a86ff' });
       }}
       maxWidth="sm"
       fullWidth
+      PaperProps={{
+        sx: {
+          borderRadius: 2,
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
+        }
+      }}
     >
       <form onSubmit={onSubmit}>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          {title}
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
+          <Typography variant="h5" fontWeight="bold">{title}</Typography>
           <IconButton
             onClick={() => {
               setIsCreating(false);
               setIsEditing(false);
               setEditingAreaId(null);
-              setFormData({ name: '', description: '', color: '#000000' });
+              setFormData({ name: '', description: '', color: '#3a86ff' });
             }}
             size="small"
+            sx={{ color: theme.palette.text.secondary }}
           >
             <CloseIcon />
           </IconButton>
@@ -150,8 +173,9 @@ export default function AreasPage() {
               onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
               fullWidth
               required
+              autoFocus
+              variant="outlined"
             />
-
             <TextField
               label="Description"
               value={formData.description}
@@ -159,21 +183,20 @@ export default function AreasPage() {
               fullWidth
               multiline
               rows={3}
+              variant="outlined"
             />
-
             <Box>
-              <Typography variant="subtitle2" gutterBottom>
-                Color
-              </Typography>
+              <Typography variant="subtitle2" gutterBottom>Color</Typography>
               <TextField
                 type="color"
                 value={formData.color}
                 onChange={e => setFormData(prev => ({ ...prev, color: e.target.value }))}
                 fullWidth
+                variant="outlined"
                 sx={{ 
-                  '& input': { 
-                    padding: '8px',
-                    height: '40px'
+                  '& .MuiOutlinedInput-input': { 
+                    p: 1, 
+                    height: 40 
                   } 
                 }}
               />
@@ -181,18 +204,24 @@ export default function AreasPage() {
           </Stack>
         </DialogContent>
 
-        <DialogActions>
-          <Button
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button 
             onClick={() => {
               setIsCreating(false);
               setIsEditing(false);
               setEditingAreaId(null);
-              setFormData({ name: '', description: '', color: '#000000' });
+              setFormData({ name: '', description: '', color: '#3a86ff' });
             }}
+            variant="outlined"
           >
             Cancel
           </Button>
-          <Button type="submit" variant="contained">
+          <Button 
+            type="submit" 
+            variant="contained" 
+            color="primary"
+            startIcon={isEditing ? <Pencil size={18} /> : <Plus size={18} />}
+          >
             {submitText}
           </Button>
         </DialogActions>
@@ -200,59 +229,172 @@ export default function AreasPage() {
     </Dialog>
   );
 
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  const renderAreaCards = () => {
+    if (loading) {
+      return (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+          <CircularProgress />
+        </Box>
+      );
+    }
 
-  if (error) {
-    return (
-      <Box sx={{ p: 2 }}>
-        <Alert severity="error">
-          Error loading areas: {error.message}
+    if (error) {
+      return (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          Error loading areas: {error instanceof Error ? error.message : String(error)}
         </Alert>
-      </Box>
+      );
+    }
+
+    if (!areas || areas.length === 0) {
+      return (
+        <Box sx={{ textAlign: 'center', py: 6 }}>
+          <Typography variant="h6" color="text.secondary" gutterBottom>
+            No areas found
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Create your first area to get started
+          </Typography>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={() => setIsCreating(true)}
+            startIcon={<Plus size={18} />}
+          >
+            Create Area
+          </Button>
+        </Box>
+      );
+    }
+
+    return (
+      <Grid container spacing={3}>
+        {areas.map(area => (
+          <Grid item xs={12} sm={6} md={4} key={area.id}>
+            <Card 
+              sx={{ 
+                height: '100%',
+                cursor: 'pointer',
+                position: 'relative',
+                overflow: 'visible',
+                '&::before': {
+                  content: '""',
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: area.color || theme.palette.primary.main,
+                  borderTopLeftRadius: theme.shape.borderRadius,
+                  borderTopRightRadius: theme.shape.borderRadius,
+                }
+              }}
+              onClick={(e) => handleCardClick(area.id, e)}
+            >
+              <CardContent sx={{ pt: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                  <Typography variant="h6" component="h2" fontWeight="bold" gutterBottom>
+                    {area.name}
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 0.5 }}>
+                    {area.sharedWith && area.sharedWith.length > 0 && (
+                      <Chip 
+                        size="small" 
+                        label={`${area.sharedWith.length} shared`} 
+                        icon={<Users size={14} />} 
+                        sx={{ 
+                          height: 24,
+                          backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                          color: theme.palette.primary.main,
+                          fontWeight: 500,
+                          fontSize: '0.75rem'
+                        }} 
+                      />
+                    )}
+                  </Box>
+                </Box>
+                
+                {area.description && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    {area.description}
+                  </Typography>
+                )}
+                
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mt: 2 }}>
+                  <Tooltip title="Edit">
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEdit(area);
+                      }}
+                      sx={{ 
+                        color: theme.palette.text.secondary,
+                        '&:hover': { color: theme.palette.primary.main }
+                      }}
+                    >
+                      <Pencil size={18} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Share">
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleShare(area);
+                      }}
+                      sx={{ 
+                        color: theme.palette.text.secondary,
+                        '&:hover': { color: theme.palette.primary.main }
+                      }}
+                    >
+                      <Share2 size={18} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Delete">
+                    <IconButton 
+                      size="small" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDelete(area.id);
+                      }}
+                      sx={{ 
+                        color: theme.palette.text.secondary,
+                        '&:hover': { color: theme.palette.error.main }
+                      }}
+                    >
+                      <Trash2 size={18} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
     );
-  }
+  };
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box>
-            <Typography variant="h4" component="h1" gutterBottom>
-              Areas
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Organize your tasks and activities into different areas of focus
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Tooltip title="Manage Collaborators">
-              <Button
-                variant="outlined"
-                startIcon={<GroupIcon />}
-                onClick={() => setIsCollaboratorsModalOpen(true)}
-              >
-                Collaborators
-              </Button>
-            </Tooltip>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => setIsCreating(true)}
-            >
-              Add Area
-            </Button>
-          </Box>
-        </Box>
-      </Box>
-
-      {isCreating && renderForm(handleCreateArea, 'Add New Area', 'Create Area')}
+    <PageContainer
+      title="Areas of Focus"
+      description="Organize your goals and tasks into different areas of your life"
+      action={
+        <Button 
+          variant="contained" 
+          color="primary" 
+          onClick={() => setIsCreating(true)}
+          startIcon={<Plus size={18} />}
+        >
+          Create Area
+        </Button>
+      }
+    >
+      {renderAreaCards()}
+      
+      {isCreating && renderForm(handleCreateArea, 'Create New Area', 'Create Area')}
       {isEditing && renderForm(handleUpdate, 'Edit Area', 'Update Area')}
+      
       {isShareModalOpen && sharingArea && (
         <AreaSharingModal
           isOpen={isShareModalOpen}
@@ -264,77 +406,16 @@ export default function AreasPage() {
           areaName={sharingArea.name}
         />
       )}
-      {isCollaboratorsModalOpen && (
+      
+      {isCollaboratorsModalOpen && sharingArea && (
         <ManageCollaboratorsModal
           isOpen={isCollaboratorsModalOpen}
-          onClose={() => setIsCollaboratorsModalOpen(false)}
+          onClose={() => {
+            setIsCollaboratorsModalOpen(false);
+            setSharingArea(null);
+          }}
         />
       )}
-
-      <Grid container spacing={3}>
-        {areas.map((area) => (
-          <Grid item xs={12} sm={6} lg={4} key={area.id}>
-            <Card
-              onClick={() => navigate(`/areas/${area.id}`)}
-              sx={{
-                cursor: 'pointer',
-                transition: 'box-shadow 0.2s',
-                '&:hover': {
-                  boxShadow: 3
-                },
-                borderLeft: `4px solid ${area.color || '#000000'}`
-              }}
-            >
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <Box>
-                    <Typography variant="h6" gutterBottom>
-                      {area.name}
-                    </Typography>
-                    {area.description && (
-                      <Typography variant="body2" color="text.secondary">
-                        {area.description}
-                      </Typography>
-                    )}
-                  </Box>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleShare(area);
-                      }}
-                      sx={{ color: 'primary.main' }}
-                    >
-                      <ShareIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(area);
-                      }}
-                      sx={{ color: 'action.active' }}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(area.id);
-                      }}
-                      sx={{ color: 'error.main' }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-    </Container>
+    </PageContainer>
   );
 }
