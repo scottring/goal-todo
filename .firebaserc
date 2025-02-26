@@ -1,5 +1,7 @@
 {
   "projects": {
-    "default": "goals-a2d40"
+    "default": "goals-a2d40",
+    "development": "goals-a2d40-dev",
+    "production": "goals-a2d40"
   }
 }

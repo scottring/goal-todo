@@ -30,10 +30,14 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({
   prompt: 'select_account',
   // Add these parameters to help with popup issues
-  access_type: 'offline',
-  // Specify origins that are allowed to embed the sign-in popup
-  hosted_domain: window.location.hostname
+  access_type: 'offline'
 });
+
+// Log environment info for debugging
+const env = getEnvironment();
+console.log(`Firebase initialized with environment: ${env}`);
+console.log(`Using Firebase project: ${firebaseConfig.projectId}`);
+console.log(`Auth domain: ${firebaseConfig.authDomain}`);
 
 // Initialize Cloud Firestore and get a reference to the service
 export const db = getFirestore(app);

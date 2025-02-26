@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { getUserService } from '../services/UserService';
 import { toast } from 'react-hot-toast';
-import { doc, updateDoc, getDoc, arrayUnion } from 'firebase/firestore';
+import { doc, updateDoc, getDoc, arrayUnion, query, collection, where, getDocs } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { 
   Autocomplete,
@@ -143,6 +143,9 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
         await updateDoc(areaRef, updates);
         console.log('Area updated successfully');
 
+        // Propagate permissions to all goals in this area
+        await propagatePermissionsToChildren(areaId, selectedUser.id, permissionLevel);
+
         // Verify the update
         const updatedDoc = await getDoc(areaRef);
         const updatedData = updatedDoc.data();
@@ -171,6 +174,84 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
     }
   };
 
+  // Helper function to propagate permissions to all child items
+  const propagatePermissionsToChildren = async (
+    areaId: string, 
+    userId: string, 
+    permissionLevel: 'edit' | 'view'
+  ) => {
+    try {
+      console.log(`Propagating ${permissionLevel} permissions for user ${userId} to all items in area ${areaId}`);
+      
+      // 1. Update all goals in this area
+      const goalsQuery = query(
+        collection(db, 'activities'),
+        where('areaId', '==', areaId)
+      );
+      
+      const goalsSnapshot = await getDocs(goalsQuery);
+      console.log(`Found ${goalsSnapshot.size} goals to update`);
+      
+      const goalUpdates = goalsSnapshot.docs.map(async (goalDoc) => {
+        console.log(`Updating goal: ${goalDoc.id}`);
+        return updateDoc(doc(db, 'activities', goalDoc.id), {
+          sharedWith: arrayUnion(userId),
+          [`permissions.${userId}`]: {
+            edit: permissionLevel === 'edit',
+            view: true
+          }
+        });
+      });
+      
+      // 2. Update all tasks in this area
+      const tasksQuery = query(
+        collection(db, 'tasks'),
+        where('areaId', '==', areaId)
+      );
+      
+      const tasksSnapshot = await getDocs(tasksQuery);
+      console.log(`Found ${tasksSnapshot.size} tasks to update`);
+      
+      const taskUpdates = tasksSnapshot.docs.map(async (taskDoc) => {
+        console.log(`Updating task: ${taskDoc.id}`);
+        return updateDoc(doc(db, 'tasks', taskDoc.id), {
+          sharedWith: arrayUnion(userId),
+          [`permissions.${userId}`]: {
+            edit: permissionLevel === 'edit',
+            view: true
+          }
+        });
+      });
+      
+      // 3. Update all routines in this area
+      const routinesQuery = query(
+        collection(db, 'routines'),
+        where('areaId', '==', areaId)
+      );
+      
+      const routinesSnapshot = await getDocs(routinesQuery);
+      console.log(`Found ${routinesSnapshot.size} routines to update`);
+      
+      const routineUpdates = routinesSnapshot.docs.map(async (routineDoc) => {
+        console.log(`Updating routine: ${routineDoc.id}`);
+        return updateDoc(doc(db, 'routines', routineDoc.id), {
+          sharedWith: arrayUnion(userId),
+          [`permissions.${userId}`]: {
+            edit: permissionLevel === 'edit',
+            view: true
+          }
+        });
+      });
+      
+      // Wait for all updates to complete
+      await Promise.all([...goalUpdates, ...taskUpdates, ...routineUpdates]);
+      console.log('Successfully propagated permissions to all child items');
+    } catch (error) {
+      console.error('Error propagating permissions:', error);
+      throw new Error('Failed to propagate permissions to all items in this area');
+    }
+  };
+
   const handleRemoveAccess = async (userId: string) => {
     try {
       setIsSubmitting(true);
@@ -189,6 +270,9 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
         [`permissions.${userId}`]: null
       });
 
+      // Remove permissions from all child items
+      await removePermissionsFromChildren(areaId, userId);
+
       // Update local state
       setSharedUsers(sharedUsers.filter(u => u.id !== userId));
       toast.success('Access removed successfully');
@@ -197,6 +281,77 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
       toast.error('Failed to remove access');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Helper function to remove permissions from all child items
+  const removePermissionsFromChildren = async (areaId: string, userId: string) => {
+    try {
+      console.log(`Removing permissions for user ${userId} from all items in area ${areaId}`);
+      
+      // 1. Update all goals in this area
+      const goalsQuery = query(
+        collection(db, 'activities'),
+        where('areaId', '==', areaId),
+        where('sharedWith', 'array-contains', userId)
+      );
+      
+      const goalsSnapshot = await getDocs(goalsQuery);
+      console.log(`Found ${goalsSnapshot.size} goals to update`);
+      
+      const goalUpdates = goalsSnapshot.docs.map(async (goalDoc) => {
+        const goalData = goalDoc.data();
+        console.log(`Removing access from goal: ${goalDoc.id}`);
+        return updateDoc(doc(db, 'activities', goalDoc.id), {
+          sharedWith: goalData.sharedWith.filter((id: string) => id !== userId),
+          [`permissions.${userId}`]: null
+        });
+      });
+      
+      // 2. Update all tasks in this area
+      const tasksQuery = query(
+        collection(db, 'tasks'),
+        where('areaId', '==', areaId),
+        where('sharedWith', 'array-contains', userId)
+      );
+      
+      const tasksSnapshot = await getDocs(tasksQuery);
+      console.log(`Found ${tasksSnapshot.size} tasks to update`);
+      
+      const taskUpdates = tasksSnapshot.docs.map(async (taskDoc) => {
+        const taskData = taskDoc.data();
+        console.log(`Removing access from task: ${taskDoc.id}`);
+        return updateDoc(doc(db, 'tasks', taskDoc.id), {
+          sharedWith: taskData.sharedWith.filter((id: string) => id !== userId),
+          [`permissions.${userId}`]: null
+        });
+      });
+      
+      // 3. Update all routines in this area
+      const routinesQuery = query(
+        collection(db, 'routines'),
+        where('areaId', '==', areaId),
+        where('sharedWith', 'array-contains', userId)
+      );
+      
+      const routinesSnapshot = await getDocs(routinesQuery);
+      console.log(`Found ${routinesSnapshot.size} routines to update`);
+      
+      const routineUpdates = routinesSnapshot.docs.map(async (routineDoc) => {
+        const routineData = routineDoc.data();
+        console.log(`Removing access from routine: ${routineDoc.id}`);
+        return updateDoc(doc(db, 'routines', routineDoc.id), {
+          sharedWith: routineData.sharedWith.filter((id: string) => id !== userId),
+          [`permissions.${userId}`]: null
+        });
+      });
+      
+      // Wait for all updates to complete
+      await Promise.all([...goalUpdates, ...taskUpdates, ...routineUpdates]);
+      console.log('Successfully removed permissions from all child items');
+    } catch (error) {
+      console.error('Error removing permissions from children:', error);
+      throw new Error('Failed to remove permissions from all items in this area');
     }
   };
 
@@ -211,6 +366,9 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
           view: true
         }
       });
+
+      // Update permissions for all child items
+      await updatePermissionsForChildren(areaId, userId, newPermissionLevel);
 
       // Update local state
       setSharedUsers(sharedUsers.map(user => 
@@ -231,6 +389,84 @@ const AreaSharingModal: React.FC<AreaSharingModalProps> = ({
       toast.error('Failed to update permissions');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Helper function to update permissions for all child items
+  const updatePermissionsForChildren = async (
+    areaId: string, 
+    userId: string, 
+    permissionLevel: 'edit' | 'view'
+  ) => {
+    try {
+      console.log(`Updating permissions to ${permissionLevel} for user ${userId} for all items in area ${areaId}`);
+      
+      // 1. Update all goals in this area
+      const goalsQuery = query(
+        collection(db, 'activities'),
+        where('areaId', '==', areaId),
+        where('sharedWith', 'array-contains', userId)
+      );
+      
+      const goalsSnapshot = await getDocs(goalsQuery);
+      console.log(`Found ${goalsSnapshot.size} goals to update`);
+      
+      const goalUpdates = goalsSnapshot.docs.map(async (goalDoc) => {
+        console.log(`Updating permissions for goal: ${goalDoc.id}`);
+        return updateDoc(doc(db, 'activities', goalDoc.id), {
+          [`permissions.${userId}`]: {
+            edit: permissionLevel === 'edit',
+            view: true
+          }
+        });
+      });
+      
+      // 2. Update all tasks in this area
+      const tasksQuery = query(
+        collection(db, 'tasks'),
+        where('areaId', '==', areaId),
+        where('sharedWith', 'array-contains', userId)
+      );
+      
+      const tasksSnapshot = await getDocs(tasksQuery);
+      console.log(`Found ${tasksSnapshot.size} tasks to update`);
+      
+      const taskUpdates = tasksSnapshot.docs.map(async (taskDoc) => {
+        console.log(`Updating permissions for task: ${taskDoc.id}`);
+        return updateDoc(doc(db, 'tasks', taskDoc.id), {
+          [`permissions.${userId}`]: {
+            edit: permissionLevel === 'edit',
+            view: true
+          }
+        });
+      });
+      
+      // 3. Update all routines in this area
+      const routinesQuery = query(
+        collection(db, 'routines'),
+        where('areaId', '==', areaId),
+        where('sharedWith', 'array-contains', userId)
+      );
+      
+      const routinesSnapshot = await getDocs(routinesQuery);
+      console.log(`Found ${routinesSnapshot.size} routines to update`);
+      
+      const routineUpdates = routinesSnapshot.docs.map(async (routineDoc) => {
+        console.log(`Updating permissions for routine: ${routineDoc.id}`);
+        return updateDoc(doc(db, 'routines', routineDoc.id), {
+          [`permissions.${userId}`]: {
+            edit: permissionLevel === 'edit',
+            view: true
+          }
+        });
+      });
+      
+      // Wait for all updates to complete
+      await Promise.all([...goalUpdates, ...taskUpdates, ...routineUpdates]);
+      console.log('Successfully updated permissions for all child items');
+    } catch (error) {
+      console.error('Error updating permissions for children:', error);
+      throw new Error('Failed to update permissions for all items in this area');
     }
   };
 

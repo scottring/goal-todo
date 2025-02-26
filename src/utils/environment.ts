@@ -6,8 +6,14 @@ export function getEnvironment(): Environment {
     return 'test';
   }
   
-  // Check if running in development
-  if (process.env.NODE_ENV === 'development' || window.location.hostname === 'localhost') {
+  // Always use development mode when on localhost
+  if (window.location.hostname === 'localhost') {
+    console.log('Running on localhost - forcing development environment');
+    return 'development';
+  }
+  
+  // Check if running in development mode based on NODE_ENV
+  if (process.env.NODE_ENV === 'development') {
     return 'development';
   }
   

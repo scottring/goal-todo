@@ -252,7 +252,7 @@ const TasksPage: React.FC = () => {
 
     // Only return sections that have tasks
     return sections.filter(section => section.tasks.length > 0);
-  }, [scheduledTasks]);
+  }, [scheduledTasks, loading]);
 
   const TaskCard: React.FC<{ task: ScheduledTask; index: number }> = ({ task, index }) => {
     const formatRoutineSchedule = (task: ScheduledTask) => {

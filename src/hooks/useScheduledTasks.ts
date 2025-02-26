@@ -263,7 +263,7 @@ export const useScheduledTasks = () => {
 
       allGoals.forEach((goal) => {
         // Process tasks from milestones first
-        goal.milestones.forEach((milestone: { id: string; name: string; routines?: Routine[] }) => {
+        goal.milestones.forEach((milestone) => {
           // Add milestone tasks
           const milestoneTasks = goal.tasks
             .filter((task: Task) => task.milestoneId === milestone.id)
@@ -279,7 +279,11 @@ export const useScheduledTasks = () => {
 
           // Add milestone routines if they exist
           if (milestone.routines) {
-            const milestoneRoutineTasks = generateRoutineTasks(milestone.routines, goal.name, milestone.name);
+            const milestoneRoutineTasks = generateRoutineTasks(
+              milestone.routines as (Routine | RoutineWithoutSystemFields | string)[],
+              goal.name,
+              milestone.name
+            );
             allTasks.push(...milestoneRoutineTasks);
           }
         });
@@ -393,12 +397,11 @@ export const useScheduledTasks = () => {
     }
   }, [currentUser, goals, userGoals]);
 
-  const completeTask = async (taskId: string) => {
+  const completeTask = async (taskId: string): Promise<void> => {
     if (!currentUser) throw new Error('User must be authenticated to complete a task');
 
     try {
       console.log('Completing task:', taskId);
-      console.log('Found task:', scheduledTasks.find(t => t.id === taskId));
       
       setLoading(true);
       const task = scheduledTasks.find(t => t.id === taskId);
@@ -406,6 +409,8 @@ export const useScheduledTasks = () => {
         console.error('Task not found:', taskId);
         return;
       }
+
+      console.log('Found task:', task);
 
       if (task.isRoutine) {
         console.log('Completing routine task');
@@ -425,11 +430,14 @@ export const useScheduledTasks = () => {
         }
 
         console.log('Found routine:', routine);
-        console.log('Current completion dates:', routine.completionDates);
+        console.log('Current completion dates:', routine.completionDates || []);
+        
+        // Ensure completionDates is an array
+        const currentCompletionDates = Array.isArray(routine.completionDates) ? routine.completionDates : [];
         
         const updatedRoutine = {
           ...routine,
-          completionDates: [...routine.completionDates, task.routineCompletionDate!]
+          completionDates: [...currentCompletionDates, task.routineCompletionDate!]
         };
 
         console.log('Updated completion dates:', updatedRoutine.completionDates);
@@ -440,10 +448,10 @@ export const useScheduledTasks = () => {
 
         if ('parentGoalId' in goal) {
           console.log('Updating user goal routine');
-          await updateDocument('user_goals', goal.id, { routines: updatedRoutines });
+          await updateDocument(COLLECTIONS.USER_GOALS, goal.id, { routines: updatedRoutines });
         } else {
           console.log('Updating activity routine');
-          await updateDocument('activities', goal.id, { routines: updatedRoutines });
+          await updateDocument(COLLECTIONS.ACTIVITIES, goal.id, { routines: updatedRoutines });
         }
       } else {
         console.log('Completing regular task');
@@ -460,25 +468,48 @@ export const useScheduledTasks = () => {
         
         // Find the existing task to preserve its notes
         const existingTask = goal.tasks.find((t: Task) => t.id === taskId);
+        if (!existingTask) {
+          console.error('Task not found in goal:', taskId);
+          return;
+        }
+        
+        console.log('Existing task:', existingTask);
         
         const updatedTasks = goal.tasks.map((t: Task) =>
           t.id === taskId ? { 
             ...t, 
-            completed: true, 
+            completed: !t.completed, // Toggle the completed status
             updatedAt: FirebaseTimestamp.now(),
             notes: existingTask?.notes
           } : t
         );
 
+        console.log('Updated tasks:', updatedTasks);
+
         if ('parentGoalId' in goal) {
           console.log('Updating user goal task');
-          await updateDocument('user_goals', goal.id, { tasks: updatedTasks });
+          await updateDocument(COLLECTIONS.USER_GOALS, goal.id, { tasks: updatedTasks });
         } else {
-          console.log('Updating activity task');
-          await updateDocument('activities', goal.id, { tasks: updatedTasks });
+          console.log('Updating activity routine');
+          await updateDocument(COLLECTIONS.ACTIVITIES, goal.id, { tasks: updatedTasks });
         }
       }
 
+      // Update local state immediately to reflect the change in UI
+      setScheduledTasks(prevTasks => 
+        prevTasks.map(t => {
+          if (t.id === taskId) {
+            return {
+              ...t,
+              completed: !t.completed,
+              updatedAt: FirebaseTimestamp.now()
+            };
+          }
+          return t;
+        })
+      );
+
+      // Refresh the tasks list
       await fetchScheduledTasks();
     } catch (err) {
       console.error('Error completing task:', err);
@@ -497,3 +528,4 @@ export const useScheduledTasks = () => {
     refreshTasks: fetchScheduledTasks
   };
 };
+

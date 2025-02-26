@@ -84,13 +84,9 @@ export class AuthService {
         prompt: 'select_account'
       });
 
-      // In development, ensure we're using localhost
-      if (this.environment === 'development') {
-        provider.setCustomParameters({
-          ...provider.getCustomParameters(),
-          hosted_domain: 'localhost'
-        });
-      }
+      // Log which Firebase project we're using
+      console.log(`[${this.environment}] Attempting Google sign-in with Firebase project: ${import.meta.env.VITE_FIREBASE_PROJECT_ID}`);
+      console.log(`[${this.environment}] Auth domain: ${import.meta.env.VITE_FIREBASE_AUTH_DOMAIN}`);
 
       const userCredential = await signInWithPopup(this.auth, provider);
 
@@ -112,7 +108,7 @@ export class AuthService {
         throw new Error(`[${this.environment}] Pop-up was blocked. Please allow pop-ups for this site.`);
       }
       if (error.code === 'auth/unauthorized-domain') {
-        throw new Error(`[${this.environment}] This domain is not authorized for Google Sign-In. Please ensure localhost is added to authorized domains in Firebase Console.`);
+        throw new Error(`[${this.environment}] This domain (${window.location.hostname}) is not authorized for Google Sign-In with project ${import.meta.env.VITE_FIREBASE_PROJECT_ID}. Please ensure it's added to authorized domains in Firebase Console.`);
       }
       if (error.code === 'auth/configuration-not-found') {
         throw new Error(`[${this.environment}] Google Sign-In is not properly configured. Please ensure Google Sign-In is enabled in Firebase Console.`);
