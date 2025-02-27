@@ -6,8 +6,16 @@ export function getEnvironment(): Environment {
     return 'test';
   }
   
+  // Check for Vite's import.meta.env.MODE
+  if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.MODE) {
+    console.log(`Detected Vite environment mode: ${import.meta.env.MODE}`);
+    if (import.meta.env.MODE === 'production') {
+      return 'production';
+    }
+  }
+  
   // Always use development mode when on localhost
-  if (window.location.hostname === 'localhost') {
+  if (typeof window !== 'undefined' && window.location.hostname === 'localhost') {
     console.log('Running on localhost - forcing development environment');
     return 'development';
   }
@@ -17,11 +25,14 @@ export function getEnvironment(): Environment {
     return 'development';
   }
   
+  // Default to production for safety
+  console.log('Defaulting to production environment');
   return 'production';
 }
 
 export function getCollectionPrefix(): string {
   const env = getEnvironment();
+  console.log(`Using collection prefix for environment: ${env}`);
   switch (env) {
     case 'development':
       return 'dev_';
@@ -34,5 +45,8 @@ export function getCollectionPrefix(): string {
 
 // Helper to get the prefixed collection name
 export function getPrefixedCollection(collection: string): string {
-  return `${getCollectionPrefix()}${collection}`;
+  const prefix = getCollectionPrefix();
+  const prefixedCollection = `${prefix}${collection}`;
+  console.log(`Original collection: ${collection}, Prefixed collection: ${prefixedCollection}`);
+  return prefixedCollection;
 } 

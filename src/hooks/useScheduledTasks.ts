@@ -5,7 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
 import { timestampToDate } from '../utils/date';
-import { currentEnv } from '../config/firebase';
+import { getPrefixedCollection } from '../utils/environment';
 import type { 
   Task, 
   Routine, 
@@ -18,19 +18,18 @@ import type {
   TaskDependency
 } from '../types';
 
-// Collection names based on environment
-const COLLECTION_PREFIX = currentEnv === 'development' ? 'dev_' : '';
+// Collection names using the utility function
 const COLLECTIONS = {
-  AREAS: `${COLLECTION_PREFIX}areas`,
-  ACTIVITIES: `${COLLECTION_PREFIX}activities`,
-  ROUTINES: `${COLLECTION_PREFIX}routines`,
-  USER_GOALS: `${COLLECTION_PREFIX}user_goals`,
-  SHARED_GOALS: `${COLLECTION_PREFIX}shared_goals`
+  AREAS: 'areas',
+  ACTIVITIES: 'activities',
+  ROUTINES: 'routines',
+  USER_GOALS: 'user_goals',
+  SHARED_GOALS: 'shared_goals'
 };
 
 export interface ScheduledTask extends Task {
   source: {
-    type: 'goal' | 'routine' | 'habit' | 'milestone';
+    type: 'goal' | 'routine' | 'habit' | 'milestone' | 'standalone_task';
     goalName?: string;
     routineName?: string;
     milestoneName?: string;
@@ -248,6 +247,7 @@ export const useScheduledTasks = () => {
 
   const fetchScheduledTasks = async () => {
     if (!currentUser) {
+      console.log('No current user, skipping task fetch');
       setScheduledTasks([]);
       setLoading(false);
       setError(null);
@@ -256,132 +256,134 @@ export const useScheduledTasks = () => {
 
     try {
       setLoading(true);
+      setError(null);
+      
+      console.log('Fetching scheduled tasks for user:', currentUser.uid);
+      
+      // Combine tasks from all sources
       const allTasks: ScheduledTask[] = [];
-
+      
       // Process both regular goals and user goals
       const allGoals = [...goals, ...userGoals];
-
+      console.log(`Processing ${allGoals.length} goals`);
+      
       allGoals.forEach((goal) => {
+        console.log(`Processing goal: ${goal.name}`);
+        
         // Process tasks from milestones first
-        goal.milestones.forEach((milestone) => {
-          // Add milestone tasks
-          const milestoneTasks = goal.tasks
-            .filter((task: Task) => task.milestoneId === milestone.id)
+        if (goal.milestones && Array.isArray(goal.milestones)) {
+          goal.milestones.forEach((milestone) => {
+            console.log(`Processing milestone: ${milestone.name}`);
+            
+            // Add milestone tasks
+            if (goal.tasks && Array.isArray(goal.tasks)) {
+              const milestoneTasks = goal.tasks
+                .filter((task: Task) => task.milestoneId === milestone.id)
+                .map((task: Task) => ({
+                  ...task,
+                  source: {
+                    type: 'milestone' as const,
+                    goalName: goal.name,
+                    milestoneName: milestone.name
+                  }
+                }));
+              console.log(`Added ${milestoneTasks.length} milestone tasks`);
+              allTasks.push(...milestoneTasks);
+            }
+
+            // Add milestone routines if they exist
+            if (milestone.routines) {
+              const milestoneRoutineTasks = generateRoutineTasks(
+                milestone.routines as (Routine | RoutineWithoutSystemFields | string)[],
+                goal.name,
+                milestone.name
+              );
+              console.log(`Added ${milestoneRoutineTasks.length} milestone routine tasks`);
+              allTasks.push(...milestoneRoutineTasks);
+            }
+          });
+        }
+
+        // Add independent tasks
+        if (goal.tasks && Array.isArray(goal.tasks)) {
+          const independentTasks = goal.tasks
+            .filter((task: Task) => !task.milestoneId)
             .map((task: Task) => ({
               ...task,
               source: {
-                type: 'milestone' as const,
-                goalName: goal.name,
-                milestoneName: milestone.name
+                type: 'goal' as const,
+                goalName: goal.name
               }
             }));
-          allTasks.push(...milestoneTasks);
-
-          // Add milestone routines if they exist
-          if (milestone.routines) {
-            const milestoneRoutineTasks = generateRoutineTasks(
-              milestone.routines as (Routine | RoutineWithoutSystemFields | string)[],
-              goal.name,
-              milestone.name
-            );
-            allTasks.push(...milestoneRoutineTasks);
-          }
-        });
-
-        // Add independent tasks
-        const independentTasks = goal.tasks
-          .filter((task: Task) => !task.milestoneId)
-          .map((task: Task) => ({
-            ...task,
-            source: {
-              type: 'goal' as const,
-              goalName: goal.name
-            }
-          }));
-        allTasks.push(...independentTasks);
+          console.log(`Added ${independentTasks.length} independent tasks`);
+          allTasks.push(...independentTasks);
+        }
 
         // Add routine-generated tasks
-        const routineTasks = generateRoutineTasks(goal.routines, goal.name);
-        allTasks.push(...routineTasks);
+        if (goal.routines && Array.isArray(goal.routines)) {
+          const routineTasks = generateRoutineTasks(goal.routines, goal.name);
+          console.log(`Added ${routineTasks.length} routine tasks`);
+          allTasks.push(...routineTasks);
+        }
       });
+
+      // Fetch standalone tasks from activities collection
+      try {
+        const activitiesCollection = getPrefixedCollection(COLLECTIONS.ACTIVITIES);
+        console.log('Fetching standalone tasks from collection:', activitiesCollection);
+        const standaloneActivities = await getCollection(COLLECTIONS.ACTIVITIES, [
+          where('type', '==', 'standalone_task'),
+          where('ownerId', '==', currentUser.uid)
+        ]);
+        
+        console.log('Standalone activities fetched:', standaloneActivities.length);
+
+        // Convert standalone activities to scheduled tasks
+        const standaloneTasks = standaloneActivities.map(activity => {
+          return {
+            id: activity.id,
+            title: activity.name,
+            description: activity.description || '',
+            completed: activity.completed || false,
+            priority: activity.priority || 'medium',
+            status: activity.status || 'not_started',
+            dueDate: activity.dueDate,
+            createdAt: activity.createdAt,
+            updatedAt: activity.updatedAt,
+            ownerId: activity.ownerId,
+            sharedWith: activity.sharedWith || [],
+            permissions: activity.permissions || {},
+            source: {
+              type: 'standalone_task' as const
+            }
+          } as ScheduledTask;
+        });
+
+        console.log('Processed standalone tasks:', standaloneTasks.length);
+        allTasks.push(...standaloneTasks);
+      } catch (err) {
+        console.error('Error fetching standalone tasks:', err);
+        // Continue with other tasks even if standalone tasks fail
+      }
 
       // Process dependencies
       allTasks.forEach((task: ScheduledTask) => {
         if (task.dependencies) {
           // Find all tasks that depend on this task
           const dependentTasks = allTasks
-            .filter((t: ScheduledTask) => t.dependencies?.some((d: TaskDependency) => d.taskId === t.id))
+            .filter((t: ScheduledTask) => t.dependencies?.some((d: TaskDependency) => d.taskId === task.id))
             .map(t => t.id);
           task.dependentTasks = dependentTasks;
         }
       });
 
-      // Sort tasks by:
-      // 1. Dependencies (blocked tasks move down)
-      // 2. Overdue tasks
-      // 3. High priority tasks
-      // 4. Due date
-      // 5. Complexity
-      // 6. Routines
-      // 7. Creation date
-      allTasks.sort((a: ScheduledTask, b: ScheduledTask) => {
-        // Check if either task is blocked
-        const aBlocked = a.dependencies?.some((d: TaskDependency) => {
-          const depTask = allTasks.find(t => t.id === d.taskId);
-          return depTask && !depTask.completed;
-        }) ?? false;
-        const bBlocked = b.dependencies?.some((d: TaskDependency) => {
-          const depTask = allTasks.find(t => t.id === d.taskId);
-          return depTask && !depTask.completed;
-        }) ?? false;
-        if (aBlocked && !bBlocked) return 1;
-        if (!aBlocked && bBlocked) return -1;
-
-        // Overdue tasks first
-        const today = new Date();
-        const aDate = getDateFromTimestamp(a.dueDate);
-        const bDate = getDateFromTimestamp(b.dueDate);
-        const aOverdue = aDate && aDate < today;
-        const bOverdue = bDate && bDate < today;
-        if (aOverdue && !bOverdue) return -1;
-        if (!aOverdue && bOverdue) return 1;
-
-        // Priority next
-        const priorityOrder = { high: 0, medium: 1, low: 2 };
-        if (a.priority !== b.priority) {
-          return priorityOrder[a.priority] - priorityOrder[b.priority];
-        }
-
-        // Due date
-        if (aDate && bDate) {
-          return aDate.getTime() - bDate.getTime();
-        }
-        if (aDate) return -1;
-        if (bDate) return 1;
-
-        // Complexity
-        const complexityOrder = { high: 0, medium: 1, low: 2 };
-        const aComplexity = a.complexity?.level || 'medium';
-        const bComplexity = b.complexity?.level || 'medium';
-        if (aComplexity !== bComplexity) {
-          return complexityOrder[aComplexity] - complexityOrder[bComplexity];
-        }
-
-        // Routines after regular tasks
-        if (a.isRoutine && !b.isRoutine) return 1;
-        if (!a.isRoutine && b.isRoutine) return -1;
-
-        // Finally, sort by creation date
-        const aCreatedDate = getDateFromTimestamp(a.createdAt);
-        const bCreatedDate = getDateFromTimestamp(b.createdAt);
-        return (aCreatedDate?.getTime() || 0) - (bCreatedDate?.getTime() || 0);
-      });
-
+      console.log(`Total tasks processed: ${allTasks.length}`);
       setScheduledTasks(allTasks);
       setError(null);
     } catch (err) {
       console.error('Error fetching scheduled tasks:', err);
       setError(err as Error);
+      // Don't clear existing tasks on error to maintain UI state
     } finally {
       setLoading(false);
     }
@@ -448,10 +450,10 @@ export const useScheduledTasks = () => {
 
         if ('parentGoalId' in goal) {
           console.log('Updating user goal routine');
-          await updateDocument(COLLECTIONS.USER_GOALS, goal.id, { routines: updatedRoutines });
+          await updateDocument(getPrefixedCollection(COLLECTIONS.USER_GOALS), goal.id, { routines: updatedRoutines });
         } else {
           console.log('Updating activity routine');
-          await updateDocument(COLLECTIONS.ACTIVITIES, goal.id, { routines: updatedRoutines });
+          await updateDocument(getPrefixedCollection(COLLECTIONS.ACTIVITIES), goal.id, { routines: updatedRoutines });
         }
       } else {
         console.log('Completing regular task');
@@ -488,10 +490,10 @@ export const useScheduledTasks = () => {
 
         if ('parentGoalId' in goal) {
           console.log('Updating user goal task');
-          await updateDocument(COLLECTIONS.USER_GOALS, goal.id, { tasks: updatedTasks });
+          await updateDocument(getPrefixedCollection(COLLECTIONS.USER_GOALS), goal.id, { tasks: updatedTasks });
         } else {
           console.log('Updating activity routine');
-          await updateDocument(COLLECTIONS.ACTIVITIES, goal.id, { tasks: updatedTasks });
+          await updateDocument(getPrefixedCollection(COLLECTIONS.ACTIVITIES), goal.id, { tasks: updatedTasks });
         }
       }
 
