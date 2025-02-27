@@ -120,7 +120,7 @@ export interface Milestone {
   successCriteria: string;
   status: TaskStatus;
   tasks: string[]; // Array of task IDs
-  routines?: string[]; // Array of routine IDs
+  routines: string[]; // Array of routine IDs
   review?: MilestoneReview; // Optional review cycle
 }
 

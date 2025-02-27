@@ -1945,18 +1945,7 @@ const GoalsPage: React.FC = () => {
           </Box>
         </DialogTitle>
         <DialogContent>
-          {/* Blue rectangle for identification */}
-          <Box 
-            sx={{ 
-              width: '100%', 
-              height: '150px', 
-              backgroundColor: 'primary.main',
-              borderRadius: 1,
-              mb: 3,
-              mt: 1
-            }} 
-          />
-          <Stack spacing={2} sx={{ mt: 2 }}>
+          <Stack spacing={3} sx={{ mt: 2 }}>
             <TextField
               label="Name"
               value={editingMilestone.milestone.name}
@@ -2025,6 +2014,182 @@ const GoalsPage: React.FC = () => {
                 ))}
               </Select>
             </FormControl>
+
+            {/* Tasks Section */}
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Tasks
+              </Typography>
+              <Stack spacing={2}>
+                {editingMilestone.milestone.tasks.map((taskId) => {
+                  const task = smartGoal.tasks.find(t => t.id === taskId);
+                  if (!task) return null;
+
+                  return (
+                    <Box key={taskId} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                        <Typography variant="body2">Task</Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setEditingMilestone(prev => {
+                              if (!prev) return null;
+                              return {
+                                ...prev,
+                                milestone: {
+                                  ...prev.milestone,
+                                  tasks: prev.milestone.tasks.filter(id => id !== taskId)
+                                }
+                              };
+                            });
+                          }}
+                          color="error"
+                        >
+                          <CloseIcon fontSize="small" />
+                        </IconButton>
+                      </Stack>
+                      <Stack spacing={2}>
+                        <TextField
+                          label="Title"
+                          value={task.title}
+                          onChange={(e) => {
+                            const newTitle = e.target.value;
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              tasks: prev.tasks.map(t => 
+                                t.id === taskId ? { ...t, title: newTitle } : t
+                              )
+                            }));
+                          }}
+                          fullWidth
+                          size="small"
+                        />
+                        <LocalizationProvider dateAdapter={AdapterDateFns}>
+                          <DatePicker
+                            label="Due Date"
+                            value={task.dueDate?.toDate() || null}
+                            onChange={(date) => {
+                              setSmartGoal(prev => ({
+                                ...prev,
+                                tasks: prev.tasks.map(t => 
+                                  t.id === taskId ? { ...t, dueDate: date ? Timestamp.fromDate(date) : undefined } : t
+                                )
+                              }));
+                            }}
+                            slotProps={{
+                              textField: {
+                                fullWidth: true,
+                                size: "small"
+                              }
+                            }}
+                          />
+                        </LocalizationProvider>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => {
+                    const milestoneIndex = editingMilestone.index;
+                    setSmartGoal(prev => addTaskToMilestone(prev, milestoneIndex));
+                  }}
+                >
+                  Add Task
+                </Button>
+              </Stack>
+            </Box>
+
+            {/* Routines Section */}
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Routines
+              </Typography>
+              <Stack spacing={2}>
+                {editingMilestone.milestone.routines.map((routineId) => {
+                  const routine = smartGoal.routines.find(r => r.id === routineId);
+                  if (!routine) return null;
+
+                  return (
+                    <Box key={routineId} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
+                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
+                        <Typography variant="body2">Routine</Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setEditingMilestone(prev => {
+                              if (!prev) return null;
+                              return {
+                                ...prev,
+                                milestone: {
+                                  ...prev.milestone,
+                                  routines: prev.milestone.routines.filter(id => id !== routineId)
+                                }
+                              };
+                            });
+                          }}
+                          color="error"
+                        >
+                          <CloseIcon fontSize="small" />
+                        </IconButton>
+                      </Stack>
+                      <Stack spacing={2}>
+                        <TextField
+                          label="Title"
+                          value={routine.title}
+                          onChange={(e) => {
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              routines: prev.routines.map(r => 
+                                r.id === routineId ? { ...r, title: e.target.value } : r
+                              )
+                            }));
+                          }}
+                          fullWidth
+                          size="small"
+                        />
+                        <TextField
+                          label="Description"
+                          value={routine.description || ''}
+                          onChange={(e) => {
+                            setSmartGoal(prev => ({
+                              ...prev,
+                              routines: prev.routines.map(r => 
+                                r.id === routineId ? { ...r, description: e.target.value } : r
+                              )
+                            }));
+                          }}
+                          fullWidth
+                          size="small"
+                          multiline
+                          rows={2}
+                        />
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => setOpenRoutineModal(`${editingMilestone.milestone.id}-${routineId}`)}
+                        >
+                          Edit Schedule & Details
+                        </Button>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<AddIcon />}
+                  onClick={() => {
+                    const milestoneIndex = editingMilestone.index;
+                    setSmartGoal(prev => addRoutineToMilestone(prev, milestoneIndex));
+                  }}
+                >
+                  Add Routine
+                </Button>
+              </Stack>
+            </Box>
           </Stack>
         </DialogContent>
         <DialogActions>
