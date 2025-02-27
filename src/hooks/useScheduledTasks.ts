@@ -144,67 +144,94 @@ export const useScheduledTasks = () => {
         });
       };
 
-      // Get the next due date based on pattern
-      const getNextDueDate = (): Date | null => {
-        if (!routine.schedule) return null;
-
-        const lastCompleted = (routine.completionDates || [])[routine.completionDates?.length - 1];
-        const lastCompletedDate = lastCompleted ? getDateFromTimestamp(lastCompleted) : null;
-
+      // Get all scheduled days for this week based on pattern
+      const getScheduledDaysForWeek = (): Date[] => {
+        if (!routine.schedule) return [];
+        const scheduledDates: Date[] = [];
+        
         switch (routine.frequency) {
           case 'daily':
-            return today;
+            // Add each day of the current week
+            for (let i = 0; i < 7; i++) {
+              const date = new Date(weekStart);
+              date.setDate(weekStart.getDate() + i);
+              
+              // Skip if the date is before today or is a skipped date
+              if (date < today || isDateSkipped(date)) continue;
+              
+              // Skip if the date is after the end date
+              if (routine.endDate) {
+                const endDate = getDateFromTimestamp(routine.endDate);
+                if (endDate && date > endDate) continue;
+              }
+              
+              scheduledDates.push(date);
+            }
+            break;
+            
           case 'weekly':
             if (routine.schedule.daysOfWeek && routine.schedule.daysOfWeek.length > 0) {
-              // Find the next scheduled day that hasn't been completed
-              const nextDay = routine.schedule.daysOfWeek.find(ds => {
+              // For each day of the week in the schedule
+              routine.schedule.daysOfWeek.forEach(ds => {
                 const dayNum = DAY_TO_NUMBER[ds.day];
-                if (dayNum < dayOfWeek) return false;
-                if (dayNum === dayOfWeek) {
-                  // If it's today, check if it's already been completed
-                  return !lastCompletedDate || 
-                    lastCompletedDate.getDate() !== today.getDate() ||
-                    lastCompletedDate.getMonth() !== today.getMonth() ||
-                    lastCompletedDate.getFullYear() !== today.getFullYear();
+                const date = new Date(weekStart);
+                date.setDate(weekStart.getDate() + dayNum);
+                
+                // Skip if the date is before today or is a skipped date
+                if (date < today || isDateSkipped(date)) return;
+                
+                // Skip if the date is after the end date
+                if (routine.endDate) {
+                  const endDate = getDateFromTimestamp(routine.endDate);
+                  if (endDate && date > endDate) return;
                 }
-                return true;
+                
+                // Check if this occurrence has already been completed
+                const isCompleted = (routine.completionDates || []).some(completionDate => {
+                  const completed = getDateFromTimestamp(completionDate);
+                  return completed && 
+                    completed.getDate() === date.getDate() &&
+                    completed.getMonth() === date.getMonth() &&
+                    completed.getFullYear() === date.getFullYear();
+                });
+                
+                if (!isCompleted) {
+                  scheduledDates.push(date);
+                }
               });
-              if (nextDay) {
-                const nextDate = new Date(today);
-                nextDate.setDate(today.getDate() + (DAY_TO_NUMBER[nextDay.day] - dayOfWeek));
-                return nextDate;
-              }
             }
-            return null;
+            break;
+            
           case 'monthly':
             if (routine.schedule.dayOfMonth) {
-              const nextDate = new Date(today);
-              if (dayOfMonth <= routine.schedule.dayOfMonth) {
-                nextDate.setDate(routine.schedule.dayOfMonth);
-              } else {
-                nextDate.setMonth(nextDate.getMonth() + 1);
-                nextDate.setDate(routine.schedule.dayOfMonth);
+              // Check if the day of month occurs in the current week
+              const currentMonth = today.getMonth();
+              const currentYear = today.getFullYear();
+              
+              // Create date for this month's occurrence
+              const thisMonth = new Date(currentYear, currentMonth, routine.schedule.dayOfMonth);
+              
+              // Create date for next month's occurrence (in case this month's is past but next month's is in this week)
+              const nextMonth = new Date(currentYear, currentMonth + 1, routine.schedule.dayOfMonth);
+              
+              // Check if either date falls within this week and is not before today
+              if (thisMonth >= today && thisMonth <= weekEnd && !isDateSkipped(thisMonth)) {
+                scheduledDates.push(thisMonth);
               }
-              return nextDate;
+              
+              if (nextMonth <= weekEnd && !isDateSkipped(nextMonth)) {
+                scheduledDates.push(nextMonth);
+              }
             }
-            return null;
-          default:
-            return null;
+            break;
         }
+        
+        return scheduledDates;
       };
 
-      // Determine if we should show the task today
-      const nextDueDate = getNextDueDate();
-      if (!nextDueDate || isDateSkipped(nextDueDate)) return [];
-
-      // Only add to scheduledDays if it's due today
-      if (
-        nextDueDate.getDate() === today.getDate() &&
-        nextDueDate.getMonth() === today.getMonth() &&
-        nextDueDate.getFullYear() === today.getFullYear()
-      ) {
-        scheduledDays.push(nextDueDate);
-      }
+      // Get all scheduled days for this week
+      scheduledDays = getScheduledDaysForWeek();
+      if (scheduledDays.length === 0) return [];
 
       // Generate tasks for each scheduled day
       return scheduledDays.map(date => ({
@@ -224,7 +251,8 @@ export const useScheduledTasks = () => {
           milestoneName
         },
         isRoutine: true,
-        routineCompletionDate: todayTimestamp,
+        routineCompletionDate: FirebaseTimestamp.fromDate(date), // Use the actual scheduled date
+        dueDate: FirebaseTimestamp.fromDate(date), // Add dueDate to make it show up in the correct section
         recurrence: {
           pattern: routine.frequency,
           interval: routine.schedule.targetCount,
@@ -232,7 +260,7 @@ export const useScheduledTasks = () => {
           dayOfMonth: routine.schedule.dayOfMonth,
           skipDates: 'skipDates' in routine ? routine.skipDates : undefined,
           lastCompleted: (routine.completionDates || [])[routine.completionDates?.length - 1],
-          nextDue: nextDueDate ? FirebaseTimestamp.fromDate(nextDueDate) : undefined
+          nextDue: FirebaseTimestamp.fromDate(date)
         },
         progress: {
           percentComplete: 0,

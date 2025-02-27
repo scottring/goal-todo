@@ -34,7 +34,8 @@ import {
   X,
   Target,
   MessageSquare,
-  Settings
+  Settings,
+  Repeat
 } from 'lucide-react';
 import { useScheduledTasks } from '../hooks/useScheduledTasks';
 import { useGoalsContext } from '../contexts/GoalsContext';
@@ -91,12 +92,15 @@ export const TaskDetailsPage: React.FC = () => {
     error: null
   });
   const [debouncedContent, setDebouncedContent] = useState('');
+  const [isRoutineTask, setIsRoutineTask] = useState(false);
 
   useEffect(() => {
     if (taskId && scheduledTasks.length > 0) {
       const foundTask = scheduledTasks.find(t => t.id === taskId);
       if (foundTask) {
         setTask(foundTask);
+        setIsRoutineTask(foundTask.isRoutine || foundTask.source.type === 'routine');
+        
         // Initialize edit form with current task data
         setEditForm({
           title: foundTask.title,
@@ -105,6 +109,7 @@ export const TaskDetailsPage: React.FC = () => {
           priority: foundTask.priority,
           status: foundTask.status
         });
+        
         // Initialize notes from task data
         if (foundTask.notes) {
           setNotes({
@@ -125,7 +130,7 @@ export const TaskDetailsPage: React.FC = () => {
 
   // Debounced save function
   useEffect(() => {
-    if (!debouncedContent || !task) return;
+    if (!debouncedContent || !task || isRoutineTask) return;
 
     const timer = setTimeout(async () => {
       try {
@@ -176,9 +181,9 @@ export const TaskDetailsPage: React.FC = () => {
     }, 1000); // 1 second debounce
 
     return () => clearTimeout(timer);
-  }, [debouncedContent]);
+  }, [debouncedContent, isRoutineTask]);
 
-  // Handle note changes
+  // Handle note change
   const handleNoteChange = (content: string) => {
     setNotes(prev => ({ ...prev, content }));
     setDebouncedContent(content);
@@ -202,6 +207,35 @@ export const TaskDetailsPage: React.FC = () => {
     });
   };
 
+  const formatRoutineSchedule = (task: ScheduledTask) => {
+    if (!task.recurrence) return '';
+    
+    const days = task.recurrence.daysOfWeek?.map(ds => ds.day.slice(0, 3)).join(' & ');
+    const time = task.recurrence.daysOfWeek?.[0]?.time;
+    
+    let scheduleText = '';
+    switch (task.recurrence.pattern) {
+      case 'daily':
+        scheduleText = 'Daily';
+        break;
+      case 'weekly':
+        scheduleText = days ? `${days}` : 'Weekly';
+        break;
+      case 'monthly':
+        scheduleText = task.recurrence.dayOfMonth ? 
+          `Monthly on day ${task.recurrence.dayOfMonth}` : 'Monthly';
+        break;
+      default:
+        scheduleText = task.recurrence.pattern;
+    }
+    
+    if (time) {
+      scheduleText += ` at ${String(time.hour).padStart(2, '0')}:${String(time.minute).padStart(2, '0')}`;
+    }
+    
+    return scheduleText;
+  };
+
   const handleComplete = async () => {
     if (!task) return;
     try {
@@ -213,7 +247,7 @@ export const TaskDetailsPage: React.FC = () => {
   };
 
   const handleSaveTask = async () => {
-    if (!task) return;
+    if (!task || isRoutineTask) return;
 
     try {
       const updatedTask = {
@@ -299,8 +333,9 @@ export const TaskDetailsPage: React.FC = () => {
                 {task.title}
               </Typography>
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                {task.source.type === 'routine' && (
+                {isRoutineTask && (
                   <Chip
+                    icon={<Repeat size={16} />}
                     label="Routine"
                     color="primary"
                     size="small"
@@ -317,13 +352,15 @@ export const TaskDetailsPage: React.FC = () => {
               </Box>
             </Box>
             <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                variant="outlined"
-                startIcon={<Settings />}
-                onClick={() => setIsEditingTask(true)}
-              >
-                Edit Task
-              </Button>
+              {!isRoutineTask && (
+                <Button
+                  variant="outlined"
+                  startIcon={<Settings />}
+                  onClick={() => setIsEditingTask(true)}
+                >
+                  Edit Task
+                </Button>
+              )}
               <Button
                 variant="contained"
                 color="success"
@@ -339,12 +376,14 @@ export const TaskDetailsPage: React.FC = () => {
           {/* Task Details */}
           <Grid container spacing={3} sx={{ mb: 4 }}>
             <Grid item xs={12} md={6}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                <Target />
-                <Typography variant="body1">
-                  Goal: {task.source.goalName}
-                </Typography>
-              </Box>
+              {task.source.goalName && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+                  <Target />
+                  <Typography variant="body1">
+                    Goal: {task.source.goalName}
+                  </Typography>
+                </Box>
+              )}
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
                 <Calendar />
                 <Typography variant="body1">
@@ -369,54 +408,76 @@ export const TaskDetailsPage: React.FC = () => {
                   </Typography>
                 </Box>
               )}
+              
+              {isRoutineTask && task.recurrence && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle1" gutterBottom>
+                    Routine Schedule
+                  </Typography>
+                  <Typography variant="body1">
+                    {formatRoutineSchedule(task)}
+                  </Typography>
+                </Box>
+              )}
             </Grid>
           </Grid>
 
           <Divider sx={{ my: 4 }} />
 
-          {/* Notes Section */}
-          <Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <MessageSquare size={20} />
-                Notes
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                {saveState.saving && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <CircularProgress size={16} />
-                    <Typography variant="caption" color="text.secondary">
-                      Saving...
+          {/* Notes Section - Only show for non-routine tasks */}
+          {!isRoutineTask && (
+            <Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <MessageSquare size={20} />
+                  Notes
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {saveState.saving && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={16} />
+                      <Typography variant="caption" color="text.secondary">
+                        Saving...
+                      </Typography>
+                    </Box>
+                  )}
+                  {saveState.error && (
+                    <Typography variant="caption" color="error">
+                      {saveState.error}
                     </Typography>
-                  </Box>
-                )}
-                {saveState.error && (
-                  <Typography variant="caption" color="error">
-                    {saveState.error}
-                  </Typography>
-                )}
-                {saveState.lastSaved && !saveState.saving && !saveState.error && (
-                  <Typography variant="caption" color="text.secondary">
-                    Last saved {saveState.lastSaved.toLocaleTimeString()}
-                  </Typography>
-                )}
+                  )}
+                  {saveState.lastSaved && !saveState.saving && !saveState.error && (
+                    <Typography variant="caption" color="text.secondary">
+                      Last saved {saveState.lastSaved.toLocaleTimeString()}
+                    </Typography>
+                  )}
+                </Box>
               </Box>
-            </Box>
 
-            <TextField
-              multiline
-              rows={4}
-              fullWidth
-              value={notes.content}
-              onChange={(e) => handleNoteChange(e.target.value)}
-              placeholder="Add your notes here..."
-            />
-          </Box>
+              <TextField
+                multiline
+                rows={4}
+                fullWidth
+                value={notes.content}
+                onChange={(e) => handleNoteChange(e.target.value)}
+                placeholder="Add your notes here..."
+              />
+            </Box>
+          )}
+          
+          {/* For routine tasks, show a message about editing the routine */}
+          {isRoutineTask && (
+            <Box sx={{ mt: 2, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+              <Typography variant="body2">
+                This is a routine task. To modify the routine schedule or details, please edit the routine in the goal settings.
+              </Typography>
+            </Box>
+          )}
         </Paper>
       </Box>
 
-      {/* Edit Task Dialog */}
-      <Dialog open={isEditingTask} onClose={() => setIsEditingTask(false)} maxWidth="sm" fullWidth>
+      {/* Edit Task Dialog - Only for non-routine tasks */}
+      <Dialog open={isEditingTask && !isRoutineTask} onClose={() => setIsEditingTask(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Edit Task</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>

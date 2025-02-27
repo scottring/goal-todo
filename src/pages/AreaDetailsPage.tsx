@@ -59,6 +59,14 @@ const AreaDetailsPage: React.FC = () => {
     }
   };
 
+  const handleCardClick = (goalId: string, event: React.MouseEvent) => {
+    // Prevent navigation if clicking on buttons
+    if ((event.target as HTMLElement).closest('button')) {
+      return;
+    }
+    navigate(`/goals/${goalId}`);
+  };
+
   if (areasLoading || goalsLoading) {
     return (
       <Box display="flex" alignItems="center" justifyContent="center" height="100vh">
@@ -110,7 +118,21 @@ const AreaDetailsPage: React.FC = () => {
             <Grid container spacing={3}>
               {areaGoals.map((goal: any) => (
                 <Grid item xs={12} md={6} key={goal.id}>
-                  <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderLeft: `4px solid ${area?.color || '#000000'}` }}>
+                  <Card 
+                    sx={{ 
+                      height: '100%', 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      borderLeft: `4px solid ${area?.color || '#000000'}`,
+                      cursor: 'pointer',
+                      transition: 'transform 0.2s, box-shadow 0.2s',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: (theme) => theme.shadows[4]
+                      }
+                    }}
+                    onClick={(e) => handleCardClick(goal.id, e)}
+                  >
                     <CardContent>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
                         <Box>
@@ -120,13 +142,13 @@ const AreaDetailsPage: React.FC = () => {
                         </Box>
                         <Box sx={{ display: 'flex', gap: 1 }}>
                           <IconButton
-                            onClick={() => navigate('/goals', { state: { editingGoal: goal } })}
+                            onClick={(e) => { e.stopPropagation(); handleCardClick(goal.id, e); }}
                             aria-label="Edit goal"
                           >
                             <Edit fontSize="small" />
                           </IconButton>
                           <IconButton
-                            onClick={() => handleDelete(goal.id)}
+                            onClick={(e) => { e.stopPropagation(); handleDelete(goal.id); }}
                             aria-label="Delete goal"
                             color="error"
                           >

@@ -25,6 +25,42 @@ export class UserService {
     }
   }
 
+  async findUsersByIds(userIds: string[]): Promise<UserProfile[]> {
+    try {
+      if (!userIds.length) return [];
+      
+      // Firebase doesn't support array contains with more than 10 items
+      // So we need to batch our requests if we have more than 10 IDs
+      const batchSize = 10;
+      const batches = [];
+      
+      for (let i = 0; i < userIds.length; i += batchSize) {
+        const batch = userIds.slice(i, i + batchSize);
+        batches.push(batch);
+      }
+      
+      const results: UserProfile[] = [];
+      
+      for (const batch of batches) {
+        const usersRef = collection(db, 'users');
+        const q = query(usersRef, where('__name__', 'in', batch));
+        const querySnapshot = await getDocs(q);
+        
+        const batchResults = querySnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        } as UserProfile));
+        
+        results.push(...batchResults);
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('Error finding users by IDs:', error);
+      return [];
+    }
+  }
+
   async findAllUsers(): Promise<UserProfile[]> {
     try {
       const usersRef = collection(db, 'users');

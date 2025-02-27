@@ -232,12 +232,30 @@ const TasksPage: React.FC = () => {
             sections[2].tasks.push(task);
           }
         } else if (task.isRoutine && task.routineCompletionDate) {
-          // Only show routines that are scheduled for today
+          // Show routines based on their scheduled completion date
           const routineDate = timestampToDate(task.routineCompletionDate);
           routineDate.setHours(0, 0, 0, 0);
           
-          if (routineDate.getTime() === today.getTime()) {
+          if (routineDate < today) {
+            sections[0].tasks.push({
+              ...task,
+              source: {
+                ...task.source,
+                type: 'routine',
+                routineName: task.source.routineName || task.title
+              }
+            });
+          } else if (routineDate.getTime() === today.getTime()) {
             sections[1].tasks.push({
+              ...task,
+              source: {
+                ...task.source,
+                type: 'routine',
+                routineName: task.source.routineName || task.title
+              }
+            });
+          } else if (routineDate <= threeDaysFromNow) {
+            sections[2].tasks.push({
               ...task,
               source: {
                 ...task.source,
