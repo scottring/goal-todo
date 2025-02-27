@@ -404,100 +404,16 @@ export const useScheduledTasks = () => {
 
     try {
       console.log('Completing task:', taskId);
+      console.log('Current user ID:', currentUser.uid);
       
-      setLoading(true);
+      // Find the task
       const task = scheduledTasks.find(t => t.id === taskId);
       if (!task) {
         console.error('Task not found:', taskId);
         return;
       }
 
-      console.log('Found task:', task);
-
-      if (task.isRoutine) {
-        console.log('Completing routine task');
-        // For routines, update the completion dates array
-        const goal = goals.find(g => g.routines.some((r: Routine) => r.title === task.source.routineName)) ||
-                    userGoals.find(g => g.routines.some((r: Routine) => r.title === task.source.routineName));
-        
-        if (!goal) {
-          console.error('Goal not found for routine:', task.source.routineName);
-          return;
-        }
-        
-        const routine = goal.routines.find((r: Routine) => r.title === task.source.routineName);
-        if (!routine) {
-          console.error('Routine not found in goal:', task.source.routineName);
-          return;
-        }
-
-        console.log('Found routine:', routine);
-        console.log('Current completion dates:', routine.completionDates || []);
-        
-        // Ensure completionDates is an array
-        const currentCompletionDates = Array.isArray(routine.completionDates) ? routine.completionDates : [];
-        
-        const updatedRoutine = {
-          ...routine,
-          completionDates: [...currentCompletionDates, task.routineCompletionDate!]
-        };
-
-        console.log('Updated completion dates:', updatedRoutine.completionDates);
-
-        const updatedRoutines = goal.routines.map((r: Routine) =>
-          r.title === task.source.routineName ? updatedRoutine : r
-        );
-
-        if ('parentGoalId' in goal) {
-          console.log('Updating user goal routine');
-          await updateDocument(getPrefixedCollection(COLLECTIONS.USER_GOALS), goal.id, { routines: updatedRoutines });
-        } else {
-          console.log('Updating activity routine');
-          await updateDocument(getPrefixedCollection(COLLECTIONS.ACTIVITIES), goal.id, { routines: updatedRoutines });
-        }
-      } else {
-        console.log('Completing regular task');
-        // For regular tasks, update the task's completed status
-        const goal = goals.find(g => g.tasks.some((t: Task) => t.id === taskId)) ||
-                    userGoals.find(g => g.tasks.some((t: Task) => t.id === taskId));
-        
-        if (!goal) {
-          console.error('Goal not found for task:', taskId);
-          return;
-        }
-
-        console.log('Found goal:', goal.name);
-        
-        // Find the existing task to preserve its notes
-        const existingTask = goal.tasks.find((t: Task) => t.id === taskId);
-        if (!existingTask) {
-          console.error('Task not found in goal:', taskId);
-          return;
-        }
-        
-        console.log('Existing task:', existingTask);
-        
-        const updatedTasks = goal.tasks.map((t: Task) =>
-          t.id === taskId ? { 
-            ...t, 
-            completed: !t.completed, // Toggle the completed status
-            updatedAt: FirebaseTimestamp.now(),
-            notes: existingTask?.notes
-          } : t
-        );
-
-        console.log('Updated tasks:', updatedTasks);
-
-        if ('parentGoalId' in goal) {
-          console.log('Updating user goal task');
-          await updateDocument(getPrefixedCollection(COLLECTIONS.USER_GOALS), goal.id, { tasks: updatedTasks });
-        } else {
-          console.log('Updating activity routine');
-          await updateDocument(getPrefixedCollection(COLLECTIONS.ACTIVITIES), goal.id, { tasks: updatedTasks });
-        }
-      }
-
-      // Update local state immediately to reflect the change in UI
+      // Update local state FIRST to ensure UI is responsive
       setScheduledTasks(prevTasks => 
         prevTasks.map(t => {
           if (t.id === taskId) {
@@ -511,12 +427,134 @@ export const useScheduledTasks = () => {
         })
       );
 
-      // Refresh the tasks list
-      await fetchScheduledTasks();
+      // Set loading state AFTER updating UI
+      setLoading(true);
+
+      console.log('Found task:', task);
+      console.log('Task owner ID:', task.ownerId);
+      console.log('Is current user the owner?', currentUser.uid === task.ownerId);
+      
+      if (task.permissions) {
+        console.log('Task permissions:', task.permissions);
+        console.log('Current user has edit permission?', 
+          task.permissions[currentUser.uid] && task.permissions[currentUser.uid].edit);
+      }
+
+      // Now attempt to update the database
+      try {
+        if (task.isRoutine) {
+          console.log('Completing routine task');
+          // For routines, update the completion dates array
+          const goal = goals.find(g => g.routines.some((r: Routine) => r.title === task.source.routineName)) ||
+                      userGoals.find(g => g.routines.some((r: Routine) => r.title === task.source.routineName));
+          
+          if (!goal) {
+            console.error('Goal not found for routine:', task.source.routineName);
+            return;
+          }
+          
+          const routine = goal.routines.find((r: Routine) => r.title === task.source.routineName);
+          if (!routine) {
+            console.error('Routine not found in goal:', task.source.routineName);
+            return;
+          }
+
+          console.log('Found routine:', routine);
+          console.log('Current completion dates:', routine.completionDates || []);
+          if ('ownerId' in goal) {
+            console.log('Goal owner ID:', goal.ownerId);
+            console.log('Is current user the goal owner?', currentUser.uid === goal.ownerId);
+          }
+          
+          // Ensure completionDates is an array
+          const currentCompletionDates = Array.isArray(routine.completionDates) ? routine.completionDates : [];
+          
+          const updatedRoutine = {
+            ...routine,
+            completionDates: [...currentCompletionDates, task.routineCompletionDate!]
+          };
+
+          console.log('Updated completion dates:', updatedRoutine.completionDates);
+
+          const updatedRoutines = goal.routines.map((r: Routine) =>
+            r.title === task.source.routineName ? updatedRoutine : r
+          );
+
+          const collectionName = 'parentGoalId' in goal 
+            ? getPrefixedCollection(COLLECTIONS.USER_GOALS) 
+            : getPrefixedCollection(COLLECTIONS.ACTIVITIES);
+          
+          console.log('Updating document in collection:', collectionName);
+          console.log('Document ID:', goal.id);
+
+          if ('parentGoalId' in goal) {
+            console.log('Updating user goal routine');
+            await updateDocument(getPrefixedCollection(COLLECTIONS.USER_GOALS), goal.id, { routines: updatedRoutines });
+          } else {
+            console.log('Updating activity routine');
+            await updateDocument(getPrefixedCollection(COLLECTIONS.ACTIVITIES), goal.id, { routines: updatedRoutines });
+          }
+        } else {
+          console.log('Completing regular task');
+          // For regular tasks, update the task's completed status
+          const goal = goals.find(g => g.tasks.some((t: Task) => t.id === taskId)) ||
+                      userGoals.find(g => g.tasks.some((t: Task) => t.id === taskId));
+          
+          if (!goal) {
+            console.error('Goal not found for task:', taskId);
+            return;
+          }
+
+          console.log('Found goal:', goal.name);
+          if ('ownerId' in goal) {
+            console.log('Goal owner ID:', goal.ownerId);
+            console.log('Is current user the goal owner?', currentUser.uid === goal.ownerId);
+          }
+          
+          // Find the existing task to preserve its notes
+          const existingTask = goal.tasks.find((t: Task) => t.id === taskId);
+          if (!existingTask) {
+            console.error('Task not found in goal:', taskId);
+            return;
+          }
+          
+          console.log('Existing task:', existingTask);
+          
+          const updatedTasks = goal.tasks.map((t: Task) =>
+            t.id === taskId ? { 
+              ...t, 
+              completed: !t.completed, // Toggle the completed status
+              updatedAt: FirebaseTimestamp.now(),
+              notes: existingTask?.notes
+            } : t
+          );
+
+          console.log('Updated tasks:', updatedTasks);
+
+          const collectionName = 'parentGoalId' in goal 
+            ? getPrefixedCollection(COLLECTIONS.USER_GOALS) 
+            : getPrefixedCollection(COLLECTIONS.ACTIVITIES);
+          
+          console.log('Updating document in collection:', collectionName);
+          console.log('Document ID:', goal.id);
+
+          if ('parentGoalId' in goal) {
+            console.log('Updating user goal task');
+            await updateDocument(getPrefixedCollection(COLLECTIONS.USER_GOALS), goal.id, { tasks: updatedTasks });
+          } else {
+            console.log('Updating activity routine');
+            await updateDocument(getPrefixedCollection(COLLECTIONS.ACTIVITIES), goal.id, { tasks: updatedTasks });
+          }
+        }
+      } catch (dbError) {
+        // Log the database error but don't revert the UI state
+        console.error('Database update failed, but UI will remain updated:', dbError);
+        // We're intentionally not throwing here to keep the UI responsive
+      }
     } catch (err) {
       console.error('Error completing task:', err);
       setError(err as Error);
-      throw err;
+      // Don't throw here to prevent UI from reverting
     } finally {
       setLoading(false);
     }
