@@ -437,7 +437,7 @@ const TasksPage: React.FC = () => {
           <Typography variant="body2" color="text.secondary">
             {scheduledTasks.length === 0 
               ? 'All caught up! Great job!' 
-              : `${scheduledTasks.length} tasks need your attention`}
+              : `${scheduledTasks.filter(task => !task.completed).length} tasks need your attention`}
           </Typography>
           <Stack direction="row" spacing={1} alignItems="center">
             <Typography variant="body2" color="text.secondary">

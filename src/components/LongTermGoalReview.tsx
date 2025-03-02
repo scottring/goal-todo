@@ -24,6 +24,7 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import EditIcon from '@mui/icons-material/Edit';
 import SaveIcon from '@mui/icons-material/Save';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { Trash2 } from 'lucide-react';
 import { addDays, nextSunday, previousSunday, isSunday, isAfter, isBefore, startOfDay } from 'date-fns';
 
 interface LongTermGoalReviewProps {
@@ -33,6 +34,7 @@ interface LongTermGoalReviewProps {
   lastReviewDate?: Timestamp;
   nextReviewDate?: Timestamp;
   onUpdateReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => Promise<void>;
+  onDelete?: (goalId: string) => void;
 }
 
 const getNextReviewDate = (currentDate: Date = new Date()): Date => {
@@ -67,7 +69,8 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
   description,
   lastReviewDate,
   nextReviewDate,
-  onUpdateReview
+  onUpdateReview,
+  onDelete
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [madeProgress, setMadeProgress] = useState(false);
@@ -97,12 +100,18 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
     }
   })();
   const [selectedDate, setSelectedDate] = useState<Date | null>(
-    nextReviewDate ? timestampToDate(nextReviewDate) : null
+    nextReviewDate 
+      ? ('toDate' in nextReviewDate && typeof nextReviewDate.toDate === 'function'
+        ? nextReviewDate.toDate()
+        : new Date())
+      : null
   );
 
   const formatDate = (timestamp: Timestamp | undefined) => {
     if (!timestamp) return 'Not set';
-    const date = timestampToDate(timestamp);
+    const date = timestamp && 'toDate' in timestamp && typeof timestamp.toDate === 'function' 
+      ? timestamp.toDate() 
+      : new Date();
     return date.toLocaleDateString();
   };
 
@@ -160,14 +169,27 @@ export const LongTermGoalReview: React.FC<LongTermGoalReviewProps> = ({
           </Alert>
         )}
 
-        <Box>
-          <Typography variant="h6" gutterBottom>
-            {goalName}
-          </Typography>
-          {description && (
-            <Typography variant="body2" color="text.secondary">
-              {description}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <Box>
+            <Typography variant="h6" gutterBottom>
+              {goalName}
             </Typography>
+            {description && (
+              <Typography variant="body2" color="text.secondary">
+                {description}
+              </Typography>
+            )}
+          </Box>
+          
+          {onDelete && (
+            <IconButton 
+              onClick={() => onDelete(goalId)} 
+              color="error" 
+              aria-label="delete goal"
+              sx={{ mt: -1 }}
+            >
+              <Trash2 size={20} />
+            </IconButton>
           )}
         </Box>
 

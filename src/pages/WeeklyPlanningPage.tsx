@@ -194,6 +194,26 @@ export const WeeklyPlanningPage: React.FC = () => {
     setWeekDays(days);
   }, []);
 
+  // Initialize weekDays when the session changes
+  useEffect(() => {
+    if (currentSession) {
+      // Create an array of dates for the week
+      const startDate = currentSession.weekStartDate 
+        ? ('toDate' in currentSession.weekStartDate 
+            ? currentSession.weekStartDate.toDate() 
+            : timestampToDate(currentSession.weekStartDate))
+        : new Date();
+        
+      const days: Date[] = [];
+      for (let i = 0; i < 7; i++) {
+        const day = new Date(startDate);
+        day.setDate(startDate.getDate() + i);
+        days.push(day);
+      }
+      setWeekDays(days);
+    }
+  }, [currentSession]);
+
   if (isLoading) {
     return (
       <Container>
@@ -356,6 +376,9 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const isGoalDueForReview = (goal: SourceActivity): boolean => {
     if (!currentSession) return false;
 
+    // Check if timeTracking exists
+    if (!goal.timeTracking) return false;
+
     // Only consider goals with recurring review type
     if (goal.timeTracking.type !== 'recurring_review') return false;
 
@@ -378,8 +401,8 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
   const goalsForReview = goals.filter(isGoalDueForReview);
 
-  const handleTaskAction = async (taskId: string, action: string) => {
-    const task = currentSession?.reviewPhase?.taskReviews?.find(t => t.taskId === taskId);
+  const handleTaskAction = async (taskId: string, action: string): Promise<void> => {
+    const task = currentSession?.reviewPhase?.taskReviews?.find((t: { taskId: string }) => t.taskId === taskId);
     if (!task) {
       console.error('Task not found:', taskId);
       return;
@@ -390,9 +413,8 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
       title: task.title || 'Untitled Task',
       status: action === 'mark_completed' ? 'completed' : action === 'mark_missed' ? 'missed' : 'needs_review',
       originalDueDate: task.originalDueDate || now(),
-      action: action as any,
-      priority: task.priority || 'medium',
-      completedDate: action === 'mark_completed' ? now() : undefined
+      action: action as 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close',
+      priority: task.priority || 'medium'
     });
   };
 
@@ -644,10 +666,28 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const [scheduledTasks, setScheduledTasks] = useState<Record<string, string>>({});
   const [localUnscheduledItems, setLocalUnscheduledItems] = useState<UnscheduledItem[]>([]);
   const [hasScheduledNewItem, setHasScheduledNewItem] = useState(false);
-
+  
   const [planningStartDate, setPlanningStartDate] = useState<Date>(new Date());
   const [planningEndDate, setPlanningEndDate] = useState<Date>(nextSunday(new Date()));
   const [dateError, setDateError] = useState<string | null>(null);
+  const [weekDays, setWeekDays] = useState<Date[]>([]);
+
+  // Initialize week days based on current session
+  useEffect(() => {
+    if (currentSession) {
+      const weekStart = timestampToDate(currentSession.weekStartDate);
+      const weekEnd = timestampToDate(currentSession.weekEndDate);
+      const days: Date[] = [];
+      let currentDay = new Date(weekStart);
+      
+      while (currentDay <= weekEnd) {
+        days.push(new Date(currentDay));
+        currentDay.setDate(currentDay.getDate() + 1);
+      }
+      
+      setWeekDays(days);
+    }
+  }, [currentSession]);
 
   // Initialize localUnscheduledItems only once when component mounts or when explicitly fetched
   useEffect(() => {
@@ -923,7 +963,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
         <Box sx={{ flex: 1, overflow: 'auto' }}>
           <Grid container spacing={2}>
-            {weekDays.map((day, index) => {
+            {weekDays.map((day: Date, index: number) => {
               return (
                 <Grid item xs key={`day-grid-${index}`}>
                   <DayCard 
@@ -932,12 +972,30 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
                     onSelect={() => handleDaySelect(day)}
                   >
                     {currentSession?.planningPhase?.nextWeekTasks
-                      ?.filter(task => {
+                      ?.filter((task: { dueDate?: any }) => {
                         if (!task.dueDate) return false;
-                        const dueDate = 'toDate' in task.dueDate ? fromFirebaseTimestamp(task.dueDate as any) : task.dueDate;
-                        return isSameDay(timestampToDate(dueDate), day);
+                        
+                        // Safely convert the task's due date to a JavaScript Date
+                        let taskDate: Date;
+                        try {
+                          if ('toDate' in task.dueDate) {
+                            // It's a Firebase Timestamp
+                            taskDate = task.dueDate.toDate();
+                          } else if (task.dueDate.seconds !== undefined) {
+                            // It's our custom Timestamp
+                            taskDate = timestampToDate(task.dueDate);
+                          } else {
+                            // It might be a Date already
+                            taskDate = new Date(task.dueDate);
+                          }
+                          
+                          return isSameDay(taskDate, day);
+                        } catch (error) {
+                          console.error('Error converting task date:', error, task.dueDate);
+                          return false;
+                        }
                       })
-                      ?.map((task) => (
+                      .map((task: { taskId: string; priority: string }) => (
                         <Box
                           key={`scheduled-task-${task.taskId}`}
                           sx={{

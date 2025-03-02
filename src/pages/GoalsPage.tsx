@@ -40,6 +40,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
 import ShareIcon from '@mui/icons-material/Share';
 import AddIcon from '@mui/icons-material/Add';
+import ScheduleIcon from '@mui/icons-material/Schedule';
 import { Close as CloseIcon } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -48,32 +49,36 @@ import { DAYS_OF_WEEK } from '../constants';
 import type { 
   SourceActivity, 
   RoutineWithoutSystemFields, 
-  BaseDocument,
-  MeasurableMetric,
-  AchievabilityCheck,
-  TaskStatus,
-  TaskPriority,
-  TimeTrackingType,
-  ReviewCycle,
-  RoutineSchedule,
-  Routine,
-  TaskReviewItem as TaskReviewItemType,
-  ReviewFrequency,
-  DayOfWeek,
+  DayOfWeek, 
   TimeOfDay,
-  Task,
-  Milestone
+  TaskWithoutSystemFields,
+  MilestoneStatus,
+  TaskStatus,
+  TaskPriority
 } from '../types';
-import { toast } from 'react-hot-toast';
-import AreaSharingModal from '../components/AreaSharingModal';
 import { v4 as uuidv4 } from 'uuid';
-import { useWeeklyPlanning } from '../contexts/WeeklyPlanningContext';
-import { TaskReviewList } from '../components/TaskReviewList';
-import { LongTermGoalReview } from '../components/LongTermGoalReview';
-import { SharedGoalReview } from '../components/SharedGoalReview';
-import { useSharedGoalsContext } from '../contexts/SharedGoalsContext';
+import { toast } from 'react-toastify';
+import { TabPanel } from '../components/TabPanel';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
-import { X } from 'lucide-react';
+import { useWeeklyPlanningContext } from '../contexts/WeeklyPlanningContext';
+import { TaskReviewList } from '../components/TaskReviewList';
+import { SharedGoalReview } from '../components/SharedGoalReview';
+import { LongTermGoalReview } from '../components/LongTermGoalReview';
+import { ShareModal } from '../components/ShareModal';
+import { X, Trash2, Edit, Share2, Plus, Target, Clock, CheckCircle, AlertCircle, Calendar, BarChart, Circle } from 'lucide-react';
+
+// Add missing constant
+const PRIORITY_OPTIONS: { label: string; value: TaskPriority; icon: React.ReactNode }[] = [
+  { label: 'High', value: 'high', icon: <AlertCircle size={16} color="#f44336" /> },
+  { label: 'Medium', value: 'medium', icon: <Clock size={16} color="#ff9800" /> },
+  { label: 'Low', value: 'low', icon: <CheckCircle size={16} color="#4caf50" /> }
+];
+
+const STATUS_OPTIONS: { label: string; value: TaskStatus; icon: React.ReactNode }[] = [
+  { label: 'Not Started', value: 'not_started', icon: <Circle size={16} /> },
+  { label: 'In Progress', value: 'in_progress', icon: <BarChart size={16} color="#2196f3" /> },
+  { label: 'Completed', value: 'completed', icon: <CheckCircle size={16} color="#4caf50" /> }
+];
 
 const calculateNextReviewDate = (cycle: ReviewCycle): Timestamp => {
   const now = new Date();
@@ -215,12 +220,6 @@ const ACHIEVABILITY_OPTIONS: { label: string; value: AchievabilityCheck }[] = [
   { label: 'Yes, I can achieve this', value: 'yes' },
   { label: 'No, this seems too difficult', value: 'no' },
   { label: 'Need more resources', value: 'need_resources' }
-];
-
-const STATUS_OPTIONS: { label: string; value: TaskStatus }[] = [
-  { label: 'Not Started', value: 'not_started' },
-  { label: 'In Progress', value: 'in_progress' },
-  { label: 'Completed', value: 'completed' }
 ];
 
 const REVIEW_CYCLE_OPTIONS: { label: string; value: ReviewCycle }[] = [
@@ -456,7 +455,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   };
 
   const handleTaskAction = async (taskId: string, action: TaskAction) => {
-    const task = currentSession?.reviewPhase?.taskReviews?.find((t: TaskReviewItemType) => t.taskId === taskId);
+    const task = currentSession?.reviewPhase?.taskReviews?.find((t: any) => t.taskId === taskId);
     if (!task) {
       console.error('Task not found:', taskId);
       return;
@@ -549,7 +548,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
       {activeTab === 0 && (
         <TaskReviewList
-          tasks={currentSession?.reviewPhase.taskReviews || []}
+          tasks={currentSession?.reviewPhase.taskReviews || [] as any}
           onTaskAction={handleTaskAction}
         />
       )}
@@ -565,6 +564,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
               lastReviewDate={goal.timeTracking.reviewStatus?.lastReviewDate}
               nextReviewDate={goal.timeTracking.nextReviewDate}
               onUpdateReview={handleGoalReview}
+              onDelete={handleDelete}
             />
           ))}
           {goals.length === 0 && (
@@ -626,6 +626,8 @@ const GoalsPage: React.FC = () => {
     successCriteria: '',
     status: 'not_started'
   });
+  // State for task/habit tabs in the Supporting Habits step
+  const [taskHabitTab, setTaskHabitTab] = useState(0);
 
   // Handle navigation state
   useEffect(() => {
@@ -947,6 +949,8 @@ const GoalsPage: React.FC = () => {
       <FormControl fullWidth required>
         <InputLabel>Measurement Type</InputLabel>
         <Select
+          select
+          label="How will you measure success?"
           value={smartGoal.measurableMetric}
           onChange={(e) => {
             const value = e.target.value as MeasurableMetric;
@@ -956,7 +960,9 @@ const GoalsPage: React.FC = () => {
               customMetric: value === 'custom' ? prev.customMetric : undefined
             }));
           }}
-          label="Measurement Type"
+          fullWidth
+          required
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
         >
           {MEASURABLE_METRIC_OPTIONS.map(option => (
             <MenuItem key={option.value} value={option.value}>
@@ -1024,81 +1030,111 @@ const GoalsPage: React.FC = () => {
   );
 
   const renderTimeboundStep = (): JSX.Element => (
-    <Stack spacing={3}>
-      <Box>
-        <Typography variant="h6" gutterBottom>
-          Make it Time-bound
-        </Typography>
-        <Typography variant="body2" color="text.secondary" paragraph>
-          Set a clear timeline for achieving your goal
-        </Typography>
-      </Box>
+    <Box sx={{ 
+      borderRadius: 2, 
+      p: 3, 
+      backgroundColor: 'background.paper',
+      boxShadow: 1
+    }}>
+      <Stack spacing={3}>
+        {/* Fun header with emoji */}
+        <Box sx={{ textAlign: 'center', mb: 2 }}>
+          <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span role="img" aria-label="clock" style={{ fontSize: '2rem', marginRight: '0.5rem' }}>⏱️</span> 
+            Set Your Timeline
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            When will you achieve this goal? Set a clear deadline or review schedule
+          </Typography>
+        </Box>
 
-      <FormControl fullWidth>
-        <InputLabel>Tracking Type</InputLabel>
-        <Select
-          value={smartGoal.timeTracking.type}
-          onChange={(e) => setSmartGoal(prev => ({
-            ...prev,
-            timeTracking: {
-              ...prev.timeTracking,
-              type: e.target.value as TimeTrackingType
-            }
-          }))}
-          label="Tracking Type"
-        >
-          <MenuItem value="fixed_deadline">Fixed Deadline</MenuItem>
-          <MenuItem value="recurring_review">Recurring Review</MenuItem>
-        </Select>
-      </FormControl>
-
-      {smartGoal.timeTracking.type === 'fixed_deadline' ? (
-        <LocalizationProvider dateAdapter={AdapterDateFns}>
-          <DatePicker
-            label="Deadline"
-            value={smartGoal.timeTracking.deadline instanceof Timestamp ? smartGoal.timeTracking.deadline.toDate() : null}
-            onChange={(date) => setSmartGoal(prev => ({
-              ...prev,
-              timeTracking: {
-                ...prev.timeTracking,
-                deadline: date ? Timestamp.fromDate(date) : undefined
-              }
-            }))}
-            slotProps={{
-              textField: {
-                fullWidth: true,
-                helperText: 'When do you want to achieve this goal by?'
-              }
-            }}
-          />
-        </LocalizationProvider>
-      ) : (
-        <FormControl fullWidth>
-          <InputLabel>Review Cycle</InputLabel>
-          <Select
-            value={smartGoal.timeTracking.reviewCycle || ''}
-            onChange={(e) => setSmartGoal(prev => ({
-              ...prev,
-              timeTracking: {
-                ...prev.timeTracking,
-                reviewCycle: e.target.value as ReviewCycle,
-                nextReviewDate: calculateNextReviewDate(e.target.value as ReviewCycle)
-              }
-            }))}
-            label="Review Cycle"
-          >
-            {REVIEW_CYCLE_OPTIONS.map(option => (
-              <MenuItem key={option.value} value={option.value}>
-                {option.label}
+        <Paper elevation={2} sx={{ p: 3, borderRadius: '16px' }}>
+          <FormControl fullWidth>
+            <InputLabel>Tracking Type</InputLabel>
+            <Select
+              value={smartGoal.timeTracking.type}
+              onChange={(e) => setSmartGoal(prev => ({
+                ...prev,
+                timeTracking: {
+                  ...prev.timeTracking,
+                  type: e.target.value as TimeTrackingType
+                }
+              }))}
+              label="Tracking Type"
+              sx={{ mb: 2 }}
+            >
+              <MenuItem value="fixed_deadline">
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <span role="img" aria-label="target" style={{ marginRight: '8px' }}>🎯</span>
+                  Fixed Deadline
+                </Box>
               </MenuItem>
-            ))}
-          </Select>
-          <FormHelperText>
-            How often do you want to review your progress?
-          </FormHelperText>
-        </FormControl>
-      )}
-    </Stack>
+              <MenuItem value="recurring_review">
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <span role="img" aria-label="recurring" style={{ marginRight: '8px' }}>🔄</span>
+                  Recurring Review
+                </Box>
+              </MenuItem>
+            </Select>
+          </FormControl>
+
+          {smartGoal.timeTracking.type === 'fixed_deadline' ? (
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <DatePicker
+                label="Deadline"
+                value={smartGoal.timeTracking.deadline instanceof Timestamp ? smartGoal.timeTracking.deadline.toDate() : null}
+                onChange={(date) => setSmartGoal(prev => ({
+                  ...prev,
+                  timeTracking: {
+                    ...prev.timeTracking,
+                    deadline: date ? Timestamp.fromDate(date) : undefined
+                  }
+                }))}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    helperText: 'When do you want to achieve this goal by?'
+                  }
+                }}
+              />
+            </LocalizationProvider>
+          ) : (
+            <FormControl fullWidth>
+              <InputLabel>Review Cycle</InputLabel>
+              <Select
+                value={smartGoal.timeTracking.reviewCycle || ''}
+                onChange={(e) => setSmartGoal(prev => ({
+                  ...prev,
+                  timeTracking: {
+                    ...prev.timeTracking,
+                    reviewCycle: e.target.value as ReviewCycle,
+                    nextReviewDate: calculateNextReviewDate(e.target.value as ReviewCycle)
+                  }
+                }))}
+                label="Review Cycle"
+              >
+                {REVIEW_CYCLE_OPTIONS.map(option => (
+                  <MenuItem key={option.value} value={option.value}>
+                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                      <span role="img" aria-label="cycle" style={{ marginRight: '8px' }}>
+                        {option.value === 'weekly' ? '🗓️' : 
+                        option.value === 'monthly' ? '📅' : 
+                        option.value === 'quarterly' ? '🗂️' : 
+                        option.value === 'biannual' ? '📊' : '📆'}
+                      </span>
+                      {option.label}
+                    </Box>
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                How often do you want to review your progress?
+              </FormHelperText>
+            </FormControl>
+          )}
+        </Paper>
+      </Stack>
+    </Box>
   );
 
   const renderMilestonesStep = (): JSX.Element => (
@@ -1154,9 +1190,10 @@ const GoalsPage: React.FC = () => {
               label="Success Criteria"
               value={milestone.successCriteria}
               onChange={(e) => handleMilestoneChange(index, 'successCriteria', e.target.value)}
-              fullWidth
               multiline
               rows={2}
+              fullWidth
+              sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
             />
             <FormControl fullWidth>
               <InputLabel>Status</InputLabel>
@@ -1297,10 +1334,36 @@ const GoalsPage: React.FC = () => {
                   );
                 })}
                 <Button
-                  variant="outlined"
-                  size="small"
                   startIcon={<AddIcon />}
-                  onClick={() => setSmartGoal(prev => addTaskToMilestone(prev, index))}
+                  onClick={() => {
+                    const newTask = {
+                      id: uuidv4(),
+                      title: '',
+                      description: '',
+                      dueDate: undefined,
+                      priority: 'medium' as TaskPriority,
+                      status: 'not_started' as TaskStatus,
+                      completed: false
+                    };
+                    
+                    setSmartGoal(prev => {
+                      const newTasks = [...prev.tasks, newTask];
+                      const newMilestones = [...prev.milestones];
+                      newMilestones[index] = {
+                        ...newMilestones[index],
+                        tasks: [...newMilestones[index].tasks, newTask.id]
+                      };
+                      
+                      return {
+                        ...prev,
+                        tasks: newTasks,
+                        milestones: newMilestones
+                      };
+                    });
+                  }}
+                  size="small"
+                  variant="outlined"
+                  sx={{ mt: 1 }}
                 >
                   Add Task
                 </Button>
@@ -1412,12 +1475,40 @@ const GoalsPage: React.FC = () => {
                   );
                 })}
                 <Button
-                  variant="outlined"
-                  size="small"
                   startIcon={<AddIcon />}
-                  onClick={() => setSmartGoal(prev => addRoutineToMilestone(prev, index))}
+                  onClick={() => {
+                    const newRoutine = {
+                      id: uuidv4(),
+                      title: '',
+                      description: '',
+                      frequency: 'daily' as 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly',
+                      schedule: { daysOfWeek: [] },
+                      targetCount: 1,
+                      completionDates: [],
+                      permissions: {},
+                      review: createDefaultReview()
+                    };
+                    
+                    setSmartGoal(prev => {
+                      const newRoutines = [...prev.routines, newRoutine];
+                      const newMilestones = [...prev.milestones];
+                      newMilestones[index] = {
+                        ...newMilestones[index],
+                        routines: [...newMilestones[index].routines, newRoutine.id]
+                      };
+                      
+                      return {
+                        ...prev,
+                        routines: newRoutines,
+                        milestones: newMilestones
+                      };
+                    });
+                  }}
+                  size="small"
+                  variant="outlined"
+                  sx={{ mt: 1 }}
                 >
-                  Add Routine
+                  Add Habit/Routine
                 </Button>
               </Stack>
             </Box>
@@ -1741,1000 +1832,612 @@ const GoalsPage: React.FC = () => {
   );
 
   const renderReviewStep = () => (
-    <div className="space-y-6 bg-gray-50 p-6 rounded-lg">
-      <div>
-        <h3 className="font-medium text-gray-700 mb-2">Goal Name</h3>
-        <p className="text-gray-900">{smartGoal.name}</p>
-      </div>
-      <div>
-        <h3 className="font-medium text-gray-700 mb-2">Specific Action</h3>
-        <p className="text-gray-900">{smartGoal.specificAction}</p>
-      </div>
-      <div>
-        <h3 className="font-medium text-gray-700 mb-2">Measurable Metric</h3>
-        <p className="text-gray-900">
-          {MEASURABLE_METRIC_OPTIONS.find(opt => opt.value === smartGoal.measurableMetric)?.label}
-          {smartGoal.measurableMetric === 'custom' && smartGoal.customMetric && (
-            <span className="block text-sm text-gray-600 mt-1">
-              Custom metric: {smartGoal.customMetric}
-            </span>
-          )}
-        </p>
-      </div>
-      <div>
-        <h3 className="font-medium text-gray-700 mb-2">Achievability</h3>
-        <p className="text-gray-900">
-          {ACHIEVABILITY_OPTIONS.find(opt => opt.value === smartGoal.achievabilityCheck)?.label}
-        </p>
-      </div>
-      <div>
-        <h3 className="font-medium text-gray-700 mb-2">Relevance</h3>
-        <p className="text-gray-900">{smartGoal.relevance}</p>
-      </div>
-      <div>
-        <h3 className="font-medium text-gray-700 mb-2">Time-bound</h3>
-        <p className="text-gray-900">{smartGoal.timeTracking.type === 'fixed_deadline' ? smartGoal.timeTracking.deadline ? timestampToDateString(smartGoal.timeTracking.deadline) : 'No deadline' : REVIEW_CYCLE_OPTIONS.find(opt => opt.value === smartGoal.timeTracking.reviewCycle)?.label}</p>
-      </div>
-      <div>
-        <h3 className="font-medium text-gray-700 mb-2">Milestones</h3>
-        <div className="space-y-3">
-          {smartGoal.milestones.map((milestone, index) => (
-            <div key={index} className="bg-white p-3 rounded-md">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium text-gray-900">{milestone.name}</h4>
-                <span className={`text-xs px-2 py-0.5 rounded ${
-                  milestone.status === 'completed' 
-                    ? 'bg-green-100 text-green-800'
-                    : milestone.status === 'in_progress'
-                    ? 'bg-blue-100 text-blue-800'
-                    : 'bg-gray-100 text-gray-800'
-                }`}>
-                  {STATUS_OPTIONS.find(opt => opt.value === milestone.status)?.label}
-                </span>
-              </div>
-              <div className="mt-2 text-sm text-gray-600">
-                <p>Target Date: {milestone.targetDate ? timestampToDateString(milestone.targetDate) : 'No target date'}</p>
-                <p>Success Criteria: {milestone.successCriteria}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      {smartGoal.routines && smartGoal.routines.length > 0 && (
-        <div>
-          <h3 className="font-medium text-gray-700 mb-2">Habits & Routines</h3>
-          <div className="space-y-3">
-            {smartGoal.routines.map((routine, index) => (
-              <div key={index} className="bg-white p-3 rounded-md">
-                <h4 className="font-medium text-gray-900">{routine.title}</h4>
-                {routine.description && (
-                  <p className="mt-1 text-sm text-gray-600">{routine.description}</p>
-                )}
-                <div className="mt-2 text-sm text-gray-600">
-                  <p>Frequency: {routine.frequency}</p>
-                  <p>Target: {routine.targetCount} times per {routine.frequency}</p>
-                  {routine.endDate && <p>End Date: {routine.endDate ? timestampToDateString(routine.endDate) : 'No end date'}</p>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-
-  const wizardSteps = [
-    {
-      title: "What area is this goal for?",
-      subtitle: "Choose the life area this goal belongs to",
-      component: renderAreaStep
-    },
-    {
-      title: "What do you want to achieve?",
-      subtitle: "Be specific about what you want to accomplish",
-      component: renderSpecificStep
-    },
-    {
-      title: "How will you measure success?",
-      subtitle: "Define concrete numbers or milestones",
-      component: renderMeasurableStep
-    },
-    {
-      title: "Is it achievable?",
-      subtitle: "Consider your resources and constraints",
-      component: renderAchievableStep
-    },
-    {
-      title: "Why is this important?",
-      subtitle: "Connect this goal to your bigger picture",
-      component: renderRelevantStep
-    },
-    {
-      title: "When will you achieve this?",
-      subtitle: "Set a realistic deadline or review cycle",
-      component: renderTimeboundStep
-    },
-    {
-      title: "Break it down",
-      subtitle: "List the key milestones to reach your goal",
-      component: renderMilestonesStep
-    },
-    {
-      title: "Add Tasks",
-      subtitle: "Create actionable tasks to achieve your milestones",
-      component: renderTasksStep
-    },
-    {
-      title: "Add Habits & Routines",
-      subtitle: "Create recurring actions to support your goal",
-      component: renderRoutinesStep
-    },
-    {
-      title: "Review Your SMART Goal",
-      subtitle: "Make sure everything looks right",
-      component: renderReviewStep
-    }
-  ];
-
-  const renderEditForm = () => (
-    <Box sx={{ height: '80vh', overflowY: 'auto' }}>
-      <Stack spacing={4} sx={{ pb: 4 }}>
-        {wizardSteps.map((step, index) => (
-          <Paper key={index} sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>
-              {step.title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              {step.subtitle}
-            </Typography>
-            <Divider sx={{ mb: 3 }} />
-            {step.component()}
-          </Paper>
-        ))}
+    <Box sx={{ 
+      borderRadius: 2, 
+      p: 3, 
+      backgroundColor: 'background.paper',
+      boxShadow: 1
+    }}>
+      <Stack spacing={4}>
+        {/* Fun header with emoji */}
+        <Box sx={{ textAlign: 'center', mb: 2 }}>
+          <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span role="img" aria-label="check" style={{ fontSize: '2rem', marginRight: '0.5rem' }}>✅</span> 
+            Review Your Goal
+          </Typography>
+          <Typography variant="body1" color="text.secondary">
+            Double-check everything before finalizing your SMART goal
+          </Typography>
+        </Box>
+        
+        <Paper elevation={3} sx={{ p: 3, borderRadius: '16px' }}>
+          <Stack spacing={3}>
+            {/* Goal name section */}
+            <Box sx={{ 
+              p: 2, 
+              borderRadius: '12px',
+              backgroundColor: 'primary.light',
+              color: 'primary.contrastText'
+            }}>
+              <Typography variant="h5" gutterBottom align="center">
+                {smartGoal.name || 'Untitled Goal'}
+              </Typography>
+              <Typography variant="body1" align="center">
+                in {smartGoal.areaId ? 
+                  areas.find(a => a.id === smartGoal.areaId)?.name || 'Unknown Area' : 
+                  'No Area Selected'}
+              </Typography>
+            </Box>
+            
+            {/* Goal details */}
+            <Grid container spacing={3}>
+              {/* Specific */}
+              <Grid item xs={12} md={6}>
+                <Paper elevation={1} sx={{ 
+                  p: 2, 
+                  height: '100%', 
+                  borderRadius: '12px',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)'
+                  }
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <span role="img" aria-label="target" style={{ marginRight: '8px', fontSize: '1.2rem' }}>🎯</span>
+                    <Typography variant="subtitle1" fontWeight="bold">Specific Action</Typography>
+                  </Box>
+                  <Typography variant="body1">{smartGoal.specificAction}</Typography>
+                </Paper>
+              </Grid>
+              
+              {/* Measurable */}
+              <Grid item xs={12} md={6}>
+                <Paper elevation={1} sx={{ 
+                  p: 2, 
+                  height: '100%', 
+                  borderRadius: '12px',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)'
+                  }
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <span role="img" aria-label="ruler" style={{ marginRight: '8px', fontSize: '1.2rem' }}>📏</span>
+                    <Typography variant="subtitle1" fontWeight="bold">Measurable Metric</Typography>
+                  </Box>
+                  <Typography variant="body1">
+                    {MEASURABLE_METRIC_OPTIONS.find(opt => opt.value === smartGoal.measurableMetric)?.label}
+                    {smartGoal.measurableMetric === 'custom' && smartGoal.customMetric && (
+                      <Box sx={{ mt: 1, fontSize: '0.9rem', color: 'text.secondary' }}>
+                        Custom metric: {smartGoal.customMetric}
+                      </Box>
+                    )}
+                  </Typography>
+                </Paper>
+              </Grid>
+              
+              {/* Achievable */}
+              <Grid item xs={12} md={6}>
+                <Paper elevation={1} sx={{ 
+                  p: 2, 
+                  height: '100%', 
+                  borderRadius: '12px',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)'
+                  }
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <span role="img" aria-label="check" style={{ marginRight: '8px', fontSize: '1.2rem' }}>✓</span>
+                    <Typography variant="subtitle1" fontWeight="bold">Achievability</Typography>
+                  </Box>
+                  <Typography variant="body1">
+                    {ACHIEVABILITY_OPTIONS.find(opt => opt.value === smartGoal.achievabilityCheck)?.label}
+                  </Typography>
+                </Paper>
+              </Grid>
+              
+              {/* Relevant */}
+              <Grid item xs={12} md={6}>
+                <Paper elevation={1} sx={{ 
+                  p: 2, 
+                  height: '100%', 
+                  borderRadius: '12px',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)'
+                  }
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <span role="img" aria-label="compass" style={{ marginRight: '8px', fontSize: '1.2rem' }}>🧭</span>
+                    <Typography variant="subtitle1" fontWeight="bold">Relevance</Typography>
+                  </Box>
+                  <Typography variant="body1">{smartGoal.relevance}</Typography>
+                </Paper>
+              </Grid>
+              
+              {/* Time-bound */}
+              <Grid item xs={12}>
+                <Paper elevation={1} sx={{ 
+                  p: 2, 
+                  borderRadius: '12px',
+                  transition: 'transform 0.2s',
+                  '&:hover': {
+                    transform: 'translateY(-4px)'
+                  }
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <span role="img" aria-label="clock" style={{ marginRight: '8px', fontSize: '1.2rem' }}>⏱️</span>
+                    <Typography variant="subtitle1" fontWeight="bold">Time-bound</Typography>
+                  </Box>
+                  <Typography variant="body1">
+                    {smartGoal.timeTracking.type === 'fixed_deadline' 
+                      ? (smartGoal.timeTracking.deadline 
+                          ? `Deadline: ${timestampToDateString(smartGoal.timeTracking.deadline)}` 
+                          : 'No deadline set') 
+                      : `Review cycle: ${REVIEW_CYCLE_OPTIONS.find(opt => opt.value === smartGoal.timeTracking.reviewCycle)?.label || 'None'}`}
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+            
+            {/* Milestones */}
+            {smartGoal.milestones.length > 0 && (
+              <Box>
+                <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center' }}>
+                  <span role="img" aria-label="ladder" style={{ marginRight: '8px', fontSize: '1.2rem' }}>🪜</span>
+                  Milestones ({smartGoal.milestones.length})
+                </Typography>
+                <Stack spacing={2}>
+                  {smartGoal.milestones.map((milestone, index) => (
+                    <Paper 
+                      key={milestone.id} 
+                      elevation={1}
+                      sx={{ 
+                        p: 2, 
+                        borderRadius: '12px',
+                        borderLeft: '4px solid',
+                        borderColor: milestone.status === 'completed' 
+                          ? 'success.main' 
+                          : milestone.status === 'in_progress' 
+                          ? 'info.main' 
+                          : 'grey.400'
+                      }}
+                    >
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                        <Typography variant="subtitle1" fontWeight="bold">
+                          {index + 1}. {milestone.name}
+                        </Typography>
+                        <Chip 
+                          label={STATUS_OPTIONS.find(opt => opt.value === milestone.status)?.label}
+                          size="small"
+                          color={
+                            milestone.status === 'completed' 
+                              ? 'success' 
+                              : milestone.status === 'in_progress' 
+                              ? 'primary' 
+                              : 'default'
+                          }
+                        />
+                      </Box>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
+                        {milestone.targetDate && (
+                          <Chip 
+                            icon={<span role="img" aria-label="calendar" style={{ fontSize: '0.9rem' }}>📅</span>}
+                            label={timestampToDateString(milestone.targetDate)}
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
+                        {milestone.tasks.length > 0 && (
+                          <Chip 
+                            icon={<span role="img" aria-label="tasks" style={{ fontSize: '0.9rem' }}>📝</span>}
+                            label={`${milestone.tasks.length} tasks`}
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
+                        {milestone.routines.length > 0 && (
+                          <Chip 
+                            icon={<span role="img" aria-label="habits" style={{ fontSize: '0.9rem' }}>🔄</span>}
+                            label={`${milestone.routines.length} habits`}
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
+                    </Paper>
+                  ))}
+                </Stack>
+              </Box>
+            )}
+          </Stack>
+        </Paper>
       </Stack>
     </Box>
   );
 
-  // Add this new function to handle milestone editing
-  const handleMilestoneEdit = (index: number, milestone: SmartGoalForm['milestones'][0]) => {
-    setEditingMilestone({ index, milestone: { ...milestone } });
-    setIsMilestoneModalOpen(true);
-  };
+  // Define these functions before declaring wizardSteps
+  // NEW COMBINED STEP: Goal Setup (combines Area, Specific, Measurable)
+  const renderGoalSetupStep = () => (
+    <Box sx={{ 
+      borderRadius: 2, 
+      p: 3, 
+      backgroundColor: 'background.paper',
+      boxShadow: 1,
+      transition: 'all 0.3s ease'
+    }}>
+      <Stack spacing={4}>
+        {/* Fun header with emoji */}
+        <Box sx={{ textAlign: 'center', mb: 2 }}>
+          <Typography variant="h4" gutterBottom sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span role="img" aria-label="goal" style={{ fontSize: '2rem', marginRight: '0.5rem' }}>🎯</span> 
+            Define Your Goal
+          </Typography>
+        </Box>
 
-  // Add this new function to handle milestone update
-  const handleMilestoneUpdate = () => {
-    if (!editingMilestone) return;
+        {/* Area Selection with visual cards */}
+        <Box>
+          <Typography variant="h6" gutterBottom>
+            Area
+          </Typography>
+          <Grid container spacing={2}>
+            {areas.map(area => (
+              <Grid item xs={6} sm={4} md={3} key={area.id}>
+                <Card 
+                  onClick={() => setSmartGoal(prev => ({ ...prev, areaId: area.id }))}
+                  sx={{ 
+                    cursor: 'pointer', 
+                    height: '100px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexDirection: 'column',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                    bgcolor: smartGoal.areaId === area.id ? 'primary.light' : 'background.paper',
+                    border: smartGoal.areaId === area.id ? '2px solid' : '1px solid',
+                    borderColor: smartGoal.areaId === area.id ? 'primary.main' : 'divider',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: 3
+                    }
+                  }}
+                >
+                  <Typography variant="subtitle1" align="center">{area.name}</Typography>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
 
-    setSmartGoal(prev => {
-      const newMilestones = [...prev.milestones];
-      newMilestones[editingMilestone.index] = editingMilestone.milestone;
-      return { ...prev, milestones: newMilestones };
-    });
+        {/* Goal Name with emoji decoration */}
+        <TextField
+          label="Goal Name"
+          value={smartGoal.name}
+          onChange={(e) => setSmartGoal(prev => ({ ...prev, name: e.target.value }))}
+          fullWidth
+          required
+          InputProps={{
+            startAdornment: <span role="img" aria-label="star" style={{ marginRight: '8px' }}>⭐</span>
+          }}
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+        />
 
-    setEditingMilestone(null);
-    setIsMilestoneModalOpen(false);
-  };
+        {/* Specific Action with visual enhancement */}
+        <TextField
+          label="What exactly will you accomplish?"
+          value={smartGoal.specificAction}
+          onChange={(e) => setSmartGoal(prev => ({ ...prev, specificAction: e.target.value }))}
+          fullWidth
+          required
+          multiline
+          rows={3}
+          InputProps={{
+            startAdornment: <span role="img" aria-label="bullseye" style={{ marginRight: '8px', alignSelf: 'flex-start', marginTop: '8px' }}>🎯</span>
+          }}
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+        />
 
-  // Add this new component for the milestone edit dialog
-  const renderMilestoneEditDialog = () => {
-    if (!editingMilestone) return null;
+        {/* Measurement Type with visual indicators */}
+        <Box>
+          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
+            Measurements
+          </Typography>
+        </Box>
+        
+        <TextField
+          select
+          label="How will you measure success?"
+          value={smartGoal.measurableMetric}
+          onChange={(e) => {
+            const value = e.target.value as MeasurableMetric;
+            setSmartGoal(prev => ({
+              ...prev,
+              measurableMetric: value,
+              customMetric: value === 'custom' ? prev.customMetric : undefined
+            }));
+          }}
+          fullWidth
+          required
+          sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+        >
+          {MEASURABLE_METRIC_OPTIONS.map(option => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </TextField>
+
+        {smartGoal.measurableMetric === 'custom' && (
+          <TextField
+            label="Custom Metric"
+            value={smartGoal.customMetric || ''}
+            onChange={(e) => setSmartGoal(prev => ({ ...prev, customMetric: e.target.value }))}
+            fullWidth
+            required
+            helperText="Define your custom way of measuring progress"
+          />
+        )}
+      </Stack>
+    </Box>
+  );
+
+  const renderRoutineScheduleDialog = () => {
+    // Return empty fragment if not open
+    if (!openRoutineModal) return <></>;
+    
+    const routine = smartGoal.routines.find(r => r.id === openRoutineModal);
+    if (!routine) return <></>;
 
     return (
-      <Dialog
-        open={isMilestoneModalOpen}
-        onClose={() => {
-          setIsMilestoneModalOpen(false);
-          setEditingMilestone(null);
-        }}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Typography variant="h6">Edit Milestone</Typography>
-            <IconButton
-              edge="end"
-              onClick={() => {
-                setIsMilestoneModalOpen(false);
-                setEditingMilestone(null);
-              }}
-              size="small"
-            >
-              <CloseIcon />
-            </IconButton>
+      <Dialog open={!!openRoutineModal} onClose={() => setOpenRoutineModal(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ 
+          display: 'flex', 
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 1,
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          pb: 2
+        }}>
+          <Box component="span" sx={{ display: 'flex', alignItems: 'center' }}>
+            <ScheduleIcon sx={{ mr: 1 }} />
+            Configure Schedule
           </Box>
         </DialogTitle>
-        <DialogContent>
-          <Stack spacing={3} sx={{ mt: 2 }}>
-            <TextField
-              label="Name"
-              value={editingMilestone.milestone.name}
-              onChange={(e) => {
-                const newName = e.target.value;
-                const isDuplicateName = smartGoal.milestones.some((m, i) => 
-                  i !== editingMilestone.index && m.name.trim().toLowerCase() === newName.trim().toLowerCase()
-                );
-                
-                if (isDuplicateName) {
-                  toast.error('A milestone with this name already exists');
-                  return;
-                }
-                
-                setEditingMilestone(prev => prev ? {
-                  ...prev,
-                  milestone: { ...prev.milestone, name: newName }
-                } : null);
-              }}
-              fullWidth
-            />
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <DatePicker
-                label="Target Date"
-                value={editingMilestone.milestone.targetDate instanceof Timestamp ? 
-                  editingMilestone.milestone.targetDate.toDate() : null}
-                onChange={(date) => setEditingMilestone(prev => prev ? {
-                  ...prev,
-                  milestone: {
-                    ...prev.milestone,
-                    targetDate: date ? Timestamp.fromDate(date) : undefined
-                  }
-                } : null)}
-                slotProps={{
-                  textField: {
-                    fullWidth: true
-                  }
-                }}
-              />
-            </LocalizationProvider>
-            <TextField
-              label="Success Criteria"
-              value={editingMilestone.milestone.successCriteria}
-              onChange={(e) => setEditingMilestone(prev => prev ? {
-                ...prev,
-                milestone: { ...prev.milestone, successCriteria: e.target.value }
-              } : null)}
-              fullWidth
-              multiline
-              rows={2}
-            />
+        <DialogContent dividers>
+          <Stack spacing={2} sx={{ mt: 1 }}>
             <FormControl fullWidth>
-              <InputLabel>Status</InputLabel>
+              <InputLabel>Frequency</InputLabel>
               <Select
-                value={editingMilestone.milestone.status}
-                onChange={(e) => setEditingMilestone(prev => prev ? {
-                  ...prev,
-                  milestone: { ...prev.milestone, status: e.target.value as TaskStatus }
-                } : null)}
-                label="Status"
+                value={routine.frequency}
+                onChange={(e) => {
+                  const frequency = e.target.value as typeof routine.frequency;
+                  setSmartGoal(prev => {
+                    const newRoutines = prev.routines.map(r => 
+                      r.id === openRoutineModal ? {
+                        ...r,
+                        frequency,
+                        schedule: {
+                          ...r.schedule,
+                          type: frequency
+                        }
+                      } : r
+                    );
+                    return { ...prev, routines: newRoutines };
+                  });
+                }}
               >
-                {STATUS_OPTIONS.map(option => (
-                  <MenuItem key={option.value} value={option.value}>
-                    {option.label}
-                  </MenuItem>
-                ))}
+                <MenuItem value="daily">Daily</MenuItem>
+                <MenuItem value="weekly">Weekly</MenuItem>
+                <MenuItem value="monthly">Monthly</MenuItem>
+                <MenuItem value="quarterly">Quarterly</MenuItem>
+                <MenuItem value="yearly">Yearly</MenuItem>
               </Select>
             </FormControl>
-
-            {/* Tasks Section */}
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Tasks
-              </Typography>
-              <Stack spacing={2}>
-                {editingMilestone.milestone.tasks.map((taskId) => {
-                  const task = smartGoal.tasks.find(t => t.id === taskId);
-                  if (!task) return null;
-
-                  return (
-                    <Box key={taskId} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                        <Typography variant="body2">Task</Typography>
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            setEditingMilestone(prev => {
-                              if (!prev) return null;
-                              return {
-                                ...prev,
-                                milestone: {
-                                  ...prev.milestone,
-                                  tasks: prev.milestone.tasks.filter(id => id !== taskId)
-                                }
-                              };
-                            });
-                          }}
-                          color="error"
-                        >
-                          <CloseIcon fontSize="small" />
-                        </IconButton>
-                      </Stack>
-                      <Stack spacing={2}>
-                        <TextField
-                          label="Title"
-                          value={task.title}
-                          onChange={(e) => {
-                            const newTitle = e.target.value;
-                            setSmartGoal(prev => ({
-                              ...prev,
-                              tasks: prev.tasks.map(t => 
-                                t.id === taskId ? { ...t, title: newTitle } : t
-                              )
-                            }));
-                          }}
-                          fullWidth
-                          size="small"
-                        />
-                        <LocalizationProvider dateAdapter={AdapterDateFns}>
-                          <DatePicker
-                            label="Due Date"
-                            value={task.dueDate?.toDate() || null}
+            
+            <TextField
+              label="Target Count"
+              type="number"
+              value={routine.targetCount}
+              onChange={(e) => {
+                const targetCount = parseInt(e.target.value) || 1;
+                setSmartGoal(prev => {
+                  const newRoutines = prev.routines.map(r => 
+                    r.id === openRoutineModal ? {
+                      ...r,
+                      targetCount,
+                      schedule: {
+                        ...r.schedule,
+                        targetCount
+                      }
+                    } : r
+                  );
+                  return { ...prev, routines: newRoutines };
+                });
+              }}
+              fullWidth
+              inputProps={{ min: 1 }}
+            />
+            
+            {routine.frequency === 'weekly' && (
+              <Box>
+                <Typography variant="subtitle2" gutterBottom>
+                  Schedule for {routine.targetCount} days per week
+                </Typography>
+                <Stack spacing={2}>
+                  {Array.from({ length: routine.targetCount }).map((_, i) => {
+                    const currentSchedule = routine.schedule.daysOfWeek?.[i];
+                    return (
+                      <Box key={i} sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                          <FormControl fullWidth>
+                            <InputLabel>Day</InputLabel>
+                            <Select
+                              value={currentSchedule?.day || 'monday'}
+                              onChange={(e) => {
+                                const day = e.target.value as DayOfWeek;
+                                setSmartGoal(prev => {
+                                  const newRoutines = prev.routines.map(r => {
+                                    if (r.id !== openRoutineModal) return r;
+                                    
+                                    const newDaysOfWeek = [...(r.schedule.daysOfWeek || [])];
+                                    while (newDaysOfWeek.length < i + 1) {
+                                      newDaysOfWeek.push({
+                                        day: 'monday',
+                                        time: { hour: 9, minute: 0 }
+                                      });
+                                    }
+                                    
+                                    newDaysOfWeek[i] = {
+                                      ...newDaysOfWeek[i],
+                                      day
+                                    };
+                                    
+                                    return {
+                                      ...r,
+                                      schedule: {
+                                        ...r.schedule,
+                                        daysOfWeek: newDaysOfWeek
+                                      }
+                                    };
+                                  });
+                                  return { ...prev, routines: newRoutines };
+                                });
+                              }}
+                            >
+                              {DAYS_OF_WEEK.map(day => (
+                                <MenuItem key={day.value} value={day.value}>{day.label}</MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                          
+                          <TimePicker 
+                            label="Time"
+                            value={currentSchedule?.time ? 
+                              new Date(0, 0, 0, currentSchedule.time.hour, currentSchedule.time.minute) : 
+                              new Date(0, 0, 0, 9, 0)
+                            }
                             onChange={(date) => {
-                              setSmartGoal(prev => ({
-                                ...prev,
-                                tasks: prev.tasks.map(t => 
-                                  t.id === taskId ? { ...t, dueDate: date ? Timestamp.fromDate(date) : undefined } : t
-                                )
-                              }));
-                            }}
-                            slotProps={{
-                              textField: {
-                                fullWidth: true,
-                                size: "small"
-                              }
+                              if (!date) return;
+                              const time = handleTimeChange(date);
+                              setSmartGoal(prev => {
+                                const newRoutines = prev.routines.map(r => {
+                                  if (r.id !== openRoutineModal) return r;
+                                  
+                                  const newDaysOfWeek = [...(r.schedule.daysOfWeek || [])];
+                                  while (newDaysOfWeek.length < i + 1) {
+                                    newDaysOfWeek.push({
+                                      day: 'monday',
+                                      time: { hour: 9, minute: 0 }
+                                    });
+                                  }
+                                  
+                                  newDaysOfWeek[i] = {
+                                    ...newDaysOfWeek[i],
+                                    time
+                                  };
+                                  
+                                  return {
+                                    ...r,
+                                    schedule: {
+                                      ...r.schedule,
+                                      daysOfWeek: newDaysOfWeek
+                                    }
+                                  };
+                                });
+                                return { ...prev, routines: newRoutines };
+                              });
                             }}
                           />
-                        </LocalizationProvider>
-                      </Stack>
-                    </Box>
-                  );
-                })}
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<AddIcon />}
-                  onClick={() => {
-                    const milestoneIndex = editingMilestone.index;
-                    setSmartGoal(prev => addTaskToMilestone(prev, milestoneIndex));
+                        </Stack>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              </Box>
+            )}
+
+            {routine.frequency === 'monthly' && (
+              <FormControl fullWidth>
+                <InputLabel>Day of Month</InputLabel>
+                <Select
+                  value={routine.schedule.dayOfMonth || 1}
+                  onChange={(e) => {
+                    const dayOfMonth = parseInt(e.target.value as string);
+                    setSmartGoal(prev => {
+                      const newRoutines = prev.routines.map(r => 
+                        r.id === openRoutineModal ? {
+                          ...r,
+                          schedule: {
+                            ...r.schedule,
+                            dayOfMonth
+                          }
+                        } : r
+                      );
+                      return { ...prev, routines: newRoutines };
+                    });
                   }}
                 >
-                  Add Task
-                </Button>
-              </Stack>
-            </Box>
-
-            {/* Routines Section */}
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="subtitle2" gutterBottom>
-                Routines
-              </Typography>
-              <Stack spacing={2}>
-                {editingMilestone.milestone.routines.map((routineId) => {
-                  const routine = smartGoal.routines.find(r => r.id === routineId);
-                  if (!routine) return null;
-
-                  return (
-                    <Box key={routineId} sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1}>
-                        <Typography variant="body2">Routine</Typography>
-                        <IconButton
-                          size="small"
-                          onClick={() => {
-                            setEditingMilestone(prev => {
-                              if (!prev) return null;
-                              return {
-                                ...prev,
-                                milestone: {
-                                  ...prev.milestone,
-                                  routines: prev.milestone.routines.filter(id => id !== routineId)
-                                }
-                              };
-                            });
-                          }}
-                          color="error"
-                        >
-                          <CloseIcon fontSize="small" />
-                        </IconButton>
-                      </Stack>
-                      <Stack spacing={2}>
-                        <TextField
-                          label="Title"
-                          value={routine.title}
-                          onChange={(e) => {
-                            setSmartGoal(prev => ({
-                              ...prev,
-                              routines: prev.routines.map(r => 
-                                r.id === routineId ? { ...r, title: e.target.value } : r
-                              )
-                            }));
-                          }}
-                          fullWidth
-                          size="small"
-                        />
-                        <TextField
-                          label="Description"
-                          value={routine.description || ''}
-                          onChange={(e) => {
-                            setSmartGoal(prev => ({
-                              ...prev,
-                              routines: prev.routines.map(r => 
-                                r.id === routineId ? { ...r, description: e.target.value } : r
-                              )
-                            }));
-                          }}
-                          fullWidth
-                          size="small"
-                          multiline
-                          rows={2}
-                        />
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={() => setOpenRoutineModal(`${editingMilestone.milestone.id}-${routineId}`)}
-                        >
-                          Edit Schedule & Details
-                        </Button>
-                      </Stack>
-                    </Box>
-                  );
-                })}
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<AddIcon />}
-                  onClick={() => {
-                    const milestoneIndex = editingMilestone.index;
-                    setSmartGoal(prev => addRoutineToMilestone(prev, milestoneIndex));
-                  }}
-                >
-                  Add Routine
-                </Button>
-              </Stack>
-            </Box>
+                  {Array.from({ length: 31 }, (_, i) => (
+                    <MenuItem key={i+1} value={i+1}>{i+1}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => {
-            setIsMilestoneModalOpen(false);
-            setEditingMilestone(null);
-          }}>
-            Cancel
-          </Button>
-          <Button variant="contained" onClick={handleMilestoneUpdate}>
+          <Button onClick={() => setOpenRoutineModal(null)}>Cancel</Button>
+          <Button 
+            variant="contained" 
+            onClick={() => setOpenRoutineModal(null)}
+          >
             Save Changes
           </Button>
         </DialogActions>
       </Dialog>
     );
-  };
-
-  const handleAddMilestone = () => {
-    setSmartGoal(prev => ({
-      ...prev,
-      milestones: [...prev.milestones, {
-        id: uuidv4(),
-        name: milestoneForm.name.trim(),
-        targetDate: dateToTimestamp(milestoneForm.targetDate),
-        successCriteria: milestoneForm.successCriteria.trim(),
-        status: 'not_started' as TaskStatus,
-        tasks: [],
-        routines: []
-      }],
-      tasks: [...prev.tasks, {
-        id: uuidv4(),
-        title: '',
-        description: '',
-        priority: 'medium' as TaskPriority,
-        status: 'not_started' as TaskStatus,
-        completed: false,
-        dueDate: undefined,
-        assignedTo: undefined,
-        milestoneId: prev.milestones[prev.milestones.length - 1].id
-      }],
-      routines: [...prev.routines, {
-        id: uuidv4(),
-        title: '',
-        description: '',
-        frequency: 'daily' as const,
-        schedule: {
-          type: 'daily' as const,
-          targetCount: 1,
-          timeOfDay: { hour: 9, minute: 0 },
-          daysOfWeek: [],
-          dayOfMonth: undefined,
-          monthsOfYear: []
-        },
-        targetCount: 1,
-        completionDates: [],
-        permissions: {},
-        review: createDefaultReview()
-      }]
-    }));
-    setMilestoneForm({
-      name: '',
-      targetDate: Timestamp.fromDate(new Date()).toDate().toISOString().split('T')[0],
-      successCriteria: '',
-      status: 'not_started'
-    });
-    setShowMilestoneForm(false);
-  };
+  }; // End of renderRoutineScheduleDialog
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Box>
-            <Typography variant="h4" component="h1" gutterBottom>
-              Goals
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Set and track your SMART goals
-            </Typography>
-          </Box>
-          <Box>
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setIsAdding(true);
-                setSmartGoal(initialSmartGoal);
-                setCurrentStep(0);
-                setEditMode(EDIT_MODE.WIZARD);
-              }}
-            >
-              Add Goal
-            </Button>
-          </Box>
-        </Box>
+    <Container maxWidth="md" sx={{ my: 4 }}>
+      <Typography variant="h4" gutterBottom>
+        Create a New Goal
+      </Typography>
+
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={currentStep} aria-label="goal setup tabs">
+          <Tab label="Goal Setup" />
+          <Tab label="Tasks" />
+          <Tab label="Routines" />
+          <Tab label="Review" />
+        </Tabs>
       </Box>
 
-      {isAdding && (
-        <Dialog
-          open={true}
-          onClose={() => setIsAdding(false)}
-          maxWidth="md"
-          fullWidth
-        >
-          <DialogTitle>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Typography variant="h6">
-                {editMode === EDIT_MODE.EDIT ? 'Edit Milestone' : 'Add Milestone'}
-              </Typography>
-              <IconButton
-                edge="end"
-                onClick={() => {
-                  setIsAdding(false);
-                  setEditingGoal(null);
-                  setSmartGoal(initialSmartGoal);
-                  setEditMode(EDIT_MODE.WIZARD);
-                }}
-                size="small"
-              >
-                <CloseIcon />
-              </IconButton>
-            </Box>
-          </DialogTitle>
+      {currentStep === 0 && renderGoalSetupStep()}
+      {currentStep === 1 && renderTasksStep()}
+      {currentStep === 2 && renderRoutinesStep()}
+      {currentStep === 3 && renderReviewStep()}
 
-          <DialogContent>
-            <Box sx={{ mt: 2 }}>
-              {editMode === EDIT_MODE.EDIT ? (
-                renderEditForm()
-              ) : (
-                <>
-                  <Box sx={{ position: 'relative', mb: 6 }}>
-                    <Typography variant="h5" align="center" gutterBottom sx={{ mb: 3 }}>
-                      {editMode === EDIT_MODE.EDIT ? 'Edit Milestone' : 'Create SMART Goal'}
-                    </Typography>
-                    <Stepper 
-                      activeStep={currentStep} 
-                      alternativeLabel
-                      sx={{
-                        '& .MuiStepLabel-root': {
-                          '& .MuiStepLabel-label': {
-                            display: 'none'
-                          },
-                          '& .MuiStepIcon-root': {
-                            width: '2rem',
-                            height: '2rem',
-                            color: 'grey.300',
-                            '&.Mui-active': {
-                              color: 'primary.main',
-                            },
-                            '&.Mui-completed': {
-                              color: 'success.main',
-                            }
-                          }
-                        }
-                      }}
-                    >
-                      {wizardSteps.map((_, index) => (
-                        <Step key={index}>
-                          <StepLabel />
-                        </Step>
-                      ))}
-                    </Stepper>
-                    <Typography 
-                      variant="body2" 
-                      color="text.secondary" 
-                      align="center" 
-                      sx={{ mt: 2 }}
-                    >
-                      Step {currentStep + 1} of {wizardSteps.length}
-                    </Typography>
-                  </Box>
+      <Box sx={{ mt: 3, display: 'flex', justifyContent: 'space-between' }}>
+        {currentStep > 0 && (
+          <Button onClick={() => setCurrentStep(currentStep - 1)}>Back</Button>
+        )}
+        {currentStep < 3 ? (
+          <Button variant="contained" onClick={() => setCurrentStep(currentStep + 1)}>
+            Next
+          </Button>
+        ) : (
+          <Button variant="contained" onClick={handleSubmit}>
+            Submit Goal
+          </Button>
+        )}
+      </Box>
 
-                  <Paper 
-                    elevation={2} 
-                    sx={{ 
-                      p: 4, 
-                      borderRadius: 2,
-                      backgroundColor: 'background.paper',
-                      transition: 'all 0.3s ease-in-out'
-                    }}
-                  >
-                    <Typography variant="h6" gutterBottom color="primary">
-                      {wizardSteps[currentStep].title}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" paragraph>
-                      {wizardSteps[currentStep].subtitle}
-                    </Typography>
-                    <Box sx={{ mt: 3 }}>
-                      {wizardSteps[currentStep].component()}
-                    </Box>
-                  </Paper>
-                </>
-              )}
-            </Box>
-          </DialogContent>
-
-          <DialogActions>
-            {editMode === EDIT_MODE.EDIT ? (
-              <>
-                <Button onClick={() => {
-                  setIsAdding(false);
-                  setEditingGoal(null);
-                  setSmartGoal(initialSmartGoal);
-                }}>
-                  Cancel
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={(e) => handleSubmit(e as React.FormEvent)}
-                  disabled={submitting}
-                >
-                  Save Changes
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  onClick={() => setCurrentStep(prev => Math.max(0, prev - 1))}
-                  disabled={currentStep === 0}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={() => {
-                    if (currentStep === wizardSteps.length - 1) {
-                      handleSubmit({ preventDefault: () => {} } as React.FormEvent);
-                    } else {
-                      setCurrentStep(prev => prev + 1);
-                    }
-                  }}
-                  disabled={submitting}
-                >
-                  {currentStep === wizardSteps.length - 1 ? 'Create Goal' : 'Next'}
-                </Button>
-              </>
-            )}
-          </DialogActions>
-        </Dialog>
-      )}
-
-      <Grid container spacing={3}>
-        {/* Milestone Edit Dialog */}
-        {editingMilestone && renderMilestoneEditDialog()}
-
-        {goals.map(goal => (
-          <Grid item xs={12} sm={6} lg={4} key={goal.id}>
-            <Card 
-              sx={{ 
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: '200px',
-                cursor: 'pointer',
-                transition: 'transform 0.2s, box-shadow 0.2s',
-                '&:hover': {
-                  transform: 'translateY(-4px)',
-                  boxShadow: (theme) => theme.shadows[4]
-                }
-              }}
-              onClick={(e) => handleCardClick(goal.id, e)}
-            >
-              <CardContent sx={{ 
-                flex: 1,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1
-              }}>
-                <Box sx={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'flex-start',
-                  mb: 2
-                }}>
-                  <Typography 
-                    variant="h6" 
-                    component="h3"
-                    sx={{
-                      fontWeight: 600,
-                      fontSize: '1.1rem',
-                      lineHeight: 1.3,
-                      mb: 1
-                    }}
-                  >
-                    {goal.name}
-                  </Typography>
-                  <Box 
-                    className="action-buttons"
-                    sx={{ 
-                      display: 'flex', 
-                      gap: 0.5,
-                      ml: 1,
-                      flexShrink: 0
-                    }}
-                  >
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleShareClick(goal);
-                      }}
-                      sx={{ color: 'primary.main' }}
-                    >
-                      <ShareIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEdit(goal);
-                      }}
-                      sx={{ color: 'action.active' }}
-                    >
-                      <EditIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(goal.id);
-                      }}
-                      sx={{ color: 'error.main' }}
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </Box>
-
-                <Typography 
-                  variant="body2" 
-                  color="text.secondary"
-                  sx={{
-                    mb: 2,
-                    overflow: 'hidden',
-                    display: '-webkit-box',
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: 'vertical',
-                    minHeight: '4.5em'
-                  }}
-                >
-                  {goal.specificAction}
-                </Typography>
-
-                <Box sx={{ mt: 'auto' }}>
-                  {areas.find(a => a.id === goal.areaId)?.name && (
-                    <Chip
-                      label={areas.find(a => a.id === goal.areaId)?.name}
-                      size="small"
-                      sx={{ 
-                        backgroundColor: 'background.paper',
-                        border: '1px solid',
-                        borderColor: 'divider'
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  )}
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        ))}
-      </Grid>
-
-      {isShareModalOpen && sharingGoal && (
-        <AreaSharingModal
-          isOpen={isShareModalOpen}
-          onClose={() => {
-            setIsShareModalOpen(false);
-            setSharingGoal(null);
-          }}
-          areaId={sharingGoal.areaId}
-          areaName={areas.find(a => a.id === sharingGoal.areaId)?.name || 'Area'}
-        />
-      )}
-
-      {/* Routine Details Modal */}
-      {smartGoal.milestones.map((milestone) => 
-        milestone.routines.map((routineId) => {
-          const routine = smartGoal.routines.find(r => r.id === routineId);
-          if (!routine) return null;
-
-          return (
-            <Dialog
-              key={`${milestone.id}-${routineId}`}
-              open={openRoutineModal === `${milestone.id}-${routineId}`}
-              onClose={() => setOpenRoutineModal(null)}
-              maxWidth="md"
-              fullWidth
-            >
-              <DialogTitle>Edit Routine Schedule & Details</DialogTitle>
-              <DialogContent>
-                <div className="space-y-6 py-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Times per {routine.frequency}
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={routine.targetCount}
-                      onChange={e => {
-                        const targetCount = Math.max(1, parseInt(e.target.value) || 1);
-                        setSmartGoal(prev => {
-                          const newRoutines = prev.routines.map(r => 
-                            r.id === routineId ? {
-                              ...r,
-                              targetCount,
-                              schedule: {
-                                ...r.schedule,
-                                targetCount
-                              }
-                            } : r
-                          );
-                          return { ...prev, routines: newRoutines };
-                        });
-                      }}
-                      className="w-full p-2 border rounded-md"
-                    />
-                  </div>
-
-                  {routine.frequency === 'weekly' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Schedule
-                      </label>
-                      <div className="space-y-4">
-                        {[...Array(routine.targetCount)].map((_, occurrenceIndex) => (
-                          <div key={occurrenceIndex} className="space-y-2">
-                            <div className="flex gap-2">
-                              <select
-                                value={routine.schedule.daysOfWeek?.[occurrenceIndex]?.day || 'monday'}
-                                onChange={e => {
-                                  setSmartGoal(prev => {
-                                    const newRoutines = prev.routines.map(r => {
-                                      if (r.id !== routineId) return r;
-                                      
-                                      const newDaysOfWeek = [...(r.schedule.daysOfWeek || [])];
-                                      newDaysOfWeek[occurrenceIndex] = {
-                                        ...(newDaysOfWeek[occurrenceIndex] || {}),
-                                        day: e.target.value as DayOfWeek,
-                                        time: newDaysOfWeek[occurrenceIndex]?.time || { hour: 9, minute: 0 }
-                                      };
-                                      
-                                      return {
-                                        ...r,
-                                        schedule: {
-                                          ...r.schedule,
-                                          daysOfWeek: newDaysOfWeek
-                                        }
-                                      };
-                                    });
-                                    return { ...prev, routines: newRoutines };
-                                  });
-                                }}
-                                className="flex-1 p-2 border rounded-md"
-                              >
-                                <option value="monday">Monday</option>
-                                <option value="tuesday">Tuesday</option>
-                                <option value="wednesday">Wednesday</option>
-                                <option value="thursday">Thursday</option>
-                                <option value="friday">Friday</option>
-                                <option value="saturday">Saturday</option>
-                                <option value="sunday">Sunday</option>
-                              </select>
-                              <input
-                                type="time"
-                                value={`${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.hour || 9).padStart(2, '0')}:${String(routine.schedule.daysOfWeek?.[occurrenceIndex]?.time?.minute || 0).padStart(2, '0')}`}
-                                onChange={e => {
-                                  const [hours, minutes] = e.target.value.split(':').map(Number);
-                                  setSmartGoal(prev => {
-                                    const newRoutines = prev.routines.map(r => {
-                                      if (r.id !== routineId) return r;
-                                      
-                                      const newDaysOfWeek = [...(r.schedule.daysOfWeek || [])];
-                                      newDaysOfWeek[occurrenceIndex] = {
-                                        ...(newDaysOfWeek[occurrenceIndex] || { day: 'monday' }),
-                                        time: { hour: hours, minute: minutes }
-                                      };
-                                      
-                                      return {
-                                        ...r,
-                                        schedule: {
-                                          ...r.schedule,
-                                          daysOfWeek: newDaysOfWeek
-                                        }
-                                      };
-                                    });
-                                    return { ...prev, routines: newRoutines };
-                                  });
-                                }}
-                                className="w-32 p-2 border rounded-md"
-                              />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {routine.frequency === 'monthly' && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Day of Month
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="31"
-                        value={routine.schedule.dayOfMonth || 1}
-                        onChange={e => {
-                          const dayOfMonth = parseInt(e.target.value) || 1;
-                          setSmartGoal(prev => {
-                            const newRoutines = prev.routines.map(r => 
-                              r.id === routineId ? {
-                                ...r,
-                                schedule: {
-                                  ...r.schedule,
-                                  dayOfMonth
-                                }
-                              } : r
-                            );
-                            return { ...prev, routines: newRoutines };
-                          });
-                        }}
-                        className="w-full p-2 border rounded-md"
-                      />
-                    </div>
-                  )}
-                </div>
-              </DialogContent>
-              <DialogActions>
-                <Button onClick={() => setOpenRoutineModal(null)}>Cancel</Button>
-                <Button 
-                  variant="contained" 
-                  onClick={() => setOpenRoutineModal(null)}
-                >
-                  Save Changes
-                </Button>
-              </DialogActions>
-            </Dialog>
-          );
-        })
-      )}
+      {renderRoutineScheduleDialog()}
     </Container>
   );
-}
+};
 
 export default GoalsPage;
