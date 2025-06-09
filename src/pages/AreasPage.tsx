@@ -63,6 +63,12 @@ export default function AreasPage() {
         color: formData.color,
         sharedWith: [],
         permissions: {},
+        permissionInheritance: {
+          propagateToGoals: true,
+          propagateToMilestones: true,
+          propagateToTasks: true,
+          propagateToRoutines: true,
+        },
       };
       console.log('Creating new area:', newArea);
       await createArea(newArea);
@@ -149,8 +155,8 @@ export default function AreasPage() {
       }}
     >
       <form onSubmit={onSubmit}>
-        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1 }}>
-          <Typography variant="h5" fontWeight="bold">{title}</Typography>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 1, fontWeight: 'bold' }}>
+          {title}
           <IconButton
             onClick={() => {
               setIsCreating(false);

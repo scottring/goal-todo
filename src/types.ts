@@ -318,7 +318,7 @@ export interface Milestone {
 export interface TaskReviewItem {
   taskId: string;
   title: string;
-  status: 'completed' | 'missed' | 'needs_review';
+  status: 'completed' | 'missed' | 'needs_review' | 'partial';
   originalDueDate: Timestamp;
   action: 'mark_completed' | 'push_forward' | 'mark_missed' | 'archive' | 'close';
   priority: TaskPriority;

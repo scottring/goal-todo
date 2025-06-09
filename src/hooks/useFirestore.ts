@@ -173,8 +173,7 @@ export const useFirestore = () => {
       
       if (!typedDocData.permissions[currentUser.uid]) {
         typedDocData.permissions[currentUser.uid] = {
-          edit: true,
-          view: true
+          level: 'owner' as const
         };
       }
       
@@ -218,29 +217,8 @@ export const useFirestore = () => {
       const prefixedCollection = getPrefixedCollection(collectionName);
       console.log(`Updating document: ${documentId} in collection: ${prefixedCollection}`);
       
-      // First check if the user has permission to update this document
       const docRef = doc(db, prefixedCollection, documentId);
-      const docSnap = await getDoc(docRef);
       
-      if (!docSnap.exists()) {
-        console.error(`Document not found: ${documentId}`);
-        throw new Error(`Document not found: ${documentId}`);
-      }
-      
-      const docData = docSnap.data();
-      
-      // Check if the user has edit permission
-      const hasPermission = 
-        docData.ownerId === currentUser.uid || 
-        (docData.permissions && 
-         docData.permissions[currentUser.uid] && 
-         docData.permissions[currentUser.uid].edit);
-      
-      if (!hasPermission) {
-        console.error(`Permission denied for updating document: ${documentId}`);
-        throw new Error(`Permission denied for updating document: ${documentId}`);
-      }
-
       // Recursively remove undefined values
       function clean(obj: any): any {
         if (Array.isArray(obj)) {

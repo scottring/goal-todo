@@ -355,14 +355,14 @@ export interface WeeklyPlanningSession extends BaseDocument {
   weekStartDate: Timestamp;
   weekEndDate: Timestamp;
   status: 'not_started' | 'review_phase' | 'planning_phase' | 'completed';
-  permissions: {
+  permissions?: {
     [userId: string]: {
       edit: boolean;
       view: boolean;
     };
   };
   sharedWith: string[];
-  
+
   reviewPhase: {
     startDate: Timestamp;  // Start date for review period
     endDate: Timestamp;    // End date for review period (usually current date)

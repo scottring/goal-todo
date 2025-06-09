@@ -9,7 +9,8 @@ import {
   AlertCircle,
   BarChart,
   Plus,
-  AlertTriangle
+  AlertTriangle,
+  Trash2
 } from 'lucide-react';
 import {
   Box,
@@ -55,7 +56,7 @@ interface TaskSection {
 }
 
 const TasksPage: React.FC = () => {
-  const { scheduledTasks, loading, completeTask } = useScheduledTasks();
+  const { scheduledTasks, loading, completeTask, deleteTask } = useScheduledTasks();
   const { goals, updateGoal } = useGoalsContext();
   const { userGoals, updateUserGoal } = useSharedGoalsContext();
   const [selectedTask, setSelectedTask] = useState<ScheduledTask | null>(null);
@@ -350,6 +351,25 @@ const TasksPage: React.FC = () => {
             {task.completed && (
               <CheckCircle color="white" size={16} />
             )}
+          </IconButton>
+
+          <IconButton
+            onClick={(e) => {
+              e.stopPropagation();
+              if (window.confirm('Are you sure you want to delete this task?')) {
+                deleteTask(task.id);
+              }
+            }}
+            sx={{
+              width: 32,
+              height: 32,
+              color: 'error.main',
+              '&:hover': {
+                bgcolor: 'error.light'
+              }
+            }}
+          >
+            <Trash2 size={16} />
           </IconButton>
 
           <Box sx={{ flexGrow: 1, minWidth: 0 }}>

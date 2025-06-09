@@ -23,7 +23,6 @@ import {
   DialogActions,
   Badge,
   Alert,
-  TextField,
   FormControl,
   FormLabel
 } from '@mui/material';
@@ -31,7 +30,7 @@ import { TaskReviewList } from '../components/TaskReviewList';
 import { LongTermGoalReview } from '../components/LongTermGoalReview';
 import { SharedGoalReview } from '../components/SharedGoalReview';
 import { WeeklyPlanSummary } from '../components/WeeklyPlanSummary';
-import { format, addDays, isSameDay, startOfWeek, isSunday, nextSunday, previousSunday, isAfter, isBefore, startOfDay, addWeeks } from 'date-fns';
+import { format, addDays, isSameDay, isSunday, nextSunday, previousSunday, isAfter, isBefore, startOfDay, addWeeks } from 'date-fns';
 import { TimePicker } from '@mui/x-date-pickers/TimePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
@@ -39,42 +38,6 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import { useGoalsContext } from '../contexts/GoalsContext';
 import { DatePicker } from '@mui/x-date-pickers';
 
-interface PlannedTask {
-  id: string;
-  title: string;
-  priority: TaskPriority;
-  dueDate: Date;
-}
-
-interface RecurringTask {
-  id: string;
-  title: string;
-  frequency: 'daily' | 'weekly' | 'monthly';
-  schedule: RoutineSchedule;
-}
-
-interface WeeklyPlanningContextType {
-  currentSession: any;
-  isLoading: boolean;
-  error: string | null;
-  startNewSession: (reviewStartDate?: Date) => Promise<void>;
-  moveToReviewPhase: () => Promise<void>;
-  moveToPlanningPhase: () => Promise<void>;
-  completeSession: () => Promise<void>;
-  updateTaskReview: (task: TaskReviewItem) => Promise<void>;
-  updateLongTermGoalReview: (goalId: string, madeProgress: boolean, adjustments?: string, nextReviewDate?: Date) => Promise<void>;
-  updateSharedGoalReview: (goalId: string, completedTasks: string[], pendingTasks: string[]) => Promise<void>;
-  sendTeamReminders: (goalId: string, userIds: string[]) => Promise<void>;
-  syncWithCalendar: () => Promise<void>;
-  updateSession: (session: any) => Promise<void>;
-  unscheduledItems: UnscheduledItem[];
-  addNextWeekTask: (taskId: string, priority: TaskPriority, date: Date, timeSlot?: { start: Date; end: Date }) => Promise<void>;
-  scheduleRecurringTask: (routineId: string, frequency: string, schedule: any) => Promise<void>;
-  fetchUnscheduledItems: () => Promise<void>;
-  getScheduleSuggestions: () => Promise<void>;
-  getLastReviewDate: () => Promise<Date | null>;
-  updateDateRanges: (startDate: Date, endDate: Date) => Promise<void>;
-}
 
 const steps = ['Start Session', 'Weekly Review', 'Weekly Planning', 'Finalize'];
 
@@ -124,24 +87,10 @@ export const WeeklyPlanningPage: React.FC = () => {
     startNewSession,
     moveToReviewPhase,
     moveToPlanningPhase,
-    completeSession,
-    updateTaskReview,
-    updateLongTermGoalReview,
-    updateSharedGoalReview,
-    sendTeamReminders,
-    syncWithCalendar,
-    updateSession,
-    unscheduledItems,
-    addNextWeekTask,
-    scheduleRecurringTask,
-    fetchUnscheduledItems,
-    getScheduleSuggestions,
-    getLastReviewDate,
-    updateDateRanges
+    completeSession
   } = useWeeklyPlanning();
 
   const [activeStep, setActiveStep] = useState(0);
-  const [weekDays, setWeekDays] = useState<Date[]>([]);
 
   const handleNext = async () => {
     switch (activeStep) {
@@ -180,39 +129,6 @@ export const WeeklyPlanningPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    // Initialize week days based on current date
-    const { weekStart, weekEnd } = getWeekBoundaries();
-    const days: Date[] = [];
-    let currentDay = weekStart;
-    
-    while (currentDay <= weekEnd) {
-      days.push(currentDay);
-      currentDay = addDays(currentDay, 1);
-    }
-    
-    setWeekDays(days);
-  }, []);
-
-  // Initialize weekDays when the session changes
-  useEffect(() => {
-    if (currentSession) {
-      // Create an array of dates for the week
-      const startDate = currentSession.weekStartDate 
-        ? ('toDate' in currentSession.weekStartDate 
-            ? currentSession.weekStartDate.toDate() 
-            : timestampToDate(currentSession.weekStartDate))
-        : new Date();
-        
-      const days: Date[] = [];
-      for (let i = 0; i < 7; i++) {
-        const day = new Date(startDate);
-        day.setDate(startDate.getDate() + i);
-        days.push(day);
-      }
-      setWeekDays(days);
-    }
-  }, [currentSession]);
 
   if (isLoading) {
     return (
@@ -369,7 +285,7 @@ const WeeklyReviewStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   } = useWeeklyPlanning();
   const { goals } = useGoalsContext();
 
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
   };
 
@@ -670,7 +586,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
   const [planningStartDate, setPlanningStartDate] = useState<Date>(new Date());
   const [planningEndDate, setPlanningEndDate] = useState<Date>(nextSunday(new Date()));
   const [dateError, setDateError] = useState<string | null>(null);
-  const [weekDays, setWeekDays] = useState<Date[]>([]);
+  const [planningWeekDays, setPlanningWeekDays] = useState<Date[]>([]);
 
   // Initialize week days based on current session
   useEffect(() => {
@@ -685,7 +601,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
         currentDay.setDate(currentDay.getDate() + 1);
       }
       
-      setWeekDays(days);
+      setPlanningWeekDays(days);
     }
   }, [currentSession]);
 
@@ -765,6 +681,8 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
           // Initialize planningPhase if it doesn't exist
           if (!updatedSession.planningPhase) {
             updatedSession.planningPhase = {
+              startDate: dateToTimestamp(planningStartDate),
+              endDate: dateToTimestamp(planningEndDate),
               nextWeekTasks: [],
               sharedGoalAssignments: [],
               recurringTasks: [],
@@ -825,6 +743,8 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
           // Initialize planningPhase if it doesn't exist
           if (!updatedSession.planningPhase) {
             updatedSession.planningPhase = {
+              startDate: dateToTimestamp(planningStartDate),
+              endDate: dateToTimestamp(planningEndDate),
               nextWeekTasks: [],
               sharedGoalAssignments: [],
               recurringTasks: [],
@@ -963,7 +883,7 @@ const WeeklyPlanningStep: React.FC<StepProps> = ({ onNext, onBack }) => {
 
         <Box sx={{ flex: 1, overflow: 'auto' }}>
           <Grid container spacing={2}>
-            {weekDays.map((day: Date, index: number) => {
+            {(planningWeekDays || []).map((day: Date, index: number) => {
               return (
                 <Grid item xs key={`day-grid-${index}`}>
                   <DayCard 

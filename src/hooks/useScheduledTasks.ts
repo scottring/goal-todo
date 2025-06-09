@@ -85,7 +85,7 @@ export const useScheduledTasks = () => {
   const { currentUser } = useAuth();
   const { goals } = useGoalsContext();
   const { userGoals } = useSharedGoalsContext();
-  const { getCollection, updateDocument } = useFirestore();
+  const { getCollection, updateDocument, deleteDocument } = useFirestore();
 
   const generateRoutineTasks = (
     routines: (Routine | RoutineWithoutSystemFields | string)[],
@@ -419,7 +419,11 @@ export const useScheduledTasks = () => {
 
   useEffect(() => {
     if (currentUser) {
-      fetchScheduledTasks();
+      fetchScheduledTasks().catch(err => {
+        console.error('Error fetching scheduled tasks:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch scheduled tasks');
+        setLoading(false);
+      });
     } else {
       setScheduledTasks([]);
       setLoading(false);
@@ -588,11 +592,57 @@ export const useScheduledTasks = () => {
     }
   };
 
+  const deleteTask = async (taskId: string): Promise<void> => {
+    if (!currentUser) throw new Error('User must be authenticated to delete a task');
+
+    try {
+      console.log('Deleting task:', taskId);
+      
+      // Find the task
+      const task = scheduledTasks.find(t => t.id === taskId);
+      if (!task) {
+        console.error('Task not found:', taskId);
+        return;
+      }
+
+      // Update local state FIRST to ensure UI is responsive
+      setScheduledTasks(prevTasks => prevTasks.filter(t => t.id !== taskId));
+      setLoading(true);
+
+      console.log('Found task to delete:', task);
+      
+      if (task.source.type === 'standalone_task') {
+        // Delete standalone task/activity
+        await deleteDocument('activities', taskId);
+        console.log('Standalone task deleted from Firestore');
+      } else {
+        // For goal-related tasks, we might want to mark them as deleted or archived
+        // rather than actually deleting them to preserve history
+        await updateDocument('activities', taskId, {
+          status: 'archived',
+          archivedAt: FirebaseTimestamp.now()
+        });
+        console.log('Goal-related task archived in Firestore');
+      }
+
+      // Refresh tasks to ensure consistency
+      await fetchScheduledTasks();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      setError(error as Error);
+      // Revert local state on error
+      await fetchScheduledTasks();
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return {
     scheduledTasks,
     loading,
     error,
     completeTask,
+    deleteTask,
     refreshTasks: fetchScheduledTasks
   };
 };

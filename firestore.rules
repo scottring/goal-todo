@@ -15,7 +15,8 @@ service cloud.firestore {
       return isOwner(data.ownerId) || 
              (data.permissions != null && 
               request.auth.uid in data.permissions && 
-              data.permissions[request.auth.uid].edit == true);
+              (data.permissions[request.auth.uid].level in ['owner', 'admin', 'editor'] ||
+               data.permissions[request.auth.uid].edit == true));
     }
 
     function hasViewPermission(data) {
@@ -24,7 +25,8 @@ service cloud.firestore {
               request.auth.uid in data.sharedWith) ||
              (data.permissions != null && 
               request.auth.uid in data.permissions && 
-              data.permissions[request.auth.uid].view == true);
+              (data.permissions[request.auth.uid].level != null ||
+               data.permissions[request.auth.uid].view == true));
     }
 
     function hasInvitePermission(data) {
@@ -86,44 +88,26 @@ service cloud.firestore {
     // Areas collection rules
     match /areas/{areaId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && (
-        request.auth.uid == resource.data.ownerId || 
-        (resource.data.sharedWith != null && request.auth.uid in resource.data.sharedWith)
-      );
-      allow update: if isSignedIn() && (
-        hasEditPermission(resource.data) ||
-        // Allow owners to update sharing-related fields
-        (isOwner(resource.data.ownerId) && (
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['sharedWith']) ||
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['permissions'])
-        ))
-      );
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
       allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
+    // Development collections - fully permissive for debugging
     match /dev_areas/{areaId} {
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
-    }
-
-    match /test_areas/{areaId} {
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
-    }
-
-    // Activities collection rules
-    match /activities/{activityId} {
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow read, write: if isSignedIn();
     }
 
     match /dev_activities/{activityId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /dev_weeklyPlanningSessions/{sessionId} {
+      allow read, write: if isSignedIn();
+    }
+
+    // Test collections
+    match /test_areas/{areaId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read: if isSignedIn() && hasViewPermission(resource.data);
       allow update: if isSignedIn() && hasEditPermission(resource.data);
@@ -137,22 +121,22 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
-    // Weekly planning sessions collection rules
-    match /weeklyPlanningSessions/{sessionId} {
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
-    }
-
-    match /dev_weeklyPlanningSessions/{sessionId} {
-      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow read: if isSignedIn() && hasViewPermission(resource.data);
-      allow update: if isSignedIn() && hasEditPermission(resource.data);
-      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
-    }
-
     match /test_weeklyPlanningSessions/{sessionId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
+    // Production collections - keep proper permissions
+    match /activities/{activityId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
+    match /weeklyPlanningSessions/{sessionId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read: if isSignedIn() && hasViewPermission(resource.data);
       allow update: if isSignedIn() && hasEditPermission(resource.data);

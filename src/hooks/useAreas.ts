@@ -3,6 +3,7 @@ import { where, query, collection, getDocs, or, Timestamp } from 'firebase/fires
 import { useFirestoreContext } from '../contexts/FirestoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
+import { getPrefixedCollection } from '../utils/environment';
 import type { Area } from '../types';
 
 type CreateAreaData = {
@@ -11,11 +12,9 @@ type CreateAreaData = {
   color?: string;
   sharedWith: string[];
   permissions: {
-    [userId: string]: {
-      edit: boolean;
-      view: boolean;
-    }
+    [userId: string]: import('../types').HierarchicalPermissions;
   };
+  permissionInheritance: import('../types').PermissionInheritanceSettings;
 };
 
 export const useAreas = () => {
@@ -40,8 +39,9 @@ export const useAreas = () => {
       // Create a query that matches either:
       // 1. Areas where the user is the owner
       // 2. Areas where the user is in the sharedWith array
+      const prefixedCollection = getPrefixedCollection('areas');
       const areasQuery = query(
-        collection(db, 'areas'),
+        collection(db, prefixedCollection),
         or(
           where('ownerId', '==', currentUser.uid),
           where('sharedWith', 'array-contains', currentUser.uid)
@@ -83,7 +83,11 @@ export const useAreas = () => {
     
     if (currentUser) {
       console.log('Initiating area fetch for user:', currentUser.uid);
-      fetchAreas();
+      fetchAreas().catch(err => {
+        console.error('Error fetching areas:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch areas');
+        setLoading(false);
+      });
     } else {
       console.log('No current user, clearing areas');
       setAreas([]);
@@ -125,6 +129,7 @@ export const useAreas = () => {
 
     try {
       setLoading(true);
+      console.log('Updating area:', areaId, 'with data:', data, 'for user:', currentUser.uid);
       await updateDocument<Area>('areas', areaId, data);
       await fetchAreas();
     } catch (err) {

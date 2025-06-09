@@ -28,7 +28,6 @@ import {
 } from 'date-fns';
 import { dateToTimestamp, timestampToDate, now } from '../utils/date';
 import { toFirebaseTimestamp, fromFirebaseTimestamp, convertToFirebaseTimestamp, convertFromFirebaseTimestamp } from '../utils/firebase-adapter';
-import { updateDocument } from '../utils/firestore';
 import { v4 as uuidv4 } from 'uuid';
 
 // Define the WeeklyPlanningSession interface here if it's not exported from types
@@ -40,6 +39,13 @@ export interface WeeklyPlanningSession {
   weekStartDate: Timestamp;
   weekEndDate: Timestamp;
   status: 'not_started' | 'review_phase' | 'planning_phase' | 'completed';
+  permissions?: {
+    [userId: string]: {
+      edit: boolean;
+      view: boolean;
+    };
+  };
+  sharedWith?: string[];
   
   reviewPhase: {
     startDate: Timestamp;
@@ -215,11 +221,14 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
   const [error, setError] = useState<string | null>(null);
   const { currentUser } = useAuth();
   const { goals } = useGoalsContext();
-  const { getCollection, addDocument, getDocument } = useFirestore();
+  const { getCollection, addDocument, getDocument, updateDocument } = useFirestore();
 
   useEffect(() => {
     if (currentUser) {
-      loadCurrentSession();
+      loadCurrentSession().catch(err => {
+        console.error('Error loading current session:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load session');
+      });
     }
   }, [currentUser]);
 
@@ -309,7 +318,12 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
       const dateRanges = await getOptimalDateRanges();
       const reviewStart = reviewStartDate || dateRanges.reviewStart;
       
-      const newSession: Omit<WeeklyPlanningSession, 'id'> = {
+      interface NewSessionType extends Omit<WeeklyPlanningSession, 'id'> {
+        permissions?: { [userId: string]: { edit: boolean; view: boolean; }; };
+        sharedWith: string[];
+      }
+
+      const newSession: NewSessionType = {
         ownerId: currentUser.uid,
         weekStartDate: FirebaseTimestamp.fromDate(reviewStart),
         weekEndDate: FirebaseTimestamp.fromDate(dateRanges.planningEnd),
@@ -654,13 +668,29 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     if (!session) return;
 
     try {
-      console.log('Updating session with data:', JSON.stringify(session, null, 2));
-      
+      // Validate session data
+      if (!session.id || !session.ownerId) {
+        throw new Error('Invalid session: missing required fields');
+      }
+
+      // Validate timestamps
+      const validateTimestamp = (ts: any) => {
+        if (!ts || typeof ts !== 'object' || !('seconds' in ts) || !('nanoseconds' in ts)) {
+          throw new Error('Invalid timestamp format');
+        }
+        return true;
+      };
+
+      validateTimestamp(session.weekStartDate);
+      validateTimestamp(session.weekEndDate);
+
       // Convert our custom Timestamps to Firebase Timestamps before saving
+      const { permissions, ...sessionWithoutPermissions } = session as WeeklyPlanningSession;
       const sessionToSave = {
-        ...session,
+        ...sessionWithoutPermissions,
         weekStartDate: convertToFirebaseTimestamp(session.weekStartDate),
         weekEndDate: convertToFirebaseTimestamp(session.weekEndDate),
+        ...(permissions ? { permissions } : {}),
         reviewPhase: session.reviewPhase ? {
           ...session.reviewPhase,
           startDate: convertToFirebaseTimestamp(session.reviewPhase.startDate),
@@ -686,7 +716,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
           })),
           calendarSyncStatus: session.planningPhase.calendarSyncStatus ? {
             ...session.planningPhase.calendarSyncStatus,
-            lastSyncedAt: session.planningPhase.calendarSyncStatus.lastSyncedAt ? 
+            lastSyncedAt: session.planningPhase.calendarSyncStatus.lastSyncedAt ?
               convertToFirebaseTimestamp(session.planningPhase.calendarSyncStatus.lastSyncedAt) : null,
             syncedEvents: session.planningPhase.calendarSyncStatus.syncedEvents?.filter(e => e && e.eventId && e.taskId).map((e: { eventId: string; taskId: string; startTime: any; endTime: any }) => ({
               eventId: e.eventId,
@@ -704,17 +734,35 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
         if (value === null || value === undefined) {
           return undefined; // This will remove the property
         }
-        
+
         // Handle empty arrays
         if (Array.isArray(value) && value.length === 0) {
           return undefined; // Remove empty arrays
         }
-        
+
+        // Validate timestamps in nested objects
+        if (typeof value === 'object' && value !== null && 'seconds' in value && 'nanoseconds' in value) {
+          validateTimestamp(value);
+        }
+
         return value;
       }));
 
       console.log('Cleaned session data:', JSON.stringify(cleanedSession, null, 2));
       
+      // Validate final data before sending to Firestore
+      if (!cleanedSession.id || !cleanedSession.ownerId) {
+        throw new Error('Invalid session data after cleaning');
+      }
+
+      // Add additional validation for required fields
+      const requiredFields = ['weekStartDate', 'weekEndDate', 'status'];
+      for (const field of requiredFields) {
+        if (!cleanedSession[field]) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+
       await updateDocument('weeklyPlanningSessions', session.id, cleanedSession);
       setCurrentSession(session);
     } catch (error) {
@@ -817,4 +865,4 @@ export const useWeeklyPlanning = () => {
     throw new Error('useWeeklyPlanning must be used within a WeeklyPlanningProvider');
   }
   return context;
-}; 
+};
