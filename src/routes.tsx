@@ -17,6 +17,7 @@ import { TestWeeklyPlanning } from './test/TestWeeklyPlanning';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
 import { TaskDetailsPage } from './pages/TaskDetailsPage';
 import { InboxPage } from './pages/InboxPage';
+import { WeekPage } from './pages/WeekPage';
 import AuthGuard from './components/auth/AuthGuard';
 
 // Define public routes that don't require authentication
@@ -35,6 +36,7 @@ const AppRoutes: React.FC = () => {
         {/* Protected Routes */}
         <Route path="/admin" element={<AuthGuard><Layout><AdminPage /></Layout></AuthGuard>} />
         <Route path="/inbox" element={<AuthGuard><Layout><InboxPage /></Layout></AuthGuard>} />
+        <Route path="/week" element={<AuthGuard><Layout><WeekPage /></Layout></AuthGuard>} />
         <Route path="/areas" element={<AuthGuard><Layout><AreasPage /></Layout></AuthGuard>} />
         <Route path="/areas/:areaId" element={<AuthGuard><Layout><AreaDetailsPage /></Layout></AuthGuard>} />
         <Route path="/goals" element={<AuthGuard><Layout><GoalsPage /></Layout></AuthGuard>} />

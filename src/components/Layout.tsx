@@ -26,6 +26,7 @@ import {
   Calendar,
   FolderKanban,
   Lightbulb,
+  CalendarDays,
   Menu as MenuIcon
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -46,6 +47,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const menuItems = [
     { text: 'Inbox', icon: <Lightbulb size={20} />, path: '/inbox' },
+    { text: 'Week', icon: <CalendarDays size={20} />, path: '/week' },
     { text: 'Areas', icon: <Home size={20} />, path: '/areas' },
     { text: 'Goals', icon: <Target size={20} />, path: '/goals' },
     { text: 'Projects', icon: <FolderKanban size={20} />, path: '/projects' },

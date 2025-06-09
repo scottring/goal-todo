@@ -46,6 +46,7 @@ export const InboxPage: React.FC = () => {
   const {
     inboxItems,
     loading,
+    error,
     getCapturedItems,
     getProcessedItems,
     getArchivedItems
@@ -81,6 +82,14 @@ export const InboxPage: React.FC = () => {
     return (
       <Container maxWidth="lg" sx={{ py: 3 }}>
         <Typography>Loading inbox...</Typography>
+      </Container>
+    );
+  }
+
+  if (error) {
+    return (
+      <Container maxWidth="lg" sx={{ py: 3 }}>
+        <Typography color="error">Error loading inbox: {error}</Typography>
       </Container>
     );
   }

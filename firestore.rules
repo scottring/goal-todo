@@ -118,6 +118,11 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // Allow full access to dev_inbox collection and all documents (all possible paths)
+    match /dev_inbox/{document=**} {
+      allow read, write, list, create, update, delete: if true;
+    }
+
     // Test collections
     match /test_areas/{areaId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
@@ -147,6 +152,13 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
+    match /test_inbox/{inboxId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow update: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
     // Production collections - keep proper permissions
     match /activities/{activityId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
@@ -159,6 +171,13 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read: if isSignedIn() && hasViewPermission(resource.data);
       allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
+    match /inbox/{inboxId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && isOwner(resource.data.ownerId);
+      allow update: if isSignedIn() && isOwner(resource.data.ownerId);
       allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 

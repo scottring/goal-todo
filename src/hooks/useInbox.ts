@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, orderBy, addDoc, updateDoc, deleteDoc, doc, onSnapshot, Timestamp } from 'firebase/firestore';
-import { db } from '../config/firebase';
+import { collection, query, where, orderBy, addDoc, updateDoc, deleteDoc, doc, onSnapshot, getDocs, Timestamp } from 'firebase/firestore';
+import { db } from '../lib/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import { useFirestoreContext } from '../contexts/FirestoreContext';
 import { InboxItem, InboxItemType, InboxItemPriority, InboxItemStatus, ConversionTarget } from '../types/index';
 import { getPrefixedCollection } from '../utils/environment';
 
@@ -10,40 +11,39 @@ export const useInbox = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { currentUser } = useAuth();
+  const { getCollection } = useFirestoreContext();
 
   useEffect(() => {
     if (!currentUser) {
+      console.log('No current user, clearing inbox items');
       setInboxItems([]);
       setLoading(false);
       return;
     }
 
-    const inboxRef = collection(db, getPrefixedCollection('inbox'));
-    const q = query(
-      inboxRef,
-      where('ownerId', '==', currentUser.uid),
-      orderBy('createdAt', 'desc')
-    );
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const items = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as InboxItem[];
+    console.log('Setting up inbox listener for user:', currentUser.uid);
+    console.log('User email:', currentUser.email);
+    
+    // Try using the same method that works for goals
+    const fetchInboxItems = async () => {
+      try {
+        console.log('Fetching inbox items using FirestoreContext...');
+        const items = await getCollection<InboxItem>('inbox', [
+          where('ownerId', '==', currentUser.uid)
+        ]);
+        console.log('Inbox items fetched successfully:', items.length);
         setInboxItems(items);
-        setLoading(false);
         setError(null);
-      },
-      (err) => {
-        console.error('Error fetching inbox items:', err);
-        setError('Failed to load inbox items');
+      } catch (fetchError) {
+        console.error('Error fetching inbox items with FirestoreContext:', fetchError);
+        setError(`Failed to load inbox items: ${fetchError.message}`);
+      } finally {
         setLoading(false);
       }
-    );
-
-    return () => unsubscribe();
+    };
+    
+    fetchInboxItems();
+      
   }, [currentUser]);
 
   const addInboxItem = async (data: {

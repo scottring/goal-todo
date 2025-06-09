@@ -518,3 +518,61 @@ export interface TaskReviewItem {
   completedDate?: Timestamp;
   priority: TaskPriority;
 }
+
+// Week Page Types
+export interface WeekItem {
+  id: string;
+  title: string;
+  type: 'task' | 'goal' | 'milestone' | 'project' | 'routine' | 'inbox' | 'calendar_event';
+  sourceId: string; // Original ID from the source collection
+  priority: 'low' | 'medium' | 'high';
+  status: 'pending' | 'in_progress' | 'completed' | 'overdue';
+  dueDate?: Timestamp;
+  startTime?: Timestamp;
+  endTime?: Timestamp;
+  description?: string;
+  tags?: string[];
+  color?: string;
+  parentId?: string; // For linking to parent goal/project
+  parentTitle?: string;
+  isRecurring?: boolean;
+  estimatedDuration?: number; // in minutes
+  completedAt?: Timestamp;
+  metadata?: {
+    areaId?: string;
+    goalId?: string;
+    projectId?: string;
+    routineId?: string;
+    calendarEventId?: string;
+    originalType?: string;
+  };
+}
+
+export interface WeekDay {
+  date: Date;
+  dayName: string;
+  isToday: boolean;
+  isPast: boolean;
+  items: WeekItem[];
+  totalEstimatedTime: number; // in minutes
+  completedItems: number;
+  totalItems: number;
+}
+
+export interface WeekData {
+  weekStart: Date;
+  weekEnd: Date;
+  days: WeekDay[];
+  unscheduled: WeekItem[];
+  inbox: WeekItem[];
+  overdue: WeekItem[];
+  weekGoals: WeekItem[];
+  upcomingMilestones: WeekItem[];
+}
+
+export interface DragDropResult {
+  draggedItem: WeekItem;
+  targetDay: Date;
+  targetType: 'scheduled' | 'unscheduled' | 'inbox';
+  newDueDate?: Timestamp;
+}

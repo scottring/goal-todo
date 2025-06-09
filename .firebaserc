@@ -1,7 +1,7 @@
 {
   "projects": {
-    "default": "conductor-app-2024",
-    "development": "goalplan",
-    "production": "conductor-app-2024"
+    "default": "goals-a2d40",
+    "development": "goals-a2d40",
+    "production": "goals-a2d40"
   }
 }
