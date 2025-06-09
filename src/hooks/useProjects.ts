@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
-import { where, query, collection, getDocs, or, Timestamp } from 'firebase/firestore';
+import { where, query, collection, getDocs, Timestamp } from 'firebase/firestore';
 import { useFirestoreContext } from '../contexts/FirestoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
 import { getPrefixedCollection } from '../utils/environment';
-import type { Project, HierarchicalPermissions, PermissionInheritanceSettings } from '../types';
+import type { Project, HierarchicalPermissions, PermissionInheritanceSettings } from '../types/index';
 
 type CreateProjectData = {
   name: string;
   description?: string;
-  status: import('../types').ProjectStatus;
+  status: import('../types/index').ProjectStatus;
   color?: string;
   startDate?: Timestamp;
   endDate?: Timestamp;
@@ -117,7 +117,7 @@ export const useProjects = () => {
           };
         })
         .filter(project => 
-          !project.deleted && // Filter out soft-deleted projects
+          !(project as any).deleted && // Filter out soft-deleted projects
           !deletedProjectIds.includes(project.id) // Filter out locally deleted projects
         ) as Project[];
 
@@ -169,7 +169,8 @@ export const useProjects = () => {
         ownerId: currentUser.uid,
         sharedWith: data.sharedWith || [],
         permissions: data.permissions || {},
-        createdAt: Timestamp.now()
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
       };
 
       await addDocument<Project>('activities', newProject);
@@ -267,7 +268,7 @@ export const useProjects = () => {
     return projects.filter(project => project.goalId === goalId);
   }, [projects]);
 
-  const getProjectsByStatus = useCallback((status: import('../types').ProjectStatus) => {
+  const getProjectsByStatus = useCallback((status: import('../types/index').ProjectStatus) => {
     return projects.filter(project => project.status === status);
   }, [projects]);
 

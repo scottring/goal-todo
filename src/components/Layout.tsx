@@ -25,6 +25,7 @@ import {
   CheckSquare,
   Calendar,
   FolderKanban,
+  Lightbulb,
   Menu as MenuIcon
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -44,6 +45,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const isActive = (path: string) => location.pathname === path;
 
   const menuItems = [
+    { text: 'Inbox', icon: <Lightbulb size={20} />, path: '/inbox' },
     { text: 'Areas', icon: <Home size={20} />, path: '/areas' },
     { text: 'Goals', icon: <Target size={20} />, path: '/goals' },
     { text: 'Projects', icon: <FolderKanban size={20} />, path: '/projects' },

@@ -4,7 +4,7 @@ import { useFirestoreContext } from '../contexts/FirestoreContext';
 import { useAuth } from '../contexts/AuthContext';
 import { db } from '../lib/firebase';
 import { getPrefixedCollection } from '../utils/environment';
-import type { Area } from '../types';
+import type { Area } from '../types/index';
 
 type CreateAreaData = {
   name: string;
@@ -12,9 +12,9 @@ type CreateAreaData = {
   color?: string;
   sharedWith: string[];
   permissions: {
-    [userId: string]: import('../types').HierarchicalPermissions;
+    [userId: string]: import('../types/index').HierarchicalPermissions;
   };
-  permissionInheritance: import('../types').PermissionInheritanceSettings;
+  permissionInheritance: import('../types/index').PermissionInheritanceSettings;
 };
 
 export const useAreas = () => {
@@ -85,7 +85,7 @@ export const useAreas = () => {
       console.log('Initiating area fetch for user:', currentUser.uid);
       fetchAreas().catch(err => {
         console.error('Error fetching areas:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch areas');
+        setError(err instanceof Error ? err : new Error('Failed to fetch areas'));
         setLoading(false);
       });
     } else {

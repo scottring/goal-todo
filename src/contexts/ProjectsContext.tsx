@@ -1,6 +1,6 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useProjects } from '../hooks/useProjects';
-import type { Project, ProjectStatus } from '../types';
+import type { Project, ProjectStatus } from '../types/index';
 
 interface ProjectsContextType {
   projects: Project[];
@@ -11,16 +11,16 @@ interface ProjectsContextType {
     description?: string;
     status: ProjectStatus;
     color?: string;
-    startDate?: import('../types').Timestamp;
-    endDate?: import('../types').Timestamp;
-    deadline?: import('../types').Timestamp;
+    startDate?: import('../types/index').Timestamp;
+    endDate?: import('../types/index').Timestamp;
+    deadline?: import('../types/index').Timestamp;
     areaId?: string;
     goalId?: string;
     sharedWith: string[];
     permissions: {
-      [userId: string]: import('../types').HierarchicalPermissions;
+      [userId: string]: import('../types/index').HierarchicalPermissions;
     };
-    permissionInheritance: import('../types').PermissionInheritanceSettings;
+    permissionInheritance: import('../types/index').PermissionInheritanceSettings;
     tags?: string[];
     progress?: number;
     budget?: {

@@ -107,6 +107,60 @@ export interface Project extends BaseDocument {
   deletedAt?: Timestamp; // When the project was deleted
 }
 
+export enum InboxItemType {
+  GENERAL = 'general',
+  AREA = 'area',
+  GOAL = 'goal',
+  PROJECT = 'project',
+  TASK = 'task'
+}
+
+export enum InboxItemPriority {
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high'
+}
+
+export enum InboxItemStatus {
+  CAPTURED = 'captured',
+  PROCESSED = 'processed',
+  ARCHIVED = 'archived'
+}
+
+export interface InboxItem extends BaseDocument {
+  title: string;
+  content?: string;
+  type: InboxItemType;
+  priority: InboxItemPriority;
+  status: InboxItemStatus;
+  tags?: string[];
+  processedAt?: Timestamp | null;
+  convertedTo?: string | null;
+  convertedToId?: string | null;
+}
+
+export interface InboxCapture {
+  title: string;
+  content?: string;
+  type?: InboxItemType;
+  priority?: InboxItemPriority;
+  tags?: string[];
+  sourceLocation?: string;
+}
+
+export interface ConversionTarget {
+  type: 'area' | 'goal' | 'project' | 'task';
+  title: string;
+  description?: string;
+  areaId?: string;
+  goalId?: string;
+  projectId?: string;
+  priority?: TaskPriority;
+  dueDate?: Timestamp;
+  status?: ProjectStatus;
+  color?: string;
+}
+
 export type TaskPriority = 'high' | 'medium' | 'low';
 export type TaskStatus = 'not_started' | 'in_progress' | 'completed';
 export type MeasurableMetric = 

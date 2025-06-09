@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { useProjectsContext } from '../contexts/ProjectsContext';
 import { useAreasContext } from '../contexts/AreasContext';
-import { Plus, Pencil, Trash2, Share2, Calendar, Target, Circle } from 'lucide-react';
-import type { Project, ProjectStatus } from '../types';
+import { Plus, Pencil, Trash2, Circle } from 'lucide-react';
+import type { Project, ProjectStatus } from '../types/index';
 import { useNavigate } from 'react-router-dom';
 import {
   Box,
   Typography,
   Button,
-  Container,
   Grid,
   Card,
   CardContent,
