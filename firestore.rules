@@ -93,8 +93,20 @@ service cloud.firestore {
       allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
     }
 
+    // Projects collection rules
+    match /projects/{projectId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
     // Development collections - fully permissive for debugging
     match /dev_areas/{areaId} {
+      allow read, write: if isSignedIn();
+    }
+
+    match /dev_projects/{projectId} {
       allow read, write: if isSignedIn();
     }
 
@@ -108,6 +120,13 @@ service cloud.firestore {
 
     // Test collections
     match /test_areas/{areaId} {
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow read: if isSignedIn() && hasViewPermission(resource.data);
+      allow update: if isSignedIn() && hasEditPermission(resource.data);
+      allow delete: if isSignedIn() && isOwner(resource.data.ownerId);
+    }
+
+    match /test_projects/{projectId} {
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
       allow read: if isSignedIn() && hasViewPermission(resource.data);
       allow update: if isSignedIn() && hasEditPermission(resource.data);

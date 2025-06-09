@@ -4,6 +4,7 @@ import AreasPage from './pages/AreasPage';
 import AreaDetailsPage from './pages/AreaDetailsPage';
 import GoalsPage from './pages/GoalsPage';
 import TasksPage from './pages/TasksPage';
+import ProjectsPage from './pages/ProjectsPage';
 import { WeeklyPlanningPage } from './pages/WeeklyPlanningPage';
 import SignIn from './components/auth/SignIn';
 import SignUp from './components/auth/SignUp';
@@ -37,6 +38,7 @@ const AppRoutes: React.FC = () => {
         <Route path="/goals" element={<AuthGuard><Layout><GoalsPage /></Layout></AuthGuard>} />
         <Route path="/goals/:goalId" element={<AuthGuard><Layout><GoalDetailPage /></Layout></AuthGuard>} />
         <Route path="/goals/:goalId/edit" element={<AuthGuard><Layout><EditGoalPage /></Layout></AuthGuard>} />
+        <Route path="/projects" element={<AuthGuard><Layout><ProjectsPage /></Layout></AuthGuard>} />
         <Route path="/tasks" element={<AuthGuard><Layout><TasksPage /></Layout></AuthGuard>} />
         <Route path="/tasks/:taskId" element={<AuthGuard><Layout><TaskDetailsPage /></Layout></AuthGuard>} />
         <Route path="/weekly-planning" element={<AuthGuard><Layout><WeeklyPlanningPage /></Layout></AuthGuard>} />

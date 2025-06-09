@@ -3,6 +3,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { FirestoreProvider } from './contexts/FirestoreContext';
 import { AreasProvider } from './contexts/AreasContext';
 import { GoalsProvider } from './contexts/GoalsContext';
+import { ProjectsProvider } from './contexts/ProjectsContext';
 import { SharedGoalsProvider } from './contexts/SharedGoalsContext';
 import { WeeklyPlanningProvider } from './contexts/WeeklyPlanningContext';
 import AppRoutes from './routes';
@@ -86,11 +87,12 @@ function App() {
             <FirestoreProvider>
               <AreasProvider>
                 <GoalsProvider>
-                  <SharedGoalsProvider>
-                    <WeeklyPlanningProvider>
-                      <AppRoutes />
-                      <Toaster 
-                        position="top-right"
+                  <ProjectsProvider>
+                    <SharedGoalsProvider>
+                      <WeeklyPlanningProvider>
+                        <AppRoutes />
+                        <Toaster 
+                          position="top-right"
                         toastOptions={{
                           style: {
                             background: '#fff',
@@ -114,9 +116,10 @@ function App() {
                             },
                           },
                         }}
-                      />
-                    </WeeklyPlanningProvider>
-                  </SharedGoalsProvider>
+                        />
+                      </WeeklyPlanningProvider>
+                    </SharedGoalsProvider>
+                  </ProjectsProvider>
                 </GoalsProvider>
               </AreasProvider>
             </FirestoreProvider>

@@ -276,6 +276,9 @@ export const useFirestore = () => {
       const prefixedCollection = getPrefixedCollection(collectionName);
       console.log(`Deleting document: ${documentId} from collection: ${prefixedCollection}`);
       
+      // Check if this is a dev collection (permissive rules)
+      const isDevCollection = prefixedCollection.startsWith('dev_');
+      
       // First check if the user has permission to delete this document
       const docRef = doc(db, prefixedCollection, documentId);
       const docSnap = await getDoc(docRef);
@@ -286,11 +289,22 @@ export const useFirestore = () => {
       }
       
       const docData = docSnap.data();
+      console.log('Document data for deletion check:', {
+        documentId,
+        docOwnerId: docData.ownerId,
+        currentUserId: currentUser.uid,
+        docData: JSON.stringify(docData, null, 2)
+      });
       
-      // Only the owner can delete a document
-      if (docData.ownerId !== currentUser.uid) {
+      // Only the owner can delete a document (skip check for dev collections)
+      if (!isDevCollection && docData.ownerId !== currentUser.uid) {
         console.error(`Permission denied for deleting document: ${documentId}`);
+        console.error(`Document owner: ${docData.ownerId}, Current user: ${currentUser.uid}`);
         throw new Error(`Permission denied for deleting document: ${documentId}`);
+      }
+      
+      if (isDevCollection) {
+        console.log(`Skipping ownership check for dev collection: ${prefixedCollection}`);
       }
       
       await deleteDoc(docRef);

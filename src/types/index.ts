@@ -79,6 +79,34 @@ export interface Area extends BaseDocument {
   permissionInheritance: PermissionInheritanceSettings;
 }
 
+export type ProjectStatus = 'planning' | 'active' | 'on_hold' | 'completed' | 'cancelled';
+
+export interface Project extends BaseDocument {
+  name: string;
+  description?: string;
+  status: ProjectStatus;
+  color?: string;
+  startDate?: Timestamp;
+  endDate?: Timestamp;
+  deadline?: Timestamp;
+  areaId?: string; // Optional area association
+  goalId?: string; // Optional goal association
+  sharedWith: string[]; // Array of user IDs
+  permissions: {
+    [userId: string]: HierarchicalPermissions;
+  };
+  permissionInheritance: PermissionInheritanceSettings;
+  tags?: string[];
+  progress?: number; // 0-100 percentage
+  budget?: {
+    estimated?: number;
+    actual?: number;
+    currency?: string;
+  };
+  deleted?: boolean; // For soft delete functionality
+  deletedAt?: Timestamp; // When the project was deleted
+}
+
 export type TaskPriority = 'high' | 'medium' | 'low';
 export type TaskStatus = 'not_started' | 'in_progress' | 'completed';
 export type MeasurableMetric = 
@@ -99,6 +127,7 @@ export interface Task extends BaseDocument {
   completed: boolean;
   areaId?: string;
   goalId?: string;
+  projectId?: string;
   milestoneId?: string;
   assignedTo?: string;
   priority: TaskPriority;
@@ -255,6 +284,7 @@ export interface Goal {
   description?: string;
   ownerId: string;
   areaId: string;
+  projectId?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   tasks: Task[];

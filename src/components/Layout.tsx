@@ -24,6 +24,7 @@ import {
   Target,
   CheckSquare,
   Calendar,
+  FolderKanban,
   Menu as MenuIcon
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +46,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const menuItems = [
     { text: 'Areas', icon: <Home size={20} />, path: '/areas' },
     { text: 'Goals', icon: <Target size={20} />, path: '/goals' },
+    { text: 'Projects', icon: <FolderKanban size={20} />, path: '/projects' },
     { text: 'Tasks', icon: <CheckSquare size={20} />, path: '/tasks' },
     { text: 'Weekly Planning', icon: <Calendar size={20} />, path: '/weekly-planning' }
   ];
@@ -70,7 +72,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     <Box sx={{ width: 250 }} role="presentation">
       <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
-          Goal Tracker
+          Symphony
         </Typography>
       </Box>
       <Divider />
@@ -134,14 +136,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   <MenuIcon />
                 </IconButton>
                 <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: theme.palette.primary.main }}>
-                  Goal Tracker
+                  Symphony
                 </Typography>
                 <Box sx={{ width: 40 }} /> {/* Spacer for alignment */}
               </>
             ) : (
               <>
                 <Typography variant="h6" component="div" sx={{ fontWeight: 'bold', color: theme.palette.primary.main, mr: 4 }}>
-                  Goal Tracker
+                  Symphony
                 </Typography>
                 <Box sx={{ display: 'flex', gap: 1, flexGrow: 1 }}>
                   {menuItems.map((item) => (

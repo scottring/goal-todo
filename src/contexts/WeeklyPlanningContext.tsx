@@ -307,6 +307,55 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
     };
   };
 
+  const generateTaskReviews = async (reviewStart: Date, reviewEnd: Date): Promise<TaskReviewItem[]> => {
+    if (!goals) return [];
+
+    const taskReviews: TaskReviewItem[] = [];
+    const now = new Date();
+
+    for (const goal of goals) {
+      for (const task of goal.tasks) {
+        // Skip already completed tasks
+        if (task.completed) continue;
+
+        let shouldInclude = false;
+        let status: 'completed' | 'missed' | 'needs_review' | 'partial' = 'needs_review';
+
+        if (task.dueDate) {
+          const dueDate = timestampToDate(task.dueDate);
+          
+          // Include tasks that were due during the review period
+          if (dueDate >= reviewStart && dueDate <= reviewEnd) {
+            shouldInclude = true;
+            status = isAfter(now, dueDate) ? 'missed' : 'needs_review';
+          }
+          // Include overdue tasks from before the review period
+          else if (isBefore(dueDate, reviewStart) && isAfter(now, dueDate)) {
+            shouldInclude = true;
+            status = 'missed';
+          }
+        } else {
+          // Include tasks without due dates (unscheduled tasks)
+          shouldInclude = true;
+          status = 'needs_review';
+        }
+
+        if (shouldInclude) {
+          taskReviews.push({
+            taskId: task.id,
+            title: task.title,
+            status,
+            originalDueDate: task.dueDate || FirebaseTimestamp.now(),
+            priority: task.priority,
+            // Don't set action or completedDate - these will be set during review
+          });
+        }
+      }
+    }
+
+    return taskReviews;
+  };
+
   const startNewSession = async (reviewStartDate?: Date) => {
     if (!currentUser) {
       setError('User must be authenticated to start a session');
@@ -345,7 +394,7 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
           completedTasks: [],
           missedTasks: [],
           partiallyCompletedTasks: [],
-          taskReviews: [],
+          taskReviews: await generateTaskReviews(reviewStart, dateRanges.planningStart),
           longTermGoalReviews: [],
           sharedGoalReviews: [],
           summary: {
@@ -477,6 +526,35 @@ export const WeeklyPlanningProvider: React.FC<{ children: React.ReactNode }> = (
         })) || [];
       
       items.push(...reviewTasks);
+
+      // Also include tasks that weren't captured in the review phase (e.g., newly created tasks)
+      if (goals) {
+        const existingTaskIds = new Set(reviewTasks.map(t => t.id));
+        
+        goals.forEach(goal => {
+          goal.tasks.forEach(task => {
+            // Skip if task is already in review or is completed
+            if (existingTaskIds.has(task.id) || task.completed) return;
+            
+            // Include unscheduled tasks (no due date) or recently created tasks
+            const isUnscheduled = !task.dueDate;
+            const isRecentlyCreated = task.createdAt && 
+              timestampToDate(task.createdAt) >= addDays(new Date(), -7);
+            
+            if (isUnscheduled || isRecentlyCreated) {
+              items.push({
+                id: task.id,
+                type: 'task' as const,
+                title: task.title,
+                description: task.description,
+                priority: task.priority,
+                goalId: goal.id,
+                goalName: goal.name
+              });
+            }
+          });
+        });
+      }
 
       // Get unscheduled routines that need scheduling
       if (goals) {
