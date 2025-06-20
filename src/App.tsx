@@ -5,6 +5,7 @@ import { AreasProvider } from './contexts/AreasContext';
 import { GoalsProvider } from './contexts/GoalsContext';
 import { SharedGoalsProvider } from './contexts/SharedGoalsContext';
 import { WeeklyPlanningProvider } from './contexts/WeeklyPlanningContext';
+import { ChatProvider } from './contexts/ChatContext';
 import AppRoutes from './routes';
 import { ThemeProvider } from '@mui/material/styles';
 import { LocalizationProvider } from '@mui/x-date-pickers';
@@ -23,7 +24,9 @@ function App() {
                 <GoalsProvider>
                   <SharedGoalsProvider>
                     <WeeklyPlanningProvider>
-                      <AppRoutes />
+                      <ChatProvider>
+                        <AppRoutes />
+                      </ChatProvider>
                     </WeeklyPlanningProvider>
                   </SharedGoalsProvider>
                 </GoalsProvider>

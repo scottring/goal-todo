@@ -882,7 +882,7 @@ const GoalsPage: React.FC = () => {
         <LocalizationProvider dateAdapter={AdapterDateFns}>
           <DatePicker
             label="Deadline"
-            value={smartGoal.timeTracking.deadline?.toDate() || null}
+            value={smartGoal.timeTracking.deadline ? new Date(smartGoal.timeTracking.deadline.seconds * 1000) : null}
             onChange={(date) => setSmartGoal(prev => ({
               ...prev,
               timeTracking: {
